@@ -1,33 +1,31 @@
-import api from "@/lib/api";
-import { saveTokens, clearTokens, AuthTokens } from "@/lib/auth";
-
+import { api } from "@/lib/api";
+import { saveAuth, clearAuth, getToken } from "@/lib/auth";
+import { AuthToken, LoginCredentials, User } from "@/types/user";
+ 
 export const authService = {
-  async register(email: string, password: string) {
-    const { data } = await api.post("/auth/register", { email, password });
+  async login(credentials: LoginCredentials): Promise<AuthToken> {
+    const data = await api.post<AuthToken>("/auth/login", credentials);
+    saveAuth(data.access_token, data.user);
     return data;
   },
-
-  async login(email: string, password: string): Promise<AuthTokens> {
-    const { data } = await api.post<AuthTokens>("/auth/login", { email, password });
-    saveTokens(data);
+ 
+  async register(email: string, password: string): Promise<AuthToken> {
+    const data = await api.post<AuthToken>("/auth/register", { email, password });
+    saveAuth(data.access_token, data.user);
     return data;
   },
-
-  async forgotPassword(email: string) {
-    const { data } = await api.post("/auth/forgot-password", { email });
-    return data;
+ 
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>("/auth/forgot-password", { email });
   },
-
-  async resetPassword(token: string, newPassword: string) {
-    const { data } = await api.post("/auth/reset-password", {
-      token,
-      new_password: newPassword,
-    });
-    return data;
+ 
+  async getMe(): Promise<User> {
+    const token = getToken();
+    if (!token) throw new Error("Not authenticated");
+    return api.get<User>("/auth/me", token);
   },
-
-  logout() {
-    clearTokens();
-    window.location.href = "/login";
+ 
+  logout(): void {
+    clearAuth();
   },
 };

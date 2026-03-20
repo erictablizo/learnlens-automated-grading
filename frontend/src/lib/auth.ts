@@ -1,43 +1,36 @@
-export interface AuthUser {
-  user_id: number;
-  email: string;
-  created_at: string;
+import { User } from "@/types/user";
+ 
+const TOKEN_KEY = "learnlens_token";
+const USER_KEY = "learnlens_user";
+ 
+export function saveAuth(token: string, user: User): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
  
-export interface AuthTokens {
-  access_token: string;
-  token_type: string;
-  user: AuthUser;
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
 }
  
-// ── Token storage ─────────────────────────────────────────────────────────────
- 
-export const saveTokens = (tokens: AuthTokens): void => {
-  localStorage.setItem("access_token", tokens.access_token);
-  localStorage.setItem("user", JSON.stringify(tokens.user));
-};
- 
-export const clearTokens = (): void => {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("user");
-};
- 
-export const getAccessToken = (): string | null => {
+export function getUser(): User | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token");
-};
- 
-export const getCurrentUser = (): AuthUser | null => {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem("user");
+  const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as AuthUser;
+    return JSON.parse(raw) as User;
   } catch {
     return null;
   }
-};
+}
  
-export const isAuthenticated = (): boolean => {
-  return !!getAccessToken();
-};
+export function clearAuth(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+ 
+export function isAuthenticated(): boolean {
+  return !!getToken();
+}

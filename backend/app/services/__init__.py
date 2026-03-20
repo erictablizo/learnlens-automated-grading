@@ -1,3 +1,1 @@
-from app.services.auth_service import AuthService
- 
-__all__ = ["AuthService"]
+from app.services.auth_service import AuthService, create_access_token

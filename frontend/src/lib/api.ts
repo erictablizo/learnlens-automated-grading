@@ -1,35 +1,47 @@
-import axios from "axios";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
  
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
- 
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: { "Content-Type": "application/json" },
-  withCredentials: true,
-});
- 
-// Attach JWT token from localStorage on every request
-api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
   }
-  return config;
-});
+}
  
-// Handle 401 globally – redirect to login
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user");
-      window.location.href = "/login";
-    }
-    return Promise.reject(error);
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  token?: string
+): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
+ 
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
-);
  
-export default api;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+  });
+ 
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      message = data.detail || data.message || message;
+    } catch {}
+    throw new ApiError(res.status, message);
+  }
+ 
+  return res.json() as Promise<T>;
+}
+ 
+export const api = {
+  post: <T>(path: string, body: unknown, token?: string) =>
+    request<T>(path, { method: "POST", body: JSON.stringify(body) }, token),
+ 
+  get: <T>(path: string, token?: string) =>
+    request<T>(path, { method: "GET" }, token),
+};

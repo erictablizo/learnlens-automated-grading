@@ -1,48 +1,138 @@
 "use client";
+ 
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
-
+import { ApiError } from "@/lib/api";
+ 
 export default function ForgotPasswordForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+ 
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true); setError("");
+    setError("");
+    setLoading(true);
     try {
       await authService.forgotPassword(email);
-      router.push(`/login/forgot_password/check_email?email=${encodeURIComponent(email)}`);
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally { setLoading(false); }
-  };
-
+      router.push("/login/forgot_password/check_email");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+ 
   return (
-    <div style={styles.card}>
-      <h2 style={styles.title}>Forgot your password?</h2>
-      <p style={styles.subtitle}>Enter your email so that we can send you a password reset link</p>
-      {error && <p style={styles.errorText}>{error}</p>}
-      <form onSubmit={handleSubmit}>
-        <input style={styles.input} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
-        <button type="submit" style={styles.button} disabled={loading}>{loading ? "Sending…" : "Send email"}</button>
-      </form>
-      <p style={{ textAlign:"center", marginTop:8 }}>
-        <Link href="/login" style={styles.link}>Back to Login</Link>
+    <div className="card">
+      <h1 className="title">Forgot your password?</h1>
+      <p className="subtitle">
+        Enter your email so that we can send you a password reset link
       </p>
+ 
+      {error && <p className="error-msg">{error}</p>}
+ 
+      <form onSubmit={handleSubmit} className="form">
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="input"
+        />
+ 
+        <button type="submit" disabled={loading} className="btn-primary">
+          {loading ? "Sending…" : "Send email"}
+        </button>
+      </form>
+ 
+      <Link href="/login" className="link-orange back-link">
+        Back to Login
+      </Link>
+ 
+      <style jsx>{`
+        .card {
+          background: #fff;
+          border-radius: 20px;
+          padding: 40px 44px 36px;
+          width: 100%;
+          max-width: 360px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+        .title {
+          font-size: 1.4rem;
+          font-weight: 700;
+          color: #1a2e4a;
+          text-align: center;
+          margin-bottom: 10px;
+        }
+        .subtitle {
+          font-size: 0.85rem;
+          color: #6b7a8d;
+          text-align: center;
+          margin-bottom: 24px;
+          line-height: 1.5;
+        }
+        .form {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .input {
+          width: 100%;
+          border: none;
+          border-bottom: 1.5px solid #c8d6e5;
+          outline: none;
+          padding: 8px 0;
+          font-size: 0.95rem;
+          color: #333;
+          background: transparent;
+          transition: border-color 0.2s;
+        }
+        .input::placeholder { color: #aab8c8; }
+        .input:focus { border-bottom-color: #f5a623; }
+        .btn-primary {
+          width: 100%;
+          background: #f5a623;
+          color: #fff;
+          border: none;
+          border-radius: 50px;
+          padding: 13px;
+          font-size: 1rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s, opacity 0.2s;
+        }
+        .btn-primary:hover { background: #e09610; }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .back-link {
+          margin-top: 16px;
+          font-size: 0.85rem;
+          color: #f5a623;
+          text-decoration: none;
+          font-weight: 500;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .link-orange { color: #f5a623; }
+        .error-msg {
+          color: #e74c3c;
+          font-size: 0.85rem;
+          margin-bottom: 8px;
+          text-align: center;
+        }
+      `}</style>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  card: { background:"#fff", borderRadius:20, padding:"40px 36px", width:320, boxShadow:"0 4px 24px rgba(0,0,0,0.08)" },
-  title: { color:"#1e3a5f", fontSize:20, fontWeight:700, textAlign:"center", marginBottom:8 },
-  subtitle: { color:"#555", fontSize:13, textAlign:"center", marginBottom:24 },
-  input: { width:"100%", border:"none", borderBottom:"1.5px solid #c8dce8", padding:"10px 0", marginBottom:20, fontSize:15, color:"#333", outline:"none", background:"transparent", boxSizing:"border-box" },
-  button: { width:"100%", background:"#f59e0b", color:"#fff", border:"none", borderRadius:50, padding:"14px 0", fontSize:16, fontWeight:600, cursor:"pointer", marginBottom:8 },
-  link: { color:"#f59e0b", fontWeight:600, textDecoration:"none", fontSize:13 },
-  errorText: { color:"#e53e3e", fontSize:13, marginBottom:12, textAlign:"center" },
-};
