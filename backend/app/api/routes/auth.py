@@ -26,13 +26,13 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
             detail="Email already registered",
         )
     user = await create_user(db, payload.email, payload.password)
-    token = create_access_token({"sub": str(user["user_id"])})
+    token = create_access_token({"sub": str(user.user_id)})
     return TokenResponse(
         access_token=token,
         user=UserResponse(
-            user_id=user["user_id"],
-            email=user["email"],
-            created_at=user["created_at"],
+            user_id=user.user_id,
+            email=user.email,
+            created_at=user.created_at,
         ),
     )
  
@@ -45,13 +45,13 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    token = create_access_token({"sub": str(user["user_id"])})
+    token = create_access_token({"sub": str(user.user_id)})
     return TokenResponse(
         access_token=token,
         user=UserResponse(
-            user_id=user["user_id"],
-            email=user["email"],
-            created_at=user["created_at"],
+            user_id=user.user_id,
+            email=user.email,
+            created_at=user.created_at,
         ),
     )
  
@@ -86,7 +86,7 @@ async def get_me(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse(
-        user_id=user["user_id"],
-        email=user["email"],
-        created_at=user["created_at"],
+        user_id=user.user_id,
+        email=user.email,
+        created_at=user.created_at,
     )
