@@ -77,7 +77,7 @@ def create_app() -> FastAPI:
         allow_origins=[
             settings.FRONTEND_URL,          # e.g. http://localhost:3000
             "http://localhost:3000",         # dev fallback
-            "http://127.0.0.1:3000",
+            "http://192.168.254.127:3000",
         ],
         allow_credentials=True,
         allow_methods=["*"],
