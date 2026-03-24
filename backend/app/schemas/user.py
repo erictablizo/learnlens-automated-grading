@@ -1,13 +1,10 @@
 from pydantic import BaseModel, EmailStr, field_validator
-from datetime import datetime
 from typing import Optional
+from datetime import datetime
  
  
-class UserBase(BaseModel):
+class UserCreate(BaseModel):
     email: EmailStr
- 
- 
-class UserCreate(UserBase):
     password: str
  
     @field_validator("password")
@@ -18,33 +15,39 @@ class UserCreate(UserBase):
         return v
  
  
-class UserLogin(UserBase):
+class UserLogin(BaseModel):
+    email: EmailStr
     password: str
  
  
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     user_id: int
+    email: str
     created_at: datetime
  
     model_config = {"from_attributes": True}
  
  
-class Token(BaseModel):
+class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
- 
- 
-class TokenData(BaseModel):
-    user_id: Optional[int] = None
  
  
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
  
  
-class ForgotPasswordResponse(BaseModel):
-    message: str
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+ 
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
  
  
 class MessageResponse(BaseModel):

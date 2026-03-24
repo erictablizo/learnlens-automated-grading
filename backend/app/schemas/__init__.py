@@ -1,4 +1,11 @@
 from app.schemas.user import (
-    UserCreate, UserLogin, UserResponse, Token, TokenData,
-    ForgotPasswordRequest, ForgotPasswordResponse, MessageResponse
+    UserCreate, UserLogin, UserResponse,
+    TokenResponse, ForgotPasswordRequest,
+    ResetPasswordRequest, MessageResponse,
 )
+ 
+__all__ = [
+    "UserCreate", "UserLogin", "UserResponse",
+    "TokenResponse", "ForgotPasswordRequest",
+    "ResetPasswordRequest", "MessageResponse",
+]
