@@ -3,38 +3,55 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
-import { getUser, isAuthenticated, clearAuth } from "@/lib/auth";
-import { User } from "@/types/user";
+import { getToken, getStoredUser, clearAuth } from "@/lib/auth";
+import { User, LoginCredentials, RegisterCredentials } from "@/types/user";
  
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
  
   useEffect(() => {
-    if (isAuthenticated()) {
-      setUser(getUser());
+    const storedUser = getStoredUser();
+    const token = getToken();
+    if (storedUser && token) {
+      setUser(storedUser);
     }
-    setLoading(false);
+    setIsLoading(false);
   }, []);
  
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const data = await authService.login({ email, password });
+  const login = useCallback(async (credentials: LoginCredentials) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await authService.login(credentials);
       setUser(data.user);
       router.push("/exams");
-    },
-    [router]
-  );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Login failed";
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
  
-  const register = useCallback(
-    async (email: string, password: string) => {
-      const data = await authService.register(email, password);
+  const register = useCallback(async (credentials: RegisterCredentials) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await authService.register(credentials);
       setUser(data.user);
       router.push("/exams");
-    },
-    [router]
-  );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Registration failed";
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
  
   const logout = useCallback(() => {
     clearAuth();
@@ -42,5 +59,14 @@ export function useAuth() {
     router.push("/login");
   }, [router]);
  
-  return { user, loading, login, register, logout, isAuthenticated: !!user };
+  return {
+    user,
+    isLoading,
+    error,
+    isAuthenticated: Boolean(user),
+    login,
+    register,
+    logout,
+    setError,
+  };
 }

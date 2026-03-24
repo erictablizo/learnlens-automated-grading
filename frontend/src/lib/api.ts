@@ -1,7 +1,10 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
  
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string
+  ) {
     super(message);
     this.name = "ApiError";
   }
@@ -12,36 +15,26 @@ async function request<T>(
   options: RequestInit = {},
   token?: string
 ): Promise<T> {
-  const headers: Record<string, string> = {
+  const headers: HeadersInit = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
   };
  
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
- 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
  
   if (!res.ok) {
-    let message = `HTTP ${res.status}`;
-    try {
-      const data = await res.json();
-      message = data.detail || data.message || message;
-    } catch {}
-    throw new ApiError(res.status, message);
+    const err = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new ApiError(res.status, err.detail || "Request failed");
   }
  
-  return res.json() as Promise<T>;
+  return res.json();
 }
  
 export const api = {
-  post: <T>(path: string, body: unknown, token?: string) =>
-    request<T>(path, { method: "POST", body: JSON.stringify(body) }, token),
- 
   get: <T>(path: string, token?: string) =>
     request<T>(path, { method: "GET" }, token),
+ 
+  post: <T>(path: string, body: unknown, token?: string) =>
+    request<T>(path, { method: "POST", body: JSON.stringify(body) }, token),
 };

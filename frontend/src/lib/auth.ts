@@ -1,7 +1,7 @@
 import { User } from "@/types/user";
  
-const TOKEN_KEY = "learnlens_token";
-const USER_KEY = "learnlens_user";
+const TOKEN_KEY = "ll_access_token";
+const USER_KEY = "ll_user";
  
 export function saveAuth(token: string, user: User): void {
   if (typeof window === "undefined") return;
@@ -14,7 +14,7 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
  
-export function getUser(): User | null {
+export function getStoredUser(): User | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
@@ -31,6 +31,6 @@ export function clearAuth(): void {
   localStorage.removeItem(USER_KEY);
 }
  
-export function isAuthenticated(): boolean {
-  return !!getToken();
+export function isTokenPresent(): boolean {
+  return Boolean(getToken());
 }
