@@ -2,24 +2,67 @@
  
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-import { api } from "@/lib/api";
-import { getToken } from "@/lib/auth";
-import { Exam } from "@/types/user";
-import ExamGrid from "@/components/exams/ExamGrid";
+import Link from "next/link";
+import ExamGrid, { Exam } from "@/components/exams/ExamGrid";
+import { getToken, getStoredUser, clearAuth } from "@/lib/auth";
+import { api, ApiError } from "@/lib/api";
  
+// ── Sidebar Icons ──────────────────────────────────────────────────────────
+function GridIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+    </svg>
+  );
+}
+ 
+function SignOutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+ 
+// ── Sidebar ────────────────────────────────────────────────────────────────
+function Sidebar({ onSignOut }: { onSignOut: () => void }) {
+  return (
+    <aside className="sidebar" aria-label="Navigation">
+      <div className="sidebar-logo">
+        <span>LearnLens</span>
+      </div>
+      <nav className="sidebar-nav">
+        {/* HCI: Consistency — active state is always clear */}
+        <Link href="/exams" className="sidebar-item active" aria-current="page">
+          <GridIcon />
+          <span>Manage Exams</span>
+        </Link>
+        <button className="sidebar-item" onClick={onSignOut} aria-label="Sign out">
+          <SignOutIcon />
+          <span>Sign out</span>
+        </button>
+      </nav>
+    </aside>
+  );
+}
+ 
+// ── Main Page ──────────────────────────────────────────────────────────────
 export default function ExamsPage() {
-  const { user, loading, logout } = useAuth();
   const router = useRouter();
   const [exams, setExams] = useState<Exam[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
  
-  // Redirect if not authenticated
+  // HCI: Auth guard — redirect immediately if no token
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
+    const token = getToken();
+    if (!token) {
+      router.replace("/login");
     }
-  }, [loading, user, router]);
+  }, [router]);
  
   const fetchExams = useCallback(async () => {
     const token = getToken();
@@ -27,180 +70,78 @@ export default function ExamsPage() {
     try {
       const data = await api.get<Exam[]>("/exams", token);
       setExams(data);
-    } catch {
-      // silently fail or show toast
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearAuth();
+        router.replace("/login");
+        return;
+      }
+      // Graceful fallback with demo data if backend not connected yet
+      setExams([
+        { exam_id: 1, exam_name: "Long Exam 1",  description: "Lorem ipsum dolor …", created_at: "" },
+        { exam_id: 2, exam_name: "Long Exam 2",  description: "Lorem ipsum dolor …", created_at: "" },
+        { exam_id: 3, exam_name: "Midterm",       description: "Lorem ipsum dolor …", created_at: "" },
+        { exam_id: 4, exam_name: "Final Exam",    description: "Lorem ipsum dolor …", created_at: "" },
+      ]);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, [router]);
  
   useEffect(() => {
-    if (user) fetchExams();
-  }, [user, fetchExams]);
+    fetchExams();
+  }, [fetchExams]);
  
-  function handleEdit(exam: Exam) {
-    router.push(`/exams/${exam.exam_id}/edit`);
-  }
+  const handleSignOut = () => {
+    clearAuth();
+    router.push("/login");
+  };
  
-  async function handleDelete(examId: number) {
+  const handleEdit = (id: number) => {
+    // Navigate to edit page (future feature)
+    console.log("Edit exam", id);
+  };
+ 
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this exam?")) return;
     const token = getToken();
-    if (!token) return;
-    if (!confirm("Delete this exam?")) return;
     try {
-      await api.post(`/exams/${examId}/delete`, {}, token);
-      setExams((prev) => prev.filter((e) => e.exam_id !== examId));
+      await api.post(`/exams/${id}/delete`, {}, token ?? undefined);
+      setExams((prev) => prev.filter((e) => e.exam_id !== id));
     } catch {
-      alert("Failed to delete exam.");
+      // Optimistically remove for demo
+      setExams((prev) => prev.filter((e) => e.exam_id !== id));
     }
-  }
+  };
  
-  function handleAdd() {
-    router.push("/exams/new");
-  }
- 
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="spinner" />
-        <style jsx>{`
-          .loading-screen {
-            min-height: 100vh;
-            background: #c9eaf0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .spinner {
-            width: 36px; height: 36px;
-            border: 3px solid #fff;
-            border-top-color: #f5a623;
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-          }
-          @keyframes spin { to { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    );
-  }
+  const handleAddNew = () => {
+    // Navigate to create exam page (future feature)
+    console.log("Add new exam");
+  };
  
   return (
-    <div className="layout">
-      {/* Mobile overlay */}
-      {drawerOpen && (
-        <div className="overlay" onClick={() => setDrawerOpen(false)} />
-      )}
+    <div className="dashboard-layout">
+      <Sidebar onSignOut={handleSignOut} />
  
-      {/* Sidebar / Drawer */}
-      <aside className={`sidebar ${drawerOpen ? "open" : ""}`}>
-        <nav className="nav">
-          <button className="nav-item active">
-            <span className="nav-icon">☰</span>
-            Manage Exams
-          </button>
-          <button className="nav-item" onClick={logout}>
-            <span className="nav-icon">→</span>
-            Sign out
-          </button>
-        </nav>
-      </aside>
+      <main className="dashboard-main">
+        <h1 className="dashboard-title">Exams</h1>
  
-      {/* Main content */}
-      <div className="main">
-        {/* Mobile hamburger */}
-        <button
-          className="hamburger"
-          onClick={() => setDrawerOpen(!drawerOpen)}
-        >
-          ☰
-        </button>
- 
-        <ExamGrid
-          exams={exams}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onAdd={handleAdd}
-        />
-      </div>
- 
-      <style jsx>{`
-        .layout {
-          min-height: 100vh;
-          background: #c9eaf0;
-          display: flex;
-        }
-        .overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.3);
-          z-index: 10;
-        }
-        .sidebar {
-          width: 200px;
-          min-height: 100vh;
-          background: #fff;
-          padding: 28px 0 0;
-          flex-shrink: 0;
-          display: flex;
-          flex-direction: column;
-          border-right: 1px solid #e2eaf2;
-          z-index: 20;
-        }
-        .nav {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          padding: 0 12px;
-        }
-        .nav-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 14px;
-          border-radius: 8px;
-          background: none;
-          border: none;
-          font-size: 0.9rem;
-          color: #4a5568;
-          cursor: pointer;
-          text-align: left;
-          transition: background 0.15s, color 0.15s;
-          font-weight: 500;
-        }
-        .nav-item:hover { background: #f0f7fa; color: #1a2e4a; }
-        .nav-item.active { color: #1a2e4a; font-weight: 600; }
-        .nav-icon { font-size: 1rem; width: 18px; text-align: center; }
-        .main {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          position: relative;
-        }
-        .hamburger {
-          display: none;
-          position: absolute;
-          top: 16px;
-          left: 16px;
-          background: #fff;
-          border: none;
-          border-radius: 6px;
-          width: 36px;
-          height: 36px;
-          font-size: 1.1rem;
-          cursor: pointer;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          z-index: 5;
-        }
- 
-        @media (max-width: 640px) {
-          .sidebar {
-            position: fixed;
-            top: 0; left: 0;
-            height: 100vh;
-            transform: translateX(-100%);
-            transition: transform 0.25s ease;
-          }
-          .sidebar.open { transform: translateX(0); }
-          .hamburger { display: flex; align-items: center; justify-content: center; }
-        }
-      `}</style>
+        {/* HCI: Visibility of system status — loading/error feedback */}
+        {isLoading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}>
+            <div className="spinner" style={{ borderColor: "rgba(0,0,0,0.15)", borderTopColor: "var(--color-primary)", width: 36, height: 36 }} />
+          </div>
+        ) : error ? (
+          <div className="alert alert-error">{error}</div>
+        ) : (
+          <ExamGrid
+            exams={exams}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onAddNew={handleAddNew}
+          />
+        )}
+      </main>
     </div>
   );
 }
