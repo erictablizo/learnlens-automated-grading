@@ -78,10 +78,10 @@ export default function ExamsPage() {
       }
       // Graceful fallback with demo data if backend not connected yet
       setExams([
-        { exam_id: 1, exam_name: "Long Exam 1",  description: "Lorem ipsum dolor …", created_at: "" },
-        { exam_id: 2, exam_name: "Long Exam 2",  description: "Lorem ipsum dolor …", created_at: "" },
-        { exam_id: 3, exam_name: "Midterm",       description: "Lorem ipsum dolor …", created_at: "" },
-        { exam_id: 4, exam_name: "Final Exam",    description: "Lorem ipsum dolor …", created_at: "" },
+        { exam_id: 1, exam_name: "Long Exam 1",  description: "", created_at: "" },
+        { exam_id: 2, exam_name: "Long Exam 2",  description: "", created_at: "" },
+        { exam_id: 3, exam_name: "Midterm",       description: "", created_at: "" },
+        { exam_id: 4, exam_name: "Final Exam",    description: "", created_at: "" },
       ]);
     } finally {
       setIsLoading(false);
