@@ -9,6 +9,8 @@ export interface Exam {
   created_at: string;
 }
  
+import { useRouter } from "next/navigation";
+ 
 interface ExamGridProps {
   exams: Exam[];
   onEdit?: (id: number) => void;
@@ -31,6 +33,7 @@ export default function ExamGrid({
   onDelete,
   onAddNew,
 }: ExamGridProps) {
+  const router = useRouter();
   return (
     <div className="exam-grid">
       {exams.map((exam) => (
@@ -47,7 +50,7 @@ export default function ExamGrid({
       {/* HCI: Visible affordance for adding a new exam — direct manipulation */}
       <button
         className="add-exam-btn"
-        onClick={onAddNew}
+        onClick={() => { onAddNew?.(); router.push("/exams/create"); }}
         aria-label="Add new exam"
         title="Create a new exam"
       >
