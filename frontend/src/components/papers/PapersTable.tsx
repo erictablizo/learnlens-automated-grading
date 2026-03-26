@@ -1,58 +1,86 @@
-import { FiEdit, FiEye } from 'react-icons/fi';
+"use client";
 
-interface Paper {
+export interface TestPaper {
   paper_id: number;
-  student_name: string;
-  total_score: number | null;
+  name: string;
+  score: number | null;
   checked: boolean;
 }
 
 interface PapersTableProps {
-  papers: Paper[];
-  onEdit: (paper: Paper) => void;
-  onView: (paper: Paper) => void;
+  papers: TestPaper[];
+  onView?: (paper: TestPaper) => void;
+  onDelete?: (paperId: number) => void;
 }
 
-export default function PapersTable({ papers, onEdit, onView }: PapersTableProps) {
+function EyeIcon() {
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+    </svg>
+  );
+}
+
+export default function PapersTable({ papers, onView, onDelete }: PapersTableProps) {
+  return (
+    <div className="papers-table-wrap">
+      <table className="papers-table">
+        <thead>
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            <th className="papers-th">Name</th>
+            <th className="papers-th papers-th--center">Score</th>
+            <th className="papers-th papers-th--center">Actions</th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody>
           {papers.length === 0 ? (
             <tr>
-              <td colSpan={3} className="px-6 py-4 text-center text-gray-500">
-                No test papers added yet.
+              <td colSpan={3} className="papers-td papers-empty">
+                No test papers yet. Click &ldquo;Add paper&rdquo; to upload one.
               </td>
             </tr>
           ) : (
             papers.map((paper) => (
-              <tr key={paper.paper_id}>
-                <td className="px-6 py-4 whitespace-nowrap">{paper.student_name}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {paper.total_score !== null ? paper.total_score : 'Not graded'}
+              <tr key={paper.paper_id} className="papers-tr">
+                <td className="papers-td papers-td--name">{paper.name}</td>
+                <td className="papers-td papers-td--center">
+                  {paper.checked && paper.score !== null
+                    ? `${paper.score}%`
+                    : <span className="papers-unchecked">—</span>}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap space-x-2">
-                  <button
-                    onClick={() => onEdit(paper)}
-                    className="text-primary hover:text-primary-dark"
-                    title="Edit"
-                  >
-                    <FiEdit />
-                  </button>
-                  <button
-                    onClick={() => onView(paper)}
-                    className="text-gray-600 hover:text-gray-800"
-                    title="View"
-                  >
-                    <FiEye />
-                  </button>
+                <td className="papers-td papers-td--center">
+                  <div className="papers-actions">
+                    <button
+                      className="papers-action-btn"
+                      onClick={() => onView?.(paper)}
+                      title="View paper"
+                      aria-label={`View ${paper.name}`}
+                    >
+                      <EyeIcon />
+                    </button>
+                    <button
+                      className="papers-action-btn papers-action-btn--danger"
+                      onClick={() => onDelete?.(paper.paper_id)}
+                      title="Delete paper"
+                      aria-label={`Delete ${paper.name}`}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))

@@ -1,118 +1,175 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-
-interface Paper {
-  paper_id: number;
-  student_name: string;
-  total_score: number | null;
-  checked: boolean;
-}
+import { useState, useRef, useEffect } from "react";
 
 interface AddEditPaperModalProps {
   examId: number;
-  paper?: Paper | null;
   onClose: () => void;
-  onSave: () => void;
+  onSaved: () => void;
 }
 
-export default function AddEditPaperModal({ examId, paper, onClose, onSave }: AddEditPaperModalProps) {
-  const [studentName, setStudentName] = useState(paper?.student_name || '');
-  const [pages, setPages] = useState<File[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+function XIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+}
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setPages(Array.from(e.target.files));
-    }
+function UploadIcon() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+  );
+}
+
+export default function AddEditPaperModal({ examId, onClose, onSaved }: AddEditPaperModalProps) {
+  const [paperName, setPaperName] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const handleFiles = (incoming: FileList | null) => {
+    if (!incoming) return;
+    const arr = Array.from(incoming).filter((f) => f.type.startsWith("image/"));
+    setFiles((prev) => [...prev, ...arr]);
+    const newPreviews = arr.map((f) => URL.createObjectURL(f));
+    setPreviews((prev) => [...prev, ...newPreviews]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!studentName.trim()) {
-      setError('Student name is required');
-      return;
-    }
-    if (pages.length === 0 && !paper) {
-      setError('Please upload at least one page');
-      return;
-    }
+    handleFiles(e.dataTransfer.files);
+  };
 
-    setLoading(true);
-    setError('');
+  const removeFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+    setPreviews((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSave = async () => {
+    setError(null);
+    if (!paperName.trim()) { setError("Paper name is required."); return; }
+    if (files.length === 0) { setError("Please upload at least one page image."); return; }
+    setIsSaving(true);
     try {
-      const formData = new FormData();
-      formData.append('student_name', studentName);
-      if (paper) {
-        formData.append('paper_id', String(paper.paper_id));
-      }
-      pages.forEach((page, idx) => {
-        formData.append(`page_${idx + 1}`, page);
-      });
-
-      const url = paper
-        ? `${process.env.NEXT_PUBLIC_API_URL}/exams/${examId}/test-papers/${paper.paper_id}`
-        : `${process.env.NEXT_PUBLIC_API_URL}/exams/${examId}/test-papers`;
-      const method = paper ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error('Failed to save paper');
-      onSave();
-    } catch (err: any) {
-      setError(err.message);
+      // POST /api/exams/{examId}/papers  (multipart)
+      const token = typeof window !== "undefined" ? localStorage.getItem("ll_access_token") : null;
+      const form = new FormData();
+      form.append("name", paperName.trim());
+      files.forEach((f, i) => form.append(`page_${i + 1}`, f));
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/exams/${examId}/papers`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form }
+      );
+      onSaved();
+      onClose();
+    } catch {
+      setError("Failed to upload paper. Please try again.");
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
-        <h3 className="text-lg font-medium mb-4">
-          {paper ? 'Edit Test Paper' : 'Add Test Paper'}
-        </h3>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700">Student Name</label>
-            <input
-              type="text"
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
-              required
-            />
+    /* Backdrop */
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Add test paper">
+
+        {/* Header */}
+        <div className="modal-header">
+          <h2 className="modal-title">Add Test Paper</h2>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Close">
+            <XIcon />
+          </button>
+        </div>
+
+        {error && (
+          <div className="alert alert-error" role="alert" style={{ margin: "0 0 16px" }}>
+            {error}
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700">Upload Pages (images or PDF)</label>
-            <input
-              type="file"
-              multiple
-              accept="image/*,application/pdf"
-              onChange={handleFileChange}
-              className="mt-1 block w-full"
-            />
-            {paper && pages.length === 0 && (
-              <p className="text-sm text-gray-500 mt-1">Leave empty to keep existing pages.</p>
-            )}
+        )}
+
+        {/* Paper name */}
+        <div className="ce-field">
+          <label className="ce-label" htmlFor="paperName">Paper Name</label>
+          <input
+            id="paperName"
+            className="ce-input"
+            style={{ maxWidth: "100%" }}
+            type="text"
+            value={paperName}
+            onChange={(e) => setPaperName(e.target.value)}
+            placeholder="e.g. Student 1"
+            autoFocus
+          />
+        </div>
+
+        {/* Drop zone */}
+        <div
+          className="modal-dropzone"
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          onClick={() => fileRef.current?.click()}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: "none" }}
+            onChange={(e) => handleFiles(e.target.files)}
+          />
+          <UploadIcon />
+          <p className="modal-dropzone-text">
+            <strong>Click to upload</strong> or drag and drop
+          </p>
+          <p className="modal-dropzone-hint">PNG, JPG, WEBP — one image per page</p>
+        </div>
+
+        {/* Preview grid */}
+        {previews.length > 0 && (
+          <div className="modal-previews">
+            {previews.map((src, i) => (
+              <div key={i} className="modal-preview-item">
+                <img src={src} alt={`Page ${i + 1}`} className="modal-preview-img" />
+                <span className="modal-preview-label">Page {i + 1}</span>
+                <button
+                  className="modal-preview-remove"
+                  onClick={() => removeFile(i)}
+                  title="Remove"
+                >×</button>
+              </div>
+            ))}
           </div>
-          {error && <div className="error-message mb-4">{error}</div>}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" disabled={loading} className="btn-primary">
-              {loading ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </form>
+        )}
+
+        {/* Footer */}
+        <div className="modal-footer">
+          <button className="ce-btn ce-btn--cancel" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </button>
+          <button className="ce-btn ce-btn--save" onClick={handleSave} disabled={isSaving} aria-busy={isSaving}>
+            {isSaving
+              ? <span className="spinner" style={{ borderTopColor: "#444", borderColor: "rgba(0,0,0,0.1)", width: 14, height: 14 }} />
+              : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );

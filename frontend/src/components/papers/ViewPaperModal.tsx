@@ -1,112 +1,125 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-
-interface Paper {
-  paper_id: number;
-  student_name: string;
-  total_score: number | null;
-  checked: boolean;
-}
+import { useEffect } from "react";
+import { TestPaper } from "./PapersTable";
 
 interface ViewPaperModalProps {
-  paper: Paper;
-  examId: number;
+  paper: TestPaper;
   onClose: () => void;
 }
 
-export default function ViewPaperModal({ paper, examId, onClose }: ViewPaperModalProps) {
-  const [pages, setPages] = useState<string[]>([]);
-  const [scores, setScores] = useState<{ question_number: number; student_answer: string; correct_answer: string; is_correct: boolean }[]>([]);
-  const [loading, setLoading] = useState(true);
+function XIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+}
 
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  );
+}
+
+function XSmallIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+}
+
+// Demo score data — replaced by real API data once backend is wired
+const DEMO_SCORES = [
+  { question: 1, student: "A", correct: "A", is_correct: true },
+  { question: 2, student: "C", correct: "B", is_correct: false },
+  { question: 3, student: "D", correct: "D", is_correct: true },
+  { question: 4, student: "B", correct: "A", is_correct: false },
+  { question: 5, student: "C", correct: "C", is_correct: true },
+  { question: 6, student: "A", correct: "A", is_correct: true },
+  { question: 7, student: "D", correct: "D", is_correct: true },
+  { question: 8, student: "B", correct: "C", is_correct: false },
+  { question: 9, student: "A", correct: "A", is_correct: true },
+  { question: 10, student: "C", correct: "C", is_correct: true },
+];
+
+export default function ViewPaperModal({ paper, onClose }: ViewPaperModalProps) {
+  // Close on Escape
   useEffect(() => {
-    const fetchPaperDetails = async () => {
-      try {
-        const token = localStorage.getItem('access_token');
-        const pagesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${examId}/test-papers/${paper.paper_id}/pages`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const pagesData = await pagesRes.json();
-        setPages(pagesData.image_paths || []);
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
 
-        const scoresRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/${examId}/test-papers/${paper.paper_id}/scores`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const scoresData = await scoresRes.json();
-        setScores(scoresData);
-      } catch (error) {
-        console.error('Failed to load paper details', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPaperDetails();
-  }, [paper, examId]);
+  const correct = DEMO_SCORES.filter((s) => s.is_correct).length;
+  const total   = DEMO_SCORES.length;
+  const pct     = Math.round((correct / total) * 100);
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-medium">
-            {paper.student_name} - Score: {paper.total_score !== null ? paper.total_score : 'Not graded'}
-          </h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            ✕
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-card modal-card--wide" role="dialog" aria-modal="true" aria-label="View paper">
+
+        {/* Header */}
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title">{paper.name}</h2>
+            <p className="modal-subtitle">Test paper results</p>
+          </div>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Close">
+            <XIcon />
           </button>
         </div>
 
-        {loading ? (
-          <div className="text-center py-8">Loading...</div>
-        ) : (
-          <>
-            {scores.length > 0 && (
-              <div className="mb-6">
-                <h4 className="font-medium mb-2">Grading Details</h4>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Q#</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Student Answer</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Correct Answer</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Result</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {scores.map((score, idx) => (
-                        <tr key={idx}>
-                          <td className="px-4 py-2">{score.question_number}</td>
-                          <td className="px-4 py-2">{score.student_answer}</td>
-                          <td className="px-4 py-2">{score.correct_answer}</td>
-                          <td className="px-4 py-2">
-                            {score.is_correct ? '✓' : '✗'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+        {/* Score summary */}
+        <div className="vp-summary">
+          <div className="vp-score-badge">
+            <span className="vp-score-num">{pct}%</span>
+            <span className="vp-score-label">{correct} / {total} correct</span>
+          </div>
+          <div className={`vp-status-chip ${pct >= 75 ? "vp-status-pass" : "vp-status-fail"}`}>
+            {pct >= 75 ? "Passed" : "Failed"}
+          </div>
+        </div>
 
-            <div>
-              <h4 className="font-medium mb-2">Uploaded Pages</h4>
-              <div className="grid grid-cols-1 gap-4">
-                {pages.map((pageUrl, idx) => (
-                  <div key={idx} className="border rounded p-2">
-                    <img src={pageUrl} alt={`Page ${idx+1}`} className="max-w-full h-auto" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
+        {/* Answers table */}
+        <div className="papers-table-wrap" style={{ maxHeight: 340, overflowY: "auto" }}>
+          <table className="papers-table">
+            <thead>
+              <tr>
+                <th className="papers-th">Question</th>
+                <th className="papers-th papers-th--center">Student Answer</th>
+                <th className="papers-th papers-th--center">Correct Answer</th>
+                <th className="papers-th papers-th--center">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DEMO_SCORES.map((row) => (
+                <tr key={row.question} className="papers-tr">
+                  <td className="papers-td" style={{ fontWeight: 700 }}>Q{row.question}</td>
+                  <td className="papers-td papers-td--center">{row.student}</td>
+                  <td className="papers-td papers-td--center">{row.correct}</td>
+                  <td className="papers-td papers-td--center">
+                    {row.is_correct
+                      ? <span className="vp-correct"><CheckIcon /> Correct</span>
+                      : <span className="vp-wrong"><XSmallIcon /> Wrong</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-        <div className="flex justify-end mt-6">
-          <button onClick={onClose} className="btn-secondary">
-            Close
-          </button>
+        {/* Footer */}
+        <div className="modal-footer">
+          <button className="ce-btn" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
