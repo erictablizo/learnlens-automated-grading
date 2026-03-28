@@ -3,7 +3,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAuth } from "@/lib/auth";
  
-// SVG icons inline (no external dep needed)
 const IconList = () => (
   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -26,6 +25,7 @@ export default function Navbar() {
  
   return (
     <nav className="sidebar" aria-label="Main navigation">
+      {/* Manage Exams link */}
       <Link
         href="/exams"
         className={`sidebar-item${pathname.startsWith("/exams") ? " active" : ""}`}
@@ -35,11 +35,11 @@ export default function Navbar() {
         Manage Exams
       </Link>
  
+      {/* Sign out sits directly below — no auto margin push to bottom */}
       <button
         className="sidebar-item signout"
         onClick={handleSignOut}
         aria-label="Sign out"
-        style={{ marginTop: "auto" }}
       >
         <IconLogout />
         Sign out
