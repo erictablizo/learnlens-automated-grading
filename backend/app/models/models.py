@@ -38,6 +38,7 @@ class PasswordReset(Base):
  
 class Exam(Base):
     __tablename__ = "exams"
+    # When mixing constraints + schema dict, put dict LAST in the tuple
     __table_args__ = (
         CheckConstraint("char_length(exam_name) >= 7", name="exams_exam_name_check"),
         {"schema": "public"},
@@ -59,8 +60,8 @@ class Exam(Base):
 class ExamPage(Base):
     __tablename__ = "exam_pages"
     __table_args__ = (
-        UniqueConstraint("exam_id", "page_number"),
-        CheckConstraint("page_number > 0"),
+        UniqueConstraint("exam_id", "page_number", name="exam_pages_exam_id_page_number_key"),
+        CheckConstraint("page_number > 0", name="exam_pages_page_number_check"),
         {"schema": "public"},
     )
  
@@ -77,8 +78,8 @@ class ExamPage(Base):
 class AnswerKey(Base):
     __tablename__ = "answer_keys"
     __table_args__ = (
-        UniqueConstraint("exam_id", "question_number"),
-        CheckConstraint("question_number > 0"),
+        UniqueConstraint("exam_id", "question_number", name="answer_keys_exam_id_question_number_key"),
+        CheckConstraint("question_number > 0", name="answer_keys_question_number_check"),
         {"schema": "public"},
     )
  
@@ -115,8 +116,8 @@ class TestPaper(Base):
 class PaperPage(Base):
     __tablename__ = "paper_pages"
     __table_args__ = (
-        UniqueConstraint("paper_id", "page_number"),
-        CheckConstraint("page_number > 0"),
+        UniqueConstraint("paper_id", "page_number", name="paper_pages_paper_id_page_number_key"),
+        CheckConstraint("page_number > 0", name="paper_pages_page_number_check"),
         {"schema": "public"},
     )
  
@@ -133,8 +134,8 @@ class PaperPage(Base):
 class PaperScore(Base):
     __tablename__ = "paper_scores"
     __table_args__ = (
-        UniqueConstraint("paper_id", "answer_key_id"),
-        CheckConstraint("question_number > 0"),
+        UniqueConstraint("paper_id", "answer_key_id", name="paper_scores_paper_id_answer_key_id_key"),
+        CheckConstraint("question_number > 0", name="paper_scores_question_number_check"),
         {"schema": "public"},
     )
  
