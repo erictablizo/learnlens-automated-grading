@@ -37,35 +37,35 @@ function TrashIcon() {
 
 export default function PapersTable({ papers, onView, onDelete }: PapersTableProps) {
   return (
-    <div className="papers-table-wrap">
-      <table className="papers-table">
+    <div className="pt-wrap" role="region" aria-label="Test papers">
+      <table className="pt-table">
         <thead>
           <tr>
-            <th className="papers-th">Name</th>
-            <th className="papers-th papers-th--center">Score</th>
-            <th className="papers-th papers-th--center">Actions</th>
+            <th className="pt-th">Name</th>
+            <th className="pt-th pt-th--center">Score</th>
+            <th className="pt-th pt-th--center">Actions</th>
           </tr>
         </thead>
         <tbody>
           {papers.length === 0 ? (
             <tr>
-              <td colSpan={3} className="papers-td papers-empty">
+              <td colSpan={3} className="pt-empty">
                 No test papers yet. Click &ldquo;Add paper&rdquo; to upload one.
               </td>
             </tr>
           ) : (
             papers.map((paper) => (
-              <tr key={paper.paper_id} className="papers-tr">
-                <td className="papers-td papers-td--name">{paper.name}</td>
-                <td className="papers-td papers-td--center">
+              <tr key={paper.paper_id} className="pt-tr">
+                <td className="pt-td pt-td--name">{paper.name}</td>
+                <td className="pt-td pt-td--center">
                   {paper.checked && paper.score !== null
-                    ? `${paper.score}%`
-                    : <span className="papers-unchecked">—</span>}
+                    ? <span className="pt-score">{paper.score}%</span>
+                    : <span className="pt-score--pending">—</span>}
                 </td>
-                <td className="papers-td papers-td--center">
-                  <div className="papers-actions">
+                <td className="pt-td pt-td--center">
+                  <div className="pt-actions">
                     <button
-                      className="papers-action-btn"
+                      className="pt-action-btn"
                       onClick={() => onView?.(paper)}
                       title="View paper"
                       aria-label={`View ${paper.name}`}
@@ -73,7 +73,7 @@ export default function PapersTable({ papers, onView, onDelete }: PapersTablePro
                       <EyeIcon />
                     </button>
                     <button
-                      className="papers-action-btn papers-action-btn--danger"
+                      className="pt-action-btn pt-action-btn--danger"
                       onClick={() => onDelete?.(paper.paper_id)}
                       title="Delete paper"
                       aria-label={`Delete ${paper.name}`}

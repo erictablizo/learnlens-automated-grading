@@ -1,6 +1,8 @@
+"use client";
+
 import CreateExamForm from "@/components/exams/CreateExamForm";
 import Link from "next/link";
- 
+
 function GridIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -10,7 +12,7 @@ function GridIcon() {
     </svg>
   );
 }
- 
+
 function SignOutIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -21,14 +23,15 @@ function SignOutIcon() {
     </svg>
   );
 }
- 
+
 export default function CreateExamPage() {
   return (
     <div className="dashboard-layout">
+      {/* Sidebar — HCI: consistent navigation across all pages */}
       <aside className="sidebar" aria-label="Navigation">
         <div className="sidebar-logo"><span>LearnLens</span></div>
         <nav className="sidebar-nav">
-          <Link href="/exams" className="sidebar-item active">
+          <Link href="/exams" className="sidebar-item active" aria-current="page">
             <GridIcon /><span>Manage Exams</span>
           </Link>
           <Link href="/login" className="sidebar-item">
@@ -36,7 +39,9 @@ export default function CreateExamPage() {
           </Link>
         </nav>
       </aside>
-      <main className="dashboard-main">
+
+      {/* Main */}
+      <main className="dashboard-main cef-page-main">
         <CreateExamForm />
       </main>
     </div>

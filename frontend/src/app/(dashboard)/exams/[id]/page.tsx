@@ -9,15 +9,16 @@ import ViewPaperModal from "@/components/papers/ViewPaperModal";
 import { getToken, clearAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
+interface ExamPage { page_id: number; page_number: number; image_path: string; }
 interface ExamDetail {
   exam_id: number;
   exam_name: string;
   description: string;
-  pages: { page_id: number; page_number: number; image_path: string }[];
+  pages: ExamPage[];
 }
 
-// ── Sidebar icons ───────────────────────────────────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
 function GridIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -39,9 +40,19 @@ function SignOutIcon() {
   );
 }
 
+function ArrowLeftIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="19" y1="12" x2="5" y2="12"/>
+      <polyline points="12 19 5 12 12 5"/>
+    </svg>
+  );
+}
+
 function ChevronLeftIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="15 18 9 12 15 6"/>
     </svg>
@@ -50,40 +61,36 @@ function ChevronLeftIcon() {
 
 function ChevronRightIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="9 18 15 12 9 6"/>
     </svg>
   );
 }
 
-// ── Demo data ───────────────────────────────────────────────────────────────
+// ── Demo fallback ─────────────────────────────────────────────────────────────
 const DEMO_EXAM: ExamDetail = {
   exam_id: 1,
   exam_name: "Long Test 1",
   description:
-    "",
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi justo odio, imperdiet dictum lectus in, tempus porta ante. Cras hendrerit metus quis bibendum aliquet.",
   pages: [],
 };
 
-const DEMO_PAPERS: TestPaper[] = [];
-
-// ── Page ────────────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function ViewExamPage() {
-  const params  = useParams<{ id: string }>();
-  const router  = useRouter();
-  const examId  = Number(params.id);
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const examId = Number(params.id);
 
   const [exam, setExam]               = useState<ExamDetail | null>(null);
-  const [papers, setPapers]           = useState<TestPaper[]>(DEMO_PAPERS);
+  const [papers, setPapers]           = useState<TestPaper[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading]     = useState(true);
-
-  // Modal state
   const [showAddPaper, setShowAddPaper]   = useState(false);
   const [viewingPaper, setViewingPaper]   = useState<TestPaper | null>(null);
 
-  // ── Fetch exam ─────────────────────────────────────────────────────────
+  // ── Fetch ───────────────────────────────────────────────────────────────────
   const fetchExam = useCallback(async () => {
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
@@ -92,7 +99,6 @@ export default function ViewExamPage() {
       setExam(data);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) { clearAuth(); router.replace("/login"); return; }
-      // Fallback demo data
       setExam({ ...DEMO_EXAM, exam_id: examId });
     } finally {
       setIsLoading(false);
@@ -105,9 +111,7 @@ export default function ViewExamPage() {
     try {
       const data = await api.get<TestPaper[]>(`/exams/${examId}/papers`, token);
       setPapers(data);
-    } catch {
-      setPapers(DEMO_PAPERS);
-    }
+    } catch { /* keep empty */ }
   }, [examId]);
 
   useEffect(() => { fetchExam(); fetchPapers(); }, [fetchExam, fetchPapers]);
@@ -120,35 +124,35 @@ export default function ViewExamPage() {
         `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/papers/${paperId}`,
         { method: "DELETE", headers: { Authorization: `Bearer ${token ?? ""}` } }
       );
-      setPapers((p) => p.filter((x) => x.paper_id !== paperId));
-    } catch {
-      setPapers((p) => p.filter((x) => x.paper_id !== paperId));
-    }
+    } catch { /* optimistic */ }
+    setPapers((p) => p.filter((x) => x.paper_id !== paperId));
   };
 
-  const totalPages = Math.max(exam?.pages?.length ?? 0, 1);
-  const currentImage = exam?.pages?.[currentPage - 1]?.image_path ?? null;
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const examData  = exam ?? { ...DEMO_EXAM, exam_id: examId };
+  const totalPages = Math.max(examData.pages?.length ?? 0, 1);
+  const currentImg = examData.pages?.[currentPage - 1]?.image_path ?? null;
 
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  // HCI: Visibility of system status — loading indicator while fetching
   if (isLoading) {
     return (
       <div className="dashboard-layout">
-        <div style={{ display:"flex",justifyContent:"center",alignItems:"center",flex:1 }}>
-          <div className="spinner" style={{ width:36,height:36,borderColor:"rgba(0,0,0,0.1)",borderTopColor:"var(--color-primary)" }}/>
+        <div className="ve-loading-wrap" aria-live="polite" aria-label="Loading exam">
+          <div className="ve-loading-spinner" />
         </div>
       </div>
     );
   }
 
-  const examData = exam ?? { ...DEMO_EXAM, exam_id: examId };
-
   return (
     <>
       <div className="dashboard-layout">
-        {/* Sidebar */}
+        {/* ── Sidebar ──────────────────────────────────────────────────────── */}
         <aside className="sidebar" aria-label="Navigation">
           <div className="sidebar-logo"><span>LearnLens</span></div>
           <nav className="sidebar-nav">
-            <Link href="/exams" className="sidebar-item active">
+            <Link href="/exams" className="sidebar-item active" aria-current="page">
               <GridIcon /><span>Manage Exams</span>
             </Link>
             <Link href="/login" className="sidebar-item">
@@ -157,63 +161,66 @@ export default function ViewExamPage() {
           </nav>
         </aside>
 
-        {/* Main */}
+        {/* ── Main ─────────────────────────────────────────────────────────── */}
         <main className="dashboard-main ve-main">
 
-          {/* ── Header row ── */}
+          {/* Header: back arrow + title */}
           <div className="ve-header">
-            <button className="ve-back-btn" onClick={() => router.push("/exams")} aria-label="Go back">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12"/>
-                <polyline points="12 19 5 12 12 5"/>
-              </svg>
+            <button
+              className="ve-back-btn"
+              onClick={() => router.push("/exams")}
+              aria-label="Back to Manage Exams"
+            >
+              <ArrowLeftIcon />
             </button>
             <h1 className="ve-title">{examData.exam_name}</h1>
-            <div style={{ width: 26 }} />
+            {/* Spacer keeps title centred */}
+            <div className="ve-header-spacer" aria-hidden="true" />
           </div>
 
-          {/* ── Description ── */}
-          <p className="ve-description">{examData.description}</p>
+          {/* Description */}
+          <p className="ve-desc">{examData.description}</p>
 
-          {/* ── Exam section ── */}
-          <div className="ve-section-row">
+          {/* ── Exam section ────────────────────────────────────────────────── */}
+          <div className="ve-section-bar">
             <h2 className="ve-section-heading">Exam</h2>
             <Link href={`/exams/${examId}/edit`} className="ve-edit-btn">Edit Exam</Link>
           </div>
 
-          {/* Exam page viewer + right panel */}
+          {/* Two panels */}
           <div className="ve-panels">
-            {/* Left: exam page image */}
-            <div className="ve-panel ve-panel--image">
-              {currentImage ? (
-                <img src={currentImage} alt={`Exam page ${currentPage}`} className="ve-exam-img" />
+            {/* Left: exam scan */}
+            <div className="ve-panel ve-panel--scan">
+              {currentImg ? (
+                <img src={currentImg} alt={`Exam page ${currentPage}`} className="ve-scan-img" />
               ) : (
-                <div className="ve-placeholder-img">
-                  <span className="ve-placeholder-text">No image uploaded</span>
+                <div className="ve-scan-placeholder" aria-label="No exam image uploaded">
+                  <span className="ve-placeholder-txt">No image uploaded</span>
                 </div>
               )}
             </div>
-
-            {/* Right: select test paper placeholder */}
-            <div className="ve-panel ve-panel--select">
-              <span className="ve-select-text">Select test paper to check</span>
+            {/* Right: select paper */}
+            <div className="ve-panel ve-panel--hint">
+              <span className="ve-hint-txt">Select test paper to check</span>
             </div>
           </div>
 
-          {/* Page navigation */}
-          <div className="ve-page-nav">
+          {/* Page navigation — HCI: user control & freedom */}
+          <div className="ve-page-nav" aria-label="Exam page navigation">
             <button
-              className="ve-page-btn"
+              className="ve-nav-btn"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
               aria-label="Previous page"
             >
               <ChevronLeftIcon />
             </button>
-            <span className="ve-page-label">Page {currentPage} of {totalPages}</span>
+            {/* HCI: Give away spoilers — always shows current position */}
+            <span className="ve-page-label" aria-live="polite">
+              Page {currentPage} of {totalPages}
+            </span>
             <button
-              className="ve-page-btn"
+              className="ve-nav-btn"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage >= totalPages}
               aria-label="Next page"
@@ -222,41 +229,43 @@ export default function ViewExamPage() {
             </button>
           </div>
 
-          {/* ── Answer Key section ── */}
-          <h2 className="ve-section-heading" style={{ marginTop: 28 }}>Answer Key</h2>
+          {/* ── Answer Key section ──────────────────────────────────────────── */}
+          <h2 className="ve-section-heading ve-section-heading--mt">Answer Key</h2>
 
           <div className="ve-panels">
-            {/* Left: generate answer key */}
             <div className="ve-panel ve-panel--ak">
               <button className="ve-generate-btn">Generate Answer Key</button>
             </div>
-            {/* Right: select test paper */}
-            <div className="ve-panel ve-panel--select">
-              <span className="ve-select-text">Select test paper to check</span>
+            <div className="ve-panel ve-panel--hint">
+              <span className="ve-hint-txt">Select test paper to check</span>
             </div>
           </div>
 
-          {/* ── Test Papers section ── */}
-          <div className="ve-section-row" style={{ marginTop: 32 }}>
-            <h2 className="ve-section-heading" style={{ margin: 0 }}>Test Papers</h2>
+          {/* ── Test Papers section ─────────────────────────────────────────── */}
+          <div className="ve-section-bar ve-section-bar--mt">
+            <h2 className="ve-section-heading">Test Papers</h2>
             <button
               className="ve-add-paper-btn"
               onClick={() => setShowAddPaper(true)}
+              aria-label="Add test paper"
             >
               Add paper
             </button>
           </div>
 
-          <PapersTable
-            papers={papers}
-            onView={(p) => setViewingPaper(p)}
-            onDelete={handleDeletePaper}
-          />
+          {/* HCI: Feedback — live region updates when papers change */}
+          <div aria-live="polite" aria-atomic="false">
+            <PapersTable
+              papers={papers}
+              onView={(p) => setViewingPaper(p)}
+              onDelete={handleDeletePaper}
+            />
+          </div>
 
         </main>
       </div>
 
-      {/* Modals */}
+      {/* ── Modals ──────────────────────────────────────────────────────────── */}
       {showAddPaper && (
         <AddEditPaperModal
           examId={examId}
