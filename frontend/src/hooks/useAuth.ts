@@ -1,72 +1,56 @@
 "use client";
- 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
-import { getToken, getStoredUser, clearAuth } from "@/lib/auth";
-import { User, LoginCredentials, RegisterCredentials } from "@/types/user";
+import { setAuth, clearAuth, getToken, getUser } from "@/lib/auth";
+import { User } from "@/types/user";
  
 export function useAuth() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
  
-  useEffect(() => {
-    const storedUser = getStoredUser();
-    const token = getToken();
-    if (storedUser && token) {
-      setUser(storedUser);
-    }
-    setIsLoading(false);
+  const login = useCallback(async (email: string, password: string) => {
+    if (!email || !password) { setError("Email and password are required."); return; }
+    setIsLoading(true); setError(null);
+    try {
+      const data = await authService.login({ email, password });
+      setAuth(data.access_token, data.user);
+      router.replace("/exams");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Login failed");
+    } finally { setIsLoading(false); }
+  }, [router]);
+ 
+  const register = useCallback(async (email: string, password: string) => {
+    if (!email || !password) { setError("All fields are required."); return; }
+    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    setIsLoading(true); setError(null);
+    try {
+      const data = await authService.register({ email, password });
+      setAuth(data.access_token, data.user);
+      router.replace("/exams");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Registration failed");
+    } finally { setIsLoading(false); }
+  }, [router]);
+ 
+  const forgotPassword = useCallback(async (email: string): Promise<boolean> => {
+    if (!email) { setError("Email is required."); return false; }
+    setIsLoading(true); setError(null);
+    try {
+      await authService.forgotPassword({ email });
+      return true;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Request failed");
+      return false;
+    } finally { setIsLoading(false); }
   }, []);
- 
-  const login = useCallback(async (credentials: LoginCredentials) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await authService.login(credentials);
-      setUser(data.user);
-      router.push("/exams");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Login failed";
-      setError(msg);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [router]);
- 
-  const register = useCallback(async (credentials: RegisterCredentials) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await authService.register(credentials);
-      setUser(data.user);
-      router.push("/exams");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Registration failed";
-      setError(msg);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [router]);
  
   const logout = useCallback(() => {
     clearAuth();
-    setUser(null);
-    router.push("/login");
+    router.replace("/login");
   }, [router]);
  
-  return {
-    user,
-    isLoading,
-    error,
-    isAuthenticated: Boolean(user),
-    login,
-    register,
-    logout,
-    setError,
-  };
+  return { login, register, forgotPassword, logout, isLoading, error, setError, getToken, getUser };
 }

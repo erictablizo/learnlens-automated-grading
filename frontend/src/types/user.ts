@@ -4,21 +4,20 @@ export interface User {
   created_at: string;
 }
  
-export interface AuthTokens {
+export interface AuthToken {
   access_token: string;
   token_type: string;
   user: User;
 }
  
-export interface LoginCredentials {
+export interface LoginPayload {
   email: string;
   password: string;
 }
  
-export interface RegisterCredentials {
+export interface RegisterPayload {
   email: string;
   password: string;
-  confirmPassword: string;
 }
  
 export interface ForgotPasswordPayload {
@@ -28,11 +27,4 @@ export interface ForgotPasswordPayload {
 export interface ResetPasswordPayload {
   token: string;
   new_password: string;
-}
- 
-export interface AuthState {
-  user: User | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
 }

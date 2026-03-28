@@ -1,63 +1,59 @@
 "use client";
- 
+import { Exam } from "@/types/exam";
 import ExamCard from "./ExamCard";
- 
-export interface Exam {
-  exam_id: number;
-  exam_name: string;
-  description: string;
-  created_at: string;
-}
- 
 import { useRouter } from "next/navigation";
+ 
+const IconPlus = () => (
+  <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+  </svg>
+);
  
 interface ExamGridProps {
   exams: Exam[];
-  onEdit?: (id: number) => void;
-  onDelete?: (id: number) => void;
-  onAddNew?: () => void;
+  onEdit: (exam: Exam) => void;
+  onDelete: (id: number) => void;
+  onAdd: () => void;
 }
  
-function PlusIcon() {
-  return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
- 
-export default function ExamGrid({
-  exams,
-  onEdit,
-  onDelete,
-  onAddNew,
-}: ExamGridProps) {
+export default function ExamGrid({ exams, onEdit, onDelete, onAdd }: ExamGridProps) {
   const router = useRouter();
+ 
   return (
     <div className="exam-grid">
-      {exams.map((exam) => (
-        <ExamCard
+      {exams.map(exam => (
+        <div
           key={exam.exam_id}
-          examId={exam.exam_id}
-          name={exam.exam_name}
-          description={exam.description}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
+          onClick={e => {
+            // Only navigate on card body, not action buttons
+            const target = e.target as HTMLElement;
+            if (!target.closest("button")) {
+              router.push(`/exams/${exam.exam_id}`);
+            }
+          }}
+        >
+          <ExamCard exam={exam} onEdit={onEdit} onDelete={onDelete} />
+        </div>
       ))}
  
-      {/* HCI: Visible affordance for adding a new exam — direct manipulation */}
-      <button
-        className="add-exam-btn"
-        onClick={() => { onAddNew?.(); router.push("/exams/create"); }}
-        aria-label="Add new exam"
-        title="Create a new exam"
+      {/* Add new exam — circle plus button */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "180px",
+        }}
       >
-        <div className="add-exam-icon">
-          <PlusIcon />
-        </div>
-      </button>
+        <button
+          className="add-exam-btn"
+          onClick={onAdd}
+          aria-label="Create new exam"
+          title="Create new exam"
+        >
+          <IconPlus />
+        </button>
+      </div>
     </div>
   );
 }

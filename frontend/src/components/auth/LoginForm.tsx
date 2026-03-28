@@ -1,111 +1,80 @@
 "use client";
- 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { authService } from "@/services/authService";
-import { ApiError } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
  
 export default function LoginForm() {
-  const router = useRouter();
+  const { login, isLoading, error, setError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
- 
-    // HCI: Basic client-side validation — error prevention before server call
-    if (!email.trim()) {
-      setError("Please enter your email address.");
-      return;
-    }
-    if (!password) {
-      setError("Please enter your password.");
-      return;
-    }
- 
-    setIsLoading(true);
-    try {
-      await authService.login({ email, password });
-      // HCI: Immediate feedback — navigate to dashboard on success
-      router.push("/exams");
-    } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.status === 401
-            ? "Incorrect email or password. Please try again."
-            : err.message
-          : "Something went wrong. Please try again.";
-      setError(msg);
-    } finally {
-      setIsLoading(false);
-    }
+    // Client-side error prevention before API call (HCI: error prevention)
+    if (!email.trim()) { setError("Please enter your email."); return; }
+    if (!password) { setError("Please enter your password."); return; }
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
+    await login(email, password);
   };
  
   return (
-    <div className="auth-card">
-      <h1 className="auth-title">Login to your<br />account</h1>
+    <div className="auth-bg">
+      <div className="auth-card">
+        <h1 className="auth-title">Login to your<br />account</h1>
  
-      {/* HCI: Informative feedback — error alert is immediately visible */}
-      {error && (
-        <div className="alert alert-error" role="alert" aria-live="polite">
-          {error}
-        </div>
-      )}
+        {/* aria-live for screen-reader feedback (HCI: visibility of system status) */}
+        {error && (
+          <div role="alert" aria-live="assertive" className="alert alert-error">
+            {error}
+          </div>
+        )}
  
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="form-group">
-          <input
-            className="form-input"
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            aria-label="Email address"
-            disabled={isLoading}
-          />
-        </div>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="field">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              autoComplete="email"
+              aria-label="Email address"
+              className={error && !email ? "error-input" : ""}
+              disabled={isLoading}
+            />
+          </div>
  
-        <div className="form-group">
-          <input
-            className="form-input"
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            aria-label="Password"
-            disabled={isLoading}
-          />
-        </div>
+          <div className="field">
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="current-password"
+              aria-label="Password"
+              disabled={isLoading}
+            />
+          </div>
  
-        {/* HCI: Recognition — forgot password is visible without searching */}
-        <div className="form-actions-row">
-          <Link href="/login/forgot_password" className="forgot-link">
-            Forgot password
+          <div className="forgot-row">
+            <Link href="/login/forgot_password" className="link-orange" style={{ fontSize: "0.82rem" }}>
+              Forgot password
+            </Link>
+          </div>
+ 
+          <button type="submit" className="btn-primary" disabled={isLoading} aria-busy={isLoading}>
+            {isLoading ? <><span className="spinner" aria-hidden="true" /> Signing in…</> : "Sign in"}
+          </button>
+        </form>
+ 
+        <p className="auth-footer">
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="link-orange">
+            Create an account
           </Link>
-        </div>
- 
-        {/* HCI: Clear CTA — button label matches the action */}
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={isLoading}
-          aria-busy={isLoading}
-        >
-          {isLoading ? <span className="spinner" /> : "Sign in"}
-        </button>
-      </form>
- 
-      {/* HCI: Self-descriptiveness — users know they can create an account */}
-      <p className="auth-footer">
-        Don&apos;t have an account?{" "}
-        <Link href="/register">Create an account</Link>
-      </p>
+        </p>
+      </div>
     </div>
   );
 }

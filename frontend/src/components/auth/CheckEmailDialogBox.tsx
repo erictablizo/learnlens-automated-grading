@@ -1,82 +1,69 @@
 "use client";
- 
-import Link from "next/link";
-import { authService } from "@/services/authService";
 import { useState } from "react";
- 
-// SVG envelope icon
-function EnvelopeIcon() {
-  return (
-    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#f5a623" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <polyline points="2,4 12,13 22,4" />
-    </svg>
-  );
-}
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { authService } from "@/services/authService";
  
 export default function CheckEmailDialogBox() {
+  const params = useSearchParams();
+  const email = params.get("email") ?? "";
   const [resent, setResent] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [loading, setLoading] = useState(false);
  
-  // In a real scenario we'd have the email from query params or context
   const handleResend = async () => {
-    setResending(true);
+    if (!email || loading) return;
+    setLoading(true);
     try {
-      // No-op in demo — in production, use stored email
-      await new Promise((r) => setTimeout(r, 800));
+      await authService.forgotPassword({ email });
       setResent(true);
     } finally {
-      setResending(false);
+      setLoading(false);
     }
   };
  
+  const handleOpenInbox = () => {
+    // Best-effort: open webmail if we recognise the domain
+    const domain = email.split("@")[1] ?? "";
+    const webmails: Record<string, string> = {
+      "gmail.com": "https://mail.google.com",
+      "yahoo.com": "https://mail.yahoo.com",
+      "outlook.com": "https://outlook.live.com",
+      "hotmail.com": "https://outlook.live.com",
+    };
+    const url = webmails[domain] ?? `https://${domain}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+ 
   return (
-    <div className="check-email-card">
-      {/* HCI: Visual recognition — icon immediately communicates the context */}
-      <div className="check-email-icon">
-        <EnvelopeIcon />
-      </div>
- 
-      <h1 className="auth-title">Check your email!</h1>
-      <p className="auth-subtitle" style={{ marginBottom: "32px" }}>
-        Thanks! An email was sent that will ask you to click on a link to verify
-        that you own this account.
-      </p>
- 
-      {/* HCI: Provide a primary action that is instantly accessible */}
-      <a
-        href="https://mail.google.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="btn btn-primary"
-        style={{ display: "flex", textDecoration: "none" }}
-      >
-        Open email inbox
-      </a>
- 
-      {/* HCI: Resend as a secondary action — user control and freedom */}
-      {resent ? (
-        <p className="auth-footer" style={{ marginTop: "18px", color: "#276749" }}>
-          ✓ Email resent successfully
+    <div className="auth-bg">
+      <div className="auth-card" style={{ textAlign: "center" }}>
+        <h1 className="auth-title">Check your email!</h1>
+        <p className="auth-subtitle">
+          Thanks! An email was sent that will ask you to click on a link to verify that you own this account.
         </p>
-      ) : (
-        <p className="auth-footer" style={{ marginTop: "18px" }}>
+ 
+        {resent && (
+          <div role="status" aria-live="polite" className="alert alert-success" style={{ marginBottom: "1rem" }}>
+            Email resent successfully!
+          </div>
+        )}
+ 
+        <button className="btn-primary" onClick={handleOpenInbox} style={{ marginBottom: "0.75rem" }}>
+          Open email inbox
+        </button>
+ 
+        <p className="auth-footer">
           <button
+            className="link-orange"
+            style={{ background: "none", border: "none", cursor: "pointer" }}
             onClick={handleResend}
-            disabled={resending}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "#e53e3e",
-              fontWeight: 700,
-              fontSize: "0.84rem",
-            }}
+            disabled={loading}
+            aria-busy={loading}
           >
-            {resending ? "Sending…" : "Resend email"}
+            {loading ? "Resending…" : "Resend email"}
           </button>
         </p>
-      )}
+      </div>
     </div>
   );
 }

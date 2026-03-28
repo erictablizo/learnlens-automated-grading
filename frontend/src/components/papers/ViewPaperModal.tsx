@@ -1,113 +1,112 @@
 "use client";
-
-import { useEffect } from "react";
-import { TestPaper } from "./PapersTable";
-
+import { Paper } from "@/types/paper";
+import Modal from "@/components/ui/Modal";
+ 
 interface ViewPaperModalProps {
-  paper: TestPaper;
+  paper: Paper;
   onClose: () => void;
 }
-
-function XIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" y1="6" x2="6" y2="18"/>
-      <line x1="6" y1="6" x2="18" y2="18"/>
-    </svg>
-  );
-}
-
-// Demo answer breakdown (replaced by real API data when backend is wired)
-const DEMO_SCORES = [
-  { question: 1,  student: "A", correct: "A", is_correct: true  },
-  { question: 2,  student: "C", correct: "B", is_correct: false },
-  { question: 3,  student: "D", correct: "D", is_correct: true  },
-  { question: 4,  student: "B", correct: "A", is_correct: false },
-  { question: 5,  student: "C", correct: "C", is_correct: true  },
-  { question: 6,  student: "A", correct: "A", is_correct: true  },
-  { question: 7,  student: "D", correct: "D", is_correct: true  },
-  { question: 8,  student: "B", correct: "C", is_correct: false },
-  { question: 9,  student: "A", correct: "A", is_correct: true  },
-  { question: 10, student: "C", correct: "C", is_correct: true  },
-];
-
+ 
 export default function ViewPaperModal({ paper, onClose }: ViewPaperModalProps) {
-  // HCI: User control — close on Escape
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
-
-  const correct = DEMO_SCORES.filter((s) => s.is_correct).length;
-  const total   = DEMO_SCORES.length;
-  const pct     = Math.round((correct / total) * 100);
-  const passed  = pct >= 75;
-
+  const pages = paper.paper_pages ?? [];
+  const scores = paper.paper_scores ?? [];
+  const correct = scores.filter(s => s.is_correct).length;
+ 
   return (
-    <div
-      className="modal-backdrop"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      role="presentation"
-    >
-      <div className="modal-card modal-card--wide" role="dialog" aria-modal="true" aria-labelledby="vp-title">
-
-        {/* Header */}
-        <div className="modal-header">
-          <div>
-            <h2 className="modal-title" id="vp-title">{paper.name}</h2>
-            <p className="modal-subtitle">Answer breakdown</p>
-          </div>
-          <button className="modal-close-btn" onClick={onClose} aria-label="Close dialog">
-            <XIcon />
-          </button>
+    <Modal title={`Paper — ${paper.student_name}`} onClose={onClose}>
+      {/* Summary row */}
+      <div style={{ display: "flex", gap: "1.5rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+        <div>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Student</span>
+          <p style={{ fontWeight: 600, color: "var(--navy)" }}>{paper.student_name}</p>
         </div>
-
-        {/* Score summary — HCI: Visibility of system status */}
-        <div className="vp-summary" aria-label={`Score: ${pct}%, ${correct} of ${total} correct`}>
-          <div className="vp-score-block">
-            <span className="vp-score-pct">{pct}%</span>
-            <span className="vp-score-sub">{correct} / {total} correct</span>
-          </div>
-          <span className={`vp-chip ${passed ? "vp-chip--pass" : "vp-chip--fail"}`}>
-            {passed ? "Passed" : "Failed"}
-          </span>
+        <div>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Score</span>
+          <p style={{ fontWeight: 600, color: "var(--navy)" }}>
+            {paper.total_score !== null && paper.total_score !== undefined
+              ? `${paper.total_score} pts`
+              : scores.length > 0 ? `${correct} / ${scores.length}` : "Not graded"}
+          </p>
         </div>
-
-        {/* Answer table */}
-        <div className="pt-wrap" style={{ maxHeight: 320, overflowY: "auto" }}>
-          <table className="pt-table" aria-label="Answer breakdown table">
-            <thead>
-              <tr>
-                <th className="pt-th">Question</th>
-                <th className="pt-th pt-th--center">Student</th>
-                <th className="pt-th pt-th--center">Correct</th>
-                <th className="pt-th pt-th--center">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {DEMO_SCORES.map((row) => (
-                <tr key={row.question} className="pt-tr">
-                  <td className="pt-td" style={{ fontWeight: 700 }}>Q{row.question}</td>
-                  <td className="pt-td pt-td--center">{row.student}</td>
-                  <td className="pt-td pt-td--center">{row.correct}</td>
-                  <td className="pt-td pt-td--center">
-                    {row.is_correct
-                      ? <span className="vp-correct">✓ Correct</span>
-                      : <span className="vp-wrong">✗ Wrong</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer */}
-        <div className="modal-footer">
-          <button className="ce-btn" onClick={onClose}>Close</button>
+        <div>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</span>
+          <p style={{ fontWeight: 600, color: paper.checked ? "var(--success)" : "var(--text-muted)" }}>
+            {paper.checked ? "✓ Checked" : "Pending"}
+          </p>
         </div>
       </div>
-    </div>
+ 
+      {/* Pages */}
+      {pages.length > 0 ? (
+        <div style={{ marginBottom: "1.25rem" }}>
+          <p className="section-title">Pages</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {pages.map(pg => (
+              <div key={pg.paper_page_id} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <span style={{ fontSize: "0.82rem", color: "var(--text-muted)", minWidth: "55px" }}>Page {pg.page_number}</span>
+                <div
+                  style={{
+                    flex: 1,
+                    background: "var(--bg)",
+                    borderRadius: "var(--radius-sm)",
+                    height: "120px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    overflow: "hidden",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  {/* Image would be served from backend /uploads/ path */}
+                  <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                    📄 {pg.image_path.split("/").pop()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginBottom: "1rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+          No pages uploaded for this paper.
+        </div>
+      )}
+ 
+      {/* Score breakdown */}
+      {scores.length > 0 && (
+        <div>
+          <p className="section-title">Score Breakdown</p>
+          <div className="table-wrapper" style={{ maxHeight: "200px", overflowY: "auto" }}>
+            <table aria-label="Score breakdown">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Student</th>
+                  <th>Correct</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scores.map(s => (
+                  <tr key={s.score_id}>
+                    <td>{s.question_number}</td>
+                    <td style={{ fontWeight: 500 }}>{s.student_answer}</td>
+                    <td style={{ color: "var(--text-muted)" }}>{s.correct_answer}</td>
+                    <td>
+                      <span style={{
+                        fontWeight: 600,
+                        color: s.is_correct ? "var(--success)" : "var(--error)",
+                      }}>
+                        {s.is_correct ? "✓" : "✗"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }

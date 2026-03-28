@@ -1,146 +1,52 @@
 "use client";
- 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import ExamGrid, { Exam } from "@/components/exams/ExamGrid";
-import { getToken, getStoredUser, clearAuth } from "@/lib/auth";
-import { api, ApiError } from "@/lib/api";
+import Navbar from "@/components/ui/Navbar";
+import ExamGrid from "@/components/exams/ExamGrid";
+import { useExams } from "@/hooks/useExams";
+import { isAuthenticated } from "@/lib/auth";
+import { Exam } from "@/types/exam";
  
-// ── Sidebar Icons ──────────────────────────────────────────────────────────
-function GridIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-      <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-    </svg>
-  );
-}
- 
-function SignOutIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  );
-}
- 
-// ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ onSignOut }: { onSignOut: () => void }) {
-  return (
-    <aside className="sidebar" aria-label="Navigation">
-      <div className="sidebar-logo">
-        <span>LearnLens</span>
-      </div>
-      <nav className="sidebar-nav">
-        {/* HCI: Consistency — active state is always clear */}
-        <Link href="/exams" className="sidebar-item active" aria-current="page">
-          <GridIcon />
-          <span>Manage Exams</span>
-        </Link>
-        <button className="sidebar-item" onClick={onSignOut} aria-label="Sign out">
-          <SignOutIcon />
-          <span>Sign out</span>
-        </button>
-      </nav>
-    </aside>
-  );
-}
- 
-// ── Main Page ──────────────────────────────────────────────────────────────
-export default function ExamsPage() {
+export default function ManageExamsPage() {
   const router = useRouter();
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
- 
-  // HCI: Auth guard — redirect immediately if no token
-  useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      router.replace("/login");
-    }
-  }, [router]);
- 
-  const fetchExams = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
-    try {
-      const data = await api.get<Exam[]>("/exams", token);
-      setExams(data);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        clearAuth();
-        router.replace("/login");
-        return;
-      }
-      // Graceful fallback with demo data if backend not connected yet
-      setExams([
-        { exam_id: 1, exam_name: "Long Exam 1",  description: "", created_at: "" },
-        { exam_id: 2, exam_name: "Long Exam 2",  description: "", created_at: "" },
-        { exam_id: 3, exam_name: "Midterm",       description: "", created_at: "" },
-        { exam_id: 4, exam_name: "Final Exam",    description: "", created_at: "" },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [router]);
+  const { exams, isLoading, error, fetchExams, deleteExam } = useExams();
+  const [mounted, setMounted] = useState(false);
  
   useEffect(() => {
+    setMounted(true);
+    if (!isAuthenticated()) { router.replace("/login"); return; }
     fetchExams();
-  }, [fetchExams]);
+  }, [fetchExams, router]);
  
-  const handleSignOut = () => {
-    clearAuth();
-    router.push("/login");
-  };
+  const handleAdd = () => router.push("/exams/create");
  
-  const handleEdit = (id: number) => {
-    // Navigate to edit page (future feature)
-    console.log("Edit exam", id);
-  };
+  const handleEdit = (exam: Exam) => router.push(`/exams/${exam.exam_id}`);
  
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this exam?")) return;
-    const token = getToken();
-    try {
-      await api.post(`/exams/${id}/delete`, {}, token ?? undefined);
-      setExams((prev) => prev.filter((e) => e.exam_id !== id));
-    } catch {
-      // Optimistically remove for demo
-      setExams((prev) => prev.filter((e) => e.exam_id !== id));
-    }
+    if (!confirm("Delete this exam? This cannot be undone.")) return;
+    await deleteExam(id);
   };
  
-  const handleAddNew = () => {
-    // Navigate to create exam page (future feature)
-    console.log("Add new exam");
-  };
+  if (!mounted) return null;
  
   return (
     <div className="dashboard-layout">
-      <Sidebar onSignOut={handleSignOut} />
+      <Navbar />
+      <main className="main-content" aria-label="Manage Exams">
+        <h1 className="page-title">Exams</h1>
  
-      <main className="dashboard-main">
-        <h1 className="dashboard-title">Exams</h1>
+        {/* aria-live region for loading / errors (HCI: visibility of system status) */}
+        <div aria-live="polite" aria-atomic="true" style={{ marginBottom: isLoading || error ? "1rem" : 0 }}>
+          {isLoading && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+              <span className="spinner spinner-dark" aria-hidden="true" />
+              Loading exams…
+            </div>
+          )}
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+        </div>
  
-        {/* HCI: Visibility of system status — loading/error feedback */}
-        {isLoading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}>
-            <div className="spinner" style={{ borderColor: "rgba(0,0,0,0.15)", borderTopColor: "var(--color-primary)", width: 36, height: 36 }} />
-          </div>
-        ) : error ? (
-          <div className="alert alert-error">{error}</div>
-        ) : (
-          <ExamGrid
-            exams={exams}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onAddNew={handleAddNew}
-          />
-        )}
+        <ExamGrid exams={exams} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} />
       </main>
     </div>
   );
