@@ -206,7 +206,7 @@ body {
   text-align: left;
 }
 .sidebar-item:hover, .sidebar-item.active { background: var(--orange-light); color: var(--orange); }
-.sidebar-item.signout { color: var(--text-muted); margin-top: auto; }
+.sidebar-item.signout { color: var(--text-muted); margin-top: 0;}
 .sidebar-item.signout:hover { color: var(--error); background: var(--error-bg); }
  
 .main-content {
