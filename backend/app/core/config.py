@@ -8,8 +8,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     UPLOAD_DIR: str = "uploads"
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
- 
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://192.168.254.127:3000"]
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
  
  
