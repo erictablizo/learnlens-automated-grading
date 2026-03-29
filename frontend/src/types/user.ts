@@ -10,26 +10,21 @@ export interface AuthToken {
   user: User;
 }
  
-export interface LoginCredentials {
+export interface LoginPayload {
   email: string;
   password: string;
 }
  
-export interface RegisterCredentials {
+export interface RegisterPayload {
   email: string;
   password: string;
-  confirm_password: string;
 }
  
-export interface ForgotPasswordRequest {
+export interface ForgotPasswordPayload {
   email: string;
 }
  
-export interface Exam {
-  exam_id: number;
-  created_by: number;
-  exam_name: string;
-  description: string;
-  created_at: string;
-  updated_at: string | null;
+export interface ResetPasswordPayload {
+  token: string;
+  new_password: string;
 }
