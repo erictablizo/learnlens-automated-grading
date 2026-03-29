@@ -1,9 +1,20 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.api.routes import api_router
+from fastapi.staticfiles import StaticFiles
+import os
  
-app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
+from app.core.config import settings
+ 
+# ── Import models FIRST so SQLAlchemy's mapper registry is populated ──────────
+from app.models import models as _models  # noqa: F401
+ 
+from app.api.routes import router
+ 
+app = FastAPI(
+    title="LearnLens API",
+    version="1.0.0",
+    description="Automated exam grading backend",
+)
  
 app.add_middleware(
     CORSMiddleware,
@@ -13,9 +24,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
  
-app.include_router(api_router)
+# Serve uploaded images as static files
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+ 
+app.include_router(router, prefix="/api")
  
  
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health():
-    return {"status": "ok", "app": settings.APP_NAME}
+    return {"status": "ok", "service": "LearnLens API"}
