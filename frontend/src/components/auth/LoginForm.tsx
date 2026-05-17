@@ -1,21 +1,30 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
  
-export default function LoginForm() {
+function LoginFormInner() {
   const { login, isLoading, error, setError } = useAuth();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
+  const [justRegistered, setJustRegistered] = useState(false);
+ 
+  // Show success banner when redirected back from Register
+  useEffect(() => {
+    if (searchParams.get("registered") === "1") {
+      setJustRegistered(true);
+    }
+  }, [searchParams]);
  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    // Client-side error prevention before API call (HCI: error prevention)
     if (!email.trim()) { setError("Please enter your email."); return; }
-    if (!password) { setError("Please enter your password."); return; }
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
+    if (!password) { setError("Please enter your password."); return; }
     await login(email, password);
   };
  
@@ -24,7 +33,19 @@ export default function LoginForm() {
       <div className="auth-card">
         <h1 className="auth-title">Login to your<br />account</h1>
  
-        {/* aria-live for screen-reader feedback (HCI: visibility of system status) */}
+        {/* Registration success banner (HCI: feedback / give away spoilers) */}
+        {justRegistered && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="alert alert-success"
+            style={{ marginBottom: "1rem" }}
+          >
+            Account created! Please sign in to continue.
+          </div>
+        )}
+ 
+        {/* Error alert */}
         {error && (
           <div role="alert" aria-live="assertive" className="alert alert-error">
             {error}
@@ -40,7 +61,6 @@ export default function LoginForm() {
               onChange={e => setEmail(e.target.value)}
               autoComplete="email"
               aria-label="Email address"
-              className={error && !email ? "error-input" : ""}
               disabled={isLoading}
             />
           </div>
@@ -64,17 +84,26 @@ export default function LoginForm() {
           </div>
  
           <button type="submit" className="btn-primary" disabled={isLoading} aria-busy={isLoading}>
-            {isLoading ? <><span className="spinner" aria-hidden="true" /> Signing in…</> : "Sign in"}
+            {isLoading
+              ? <><span className="spinner" aria-hidden="true" /> Signing in…</>
+              : "Sign in"}
           </button>
         </form>
  
         <p className="auth-footer">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="link-orange">
-            Create an account
-          </Link>
+          <Link href="/register" className="link-orange">Create an account</Link>
         </p>
       </div>
     </div>
+  );
+}
+ 
+// Suspense boundary required by Next.js for useSearchParams
+export default function LoginForm() {
+  return (
+    <Suspense fallback={<div className="auth-bg" />}>
+      <LoginFormInner />
+    </Suspense>
   );
 }

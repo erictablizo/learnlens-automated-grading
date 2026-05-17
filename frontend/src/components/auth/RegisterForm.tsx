@@ -5,14 +5,14 @@ import { useAuth } from "@/hooks/useAuth";
  
 export default function RegisterForm() {
   const { register, isLoading, error, setError } = useAuth();
-  const [email, setEmail] = useState("");
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [confirm,  setConfirm]  = useState("");
  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    // Client-side validation before API call (HCI: error prevention)
+    // Client-side validation before any API call (HCI: error prevention)
     if (!email.trim()) { setError("Please enter your email."); return; }
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
@@ -20,6 +20,7 @@ export default function RegisterForm() {
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (password !== confirm) { setError("Passwords do not match."); return; }
     await register(email, password);
+    // useAuth.register() redirects to /login?registered=1 on success
   };
  
   return (
@@ -71,7 +72,9 @@ export default function RegisterForm() {
           </div>
  
           <button type="submit" className="btn-primary" disabled={isLoading} aria-busy={isLoading}>
-            {isLoading ? <><span className="spinner" aria-hidden="true" /> Creating account…</> : "Sign up"}
+            {isLoading
+              ? <><span className="spinner" aria-hidden="true" /> Creating account…</>
+              : "Sign up"}
           </button>
         </form>
  
