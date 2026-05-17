@@ -22,9 +22,10 @@ class UserResponse(BaseModel):
  
  
 class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserResponse
+    access_token:     str
+    token_type:       str = "bearer"
+    user:             UserResponse
+    profile_complete: bool = False   # ← tells frontend whether to redirect to /setup
  
  
 class ForgotPasswordRequest(BaseModel):

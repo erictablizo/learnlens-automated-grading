@@ -4,30 +4,21 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import ExamGrid from "@/components/exams/ExamGrid";
 import { useExams } from "@/hooks/useExams";
-import { isAuthenticated, getToken } from "@/lib/auth";
-import { profileService } from "@/services/profileService";
+import { isAuthenticated } from "@/lib/auth";
 import { Exam } from "@/types/exam";
  
 export default function ManageExamsPage() {
   const router = useRouter();
-  const { exams, isLoading, error, fetchExams, deleteExam } = useExams();
+  const { exams, isLoading, error, usingDemo, fetchExams, deleteExam } = useExams();
   const [mounted, setMounted] = useState(false);
  
   useEffect(() => {
     setMounted(true);
-    if (!isAuthenticated()) { router.replace("/login"); return; }
- 
-    // Guard: redirect to profile setup if no profile yet
-    const token = getToken();
-    if (token) {
-      profileService.check(token).then(({ has_profile }) => {
-        if (!has_profile) { router.replace("/profile-setup"); return; }
-        fetchExams();
-      }).catch(() => {
-        // Backend offline — still load exams with demo data
-        fetchExams();
-      });
+    if (!isAuthenticated()) {
+      router.replace("/login");
+      return;
     }
+    fetchExams();
   }, [fetchExams, router]);
  
   const handleAdd    = () => router.push("/exams/create");
@@ -45,7 +36,7 @@ export default function ManageExamsPage() {
       <main className="main-content" aria-label="Manage Exams">
         <h1 className="page-title">Exams</h1>
  
-        {!isLoading && exams.length === 0 && (
+        {usingDemo && !isLoading && (
           <div
             role="status"
             aria-live="polite"
@@ -78,11 +69,18 @@ export default function ManageExamsPage() {
             </div>
           )}
           {error && (
-            <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>{error}</div>
+            <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
+              {error}
+            </div>
           )}
         </div>
  
-        <ExamGrid exams={exams} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} />
+        <ExamGrid
+          exams={exams}
+          onAdd={handleAdd}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
       </main>
     </div>
   );

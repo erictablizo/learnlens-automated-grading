@@ -5,9 +5,10 @@ export interface User {
 }
  
 export interface AuthToken {
-  access_token: string;
-  token_type: string;
-  user: User;
+  access_token:     string;
+  token_type:       string;
+  user:             User;
+  profile_complete: boolean;   // ← added
 }
  
 export interface LoginPayload {

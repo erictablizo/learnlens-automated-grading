@@ -2,24 +2,13 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
-import { profileService } from "@/services/profileService";
 import { setAuth, clearAuth, getToken, getUser } from "@/lib/auth";
+import { User } from "@/types/user";
  
 export function useAuth() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
- 
-  /** After successful auth, check profile and route accordingly */
-  const routeAfterAuth = useCallback(async (token: string) => {
-    try {
-      const { has_profile } = await profileService.check(token);
-      router.replace(has_profile ? "/exams" : "/profile-setup");
-    } catch {
-      // If check fails (e.g. backend offline), go straight to exams
-      router.replace("/exams");
-    }
-  }, [router]);
  
   const login = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("Email and password are required."); return; }
@@ -27,11 +16,12 @@ export function useAuth() {
     try {
       const data = await authService.login({ email, password });
       setAuth(data.access_token, data.user);
-      await routeAfterAuth(data.access_token);
+      // Redirect: first-timers go to /setup, returning users to /exams
+      router.replace(data.profile_complete ? "/exams" : "/setup");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Login failed");
     } finally { setIsLoading(false); }
-  }, [routeAfterAuth]);
+  }, [router]);
  
   const register = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("All fields are required."); return; }
@@ -40,8 +30,8 @@ export function useAuth() {
     try {
       const data = await authService.register({ email, password });
       setAuth(data.access_token, data.user);
-      // New user — always go to profile setup
-      router.replace("/profile-setup");
+      // New registrations always go to /setup
+      router.replace("/setup");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Registration failed");
     } finally { setIsLoading(false); }

@@ -1,12 +1,16 @@
 import { api } from "@/lib/api";
-import { Profile, ProfileCreatePayload, CollegesData } from "@/types/profile";
+import { UserProfile } from "@/types/profile";
  
 export const profileService = {
-  getColleges: () => api.get<CollegesData>("/profile/colleges"),
-  check: (token: string) => api.get<{ has_profile: boolean }>("/profile/check", token),
-  get: (token: string) => api.get<Profile>("/profile/me", token),
-  create: (payload: ProfileCreatePayload, token: string) =>
-    api.post<Profile>("/profile/me", payload, token),
-  update: (payload: Partial<ProfileCreatePayload>, token: string) =>
-    api.put<Profile>("/profile/me", payload, token),
+  get: (token: string) =>
+    api.get<UserProfile>("/profile", token),
+ 
+  save: (payload: Partial<UserProfile>, token: string) =>
+    api.put<UserProfile>("/profile", payload, token),
+ 
+  uploadAvatar: (file: File, token: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<UserProfile>("/profile/avatar", form, token);
+  },
 };
