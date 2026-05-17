@@ -5,6 +5,7 @@ import Navbar from "@/components/ui/Navbar";
 import ExamGrid from "@/components/exams/ExamGrid";
 import { useExams } from "@/hooks/useExams";
 import { isAuthenticated } from "@/lib/auth";
+import { hasActiveCollege, getActiveCollege, COLLEGE_FULL_NAMES } from "@/lib/college";
 import { Exam } from "@/types/exam";
  
 export default function ManageExamsPage() {
@@ -14,10 +15,9 @@ export default function ManageExamsPage() {
  
   useEffect(() => {
     setMounted(true);
-    if (!isAuthenticated()) {
-      router.replace("/login");
-      return;
-    }
+    if (!isAuthenticated()) { router.replace("/login"); return; }
+    // Guard: must pick a college this session
+    if (!hasActiveCollege()) { router.replace("/college"); return; }
     fetchExams();
   }, [fetchExams, router]);
  
@@ -30,10 +30,26 @@ export default function ManageExamsPage() {
  
   if (!mounted) return null;
  
+  const college     = getActiveCollege();
+  const collegeName = college ? COLLEGE_FULL_NAMES[college] : null;
+ 
   return (
     <div className="dashboard-layout">
       <Navbar />
       <main className="main-content" aria-label="Manage Exams">
+ 
+        {/* College context banner */}
+        {collegeName && (
+          <div style={{
+            fontSize: "0.78rem",
+            color: "var(--text-muted)",
+            marginBottom: "0.25rem",
+            letterSpacing: "0.03em",
+          }}>
+            {collegeName}
+          </div>
+        )}
+ 
         <h1 className="page-title">Exams</h1>
  
         {usingDemo && !isLoading && (
@@ -54,10 +70,7 @@ export default function ManageExamsPage() {
             }}
           >
             <span>💡</span>
-            <span>
-              Showing demo exams — your database is empty or the backend is offline.
-              Click <strong>+</strong> to create your first real exam.
-            </span>
+            <span>Showing demo exams — click <strong>+</strong> to create your first real exam.</span>
           </div>
         )}
  
@@ -68,19 +81,10 @@ export default function ManageExamsPage() {
               Loading exams…
             </div>
           )}
-          {error && (
-            <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>{error}</div>}
         </div>
  
-        <ExamGrid
-          exams={exams}
-          onAdd={handleAdd}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-        />
+        <ExamGrid exams={exams} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} />
       </main>
     </div>
   );

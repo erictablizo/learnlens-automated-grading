@@ -3,12 +3,12 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
 import { setAuth, clearAuth, getToken, getUser } from "@/lib/auth";
-import { User } from "@/types/user";
+import { clearActiveCollege } from "@/lib/college";
  
 export function useAuth() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error,     setError]     = useState<string | null>(null);
  
   const login = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("Email and password are required."); return; }
@@ -16,8 +16,9 @@ export function useAuth() {
     try {
       const data = await authService.login({ email, password });
       setAuth(data.access_token, data.user);
-      // Redirect: first-timers go to /setup, returning users to /exams
-      router.replace(data.profile_complete ? "/exams" : "/setup");
+      // New user → profile setup first
+      // Returning user → college picker (Netflix-style), then exams
+      router.replace(data.profile_complete ? "/college" : "/setup");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Login failed");
     } finally { setIsLoading(false); }
@@ -25,13 +26,12 @@ export function useAuth() {
  
   const register = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("All fields are required."); return; }
-    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (password.length < 8)  { setError("Password must be at least 8 characters."); return; }
     setIsLoading(true); setError(null);
     try {
       const data = await authService.register({ email, password });
       setAuth(data.access_token, data.user);
-      // New registrations always go to /setup
-      router.replace("/setup");
+      router.replace("/setup");   // always profile setup first for new users
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Registration failed");
     } finally { setIsLoading(false); }
@@ -51,6 +51,7 @@ export function useAuth() {
  
   const logout = useCallback(() => {
     clearAuth();
+    clearActiveCollege();   // clear session college on logout
     router.replace("/login");
   }, [router]);
  
