@@ -29,8 +29,8 @@ export const COLLEGE_COLORS: Record<College, { bg: string; color: string; initia
 };
  
 export const COLLEGE_FULL_NAMES: Record<College, string> = {
-  CVMAS: "College of Veterinary Medicine and Agricultural Sciences",
-  CBMA:  "College of Business, Management, and Accountancy",
-  CoEd:  "College of Education",
-  CAST:  "College of Arts, Sciences and Technology",
+  CVMAS: "College of Veterinary Medicine and Agricultural Sciences (CVMAS)",
+  CBMA:  "College of Business, Management, and Accountancy (CBMA)",
+  CoEd:  "College of Education (CoEd)",
+  CAST:  "College of Arts, Sciences and Technology (CAST)",
 };

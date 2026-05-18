@@ -9,14 +9,13 @@ import { hasActiveCollege, getActiveCollege, COLLEGE_FULL_NAMES } from "@/lib/co
 import { Exam } from "@/types/exam";
  
 export default function ManageExamsPage() {
-  const router = useRouter();
+  const router  = useRouter();
   const { exams, isLoading, error, usingDemo, fetchExams, deleteExam } = useExams();
   const [mounted, setMounted] = useState(false);
  
   useEffect(() => {
     setMounted(true);
-    if (!isAuthenticated()) { router.replace("/login"); return; }
-    // Guard: must pick a college this session
+    if (!isAuthenticated())  { router.replace("/login");   return; }
     if (!hasActiveCollege()) { router.replace("/college"); return; }
     fetchExams();
   }, [fetchExams, router]);
@@ -38,37 +37,21 @@ export default function ManageExamsPage() {
       <Navbar />
       <main className="main-content" aria-label="Manage Exams">
  
-        {/* College context banner */}
         {collegeName && (
-          <div style={{
-            fontSize: "0.78rem",
-            color: "var(--text-muted)",
-            marginBottom: "0.25rem",
-            letterSpacing: "0.03em",
-          }}>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.15rem", letterSpacing: "0.02em" }}>
             {collegeName}
-          </div>
+          </p>
         )}
  
         <h1 className="page-title">Exams</h1>
  
         {usingDemo && !isLoading && (
-          <div
-            role="status"
-            aria-live="polite"
-            style={{
-              background: "var(--orange-light)",
-              border: "1px solid var(--orange)",
-              borderRadius: "var(--radius-sm)",
-              padding: "0.6rem 1rem",
-              fontSize: "0.82rem",
-              color: "var(--navy)",
-              marginBottom: "1.25rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
+          <div role="status" aria-live="polite" style={{
+            background: "var(--orange-light)", border: "1px solid var(--orange)",
+            borderRadius: "var(--radius-sm)", padding: "0.6rem 1rem",
+            fontSize: "0.82rem", color: "var(--navy)", marginBottom: "1.25rem",
+            display: "flex", alignItems: "center", gap: "0.5rem",
+          }}>
             <span>💡</span>
             <span>Showing demo exams — click <strong>+</strong> to create your first real exam.</span>
           </div>
@@ -77,8 +60,7 @@ export default function ManageExamsPage() {
         <div aria-live="polite" aria-atomic="true">
           {isLoading && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1rem" }}>
-              <span className="spinner spinner-dark" aria-hidden="true" />
-              Loading exams…
+              <span className="spinner spinner-dark" aria-hidden="true" /> Loading exams…
             </div>
           )}
           {error && <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>{error}</div>}

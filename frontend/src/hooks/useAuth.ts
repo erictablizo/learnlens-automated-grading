@@ -10,37 +10,30 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(false);
   const [error,     setError]     = useState<string | null>(null);
  
-  /**
-   * REGISTER — create account, then send back to Login.
-   * The user completes profile setup AFTER their first login.
-   */
-  const register = useCallback(async (email: string, password: string) => {
-    if (!email || !password) { setError("All fields are required."); return; }
-    if (password.length < 8)  { setError("Password must be at least 8 characters."); return; }
-    setIsLoading(true); setError(null);
-    try {
-      await authService.register({ email, password });
-      // Do NOT store the token — send them to Login instead
-      router.replace("/login?registered=1");
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Registration failed");
-    } finally { setIsLoading(false); }
-  }, [router]);
- 
-  /**
-   * LOGIN — determines where to go next:
-   *   profile NOT complete  → /setup  (first-time users)
-   *   profile complete      → /college (every session, Netflix-style)
-   */
   const login = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("Email and password are required."); return; }
     setIsLoading(true); setError(null);
     try {
       const data = await authService.login({ email, password });
       setAuth(data.access_token, data.user);
+      // First-time (no profile) → /setup  |  Returning → /college
       router.replace(data.profile_complete ? "/college" : "/setup");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Invalid email or password");
+      setError(e instanceof Error ? e.message : "Login failed");
+    } finally { setIsLoading(false); }
+  }, [router]);
+ 
+  const register = useCallback(async (email: string, password: string) => {
+    if (!email || !password) { setError("All fields are required."); return; }
+    if (password.length < 8)  { setError("Password must be at least 8 characters."); return; }
+    setIsLoading(true); setError(null);
+    try {
+      const data = await authService.register({ email, password });
+      setAuth(data.access_token, data.user);
+      // After register → go back to login so they sign in and hit /setup
+      router.replace("/login");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Registration failed");
     } finally { setIsLoading(false); }
   }, [router]);
  
