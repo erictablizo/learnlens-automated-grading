@@ -22,15 +22,15 @@ export function hasActiveCollege(): boolean {
 }
  
 export const COLLEGE_COLORS: Record<College, { bg: string; color: string; initials: string }> = {
-  CVMAS: { bg: "#e1f5ee", color: "#0f6e56", initials: "VM" },
-  CBMA:  { bg: "#eeedfe", color: "#534ab7", initials: "BM" },
-  CoEd:  { bg: "#faeeda", color: "#854f0b", initials: "Ed" },
-  CAST:  { bg: "#faece7", color: "#993c1d", initials: "AS" },
+  CVMAS: { bg: "#e1f5ee", color: "#0f6e56", initials: "CVMAS" },
+  CBMA:  { bg: "#eeedfe", color: "#534ab7", initials: "CBMA" },
+  CoEd:  { bg: "#faeeda", color: "#854f0b", initials: "CoEd" },
+  CAST:  { bg: "#faece7", color: "#993c1d", initials: "CAST" },
 };
  
 export const COLLEGE_FULL_NAMES: Record<College, string> = {
-  CVMAS: "College of Veterinary Medicine and Agricultural Sciences (CVMAS)",
-  CBMA:  "College of Business, Management, and Accountancy (CBMA)",
-  CoEd:  "College of Education (CoEd)",
-  CAST:  "College of Arts, Sciences and Technology (CAST)",
+  CVMAS: "College of Veterinary Medicine and Agricultural Sciences",
+  CBMA:  "College of Business, Management, and Accountancy",
+  CoEd:  "College of Education",
+  CAST:  "College of Arts, Sciences and Technology",
 };

@@ -16,8 +16,13 @@ export function useAuth() {
     try {
       const data = await authService.login({ email, password });
       setAuth(data.access_token, data.user);
-      // First-time (no profile) → /setup  |  Returning → /college
-      router.replace(data.profile_complete ? "/college" : "/setup");
+      if (!data.profile_complete) {
+        // First-time user — go to profile setup, then college picker
+        router.replace("/setup");
+      } else {
+        // Existing user — go straight to college picker every session
+        router.replace("/college");
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Login failed");
     } finally { setIsLoading(false); }
@@ -30,8 +35,8 @@ export function useAuth() {
     try {
       const data = await authService.register({ email, password });
       setAuth(data.access_token, data.user);
-      // After register → go back to login so they sign in and hit /setup
-      router.replace("/login");
+      // New user always goes to profile setup first
+      router.replace("/setup");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Registration failed");
     } finally { setIsLoading(false); }

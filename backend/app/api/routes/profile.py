@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
  
 from app.core.database import get_db
 from app.schemas.profile import ProfileSetup, ProfileResponse
@@ -35,11 +34,11 @@ async def save_profile(
 ):
     return await update_profile(
         db, uid,
-        first_name=data.first_name,
-        last_name=data.last_name,
-        college=data.college,
-        department=data.department,
-        position=data.position,
+        first_name = data.first_name,
+        last_name  = data.last_name,
+        college    = data.college,
+        course     = data.course,
+        position   = data.position,
     )
  
  
@@ -51,5 +50,5 @@ async def upload_avatar_route(
 ):
     allowed = {"image/jpeg", "image/png", "image/webp"}
     if file.content_type not in allowed:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG or WebP images are allowed.")
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images are allowed.")
     return await upload_avatar(db, uid, file)

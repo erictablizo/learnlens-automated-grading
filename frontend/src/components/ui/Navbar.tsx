@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { clearAuth, getToken } from "@/lib/auth";
 import { clearActiveCollege, getActiveCollege, COLLEGE_COLORS } from "@/lib/college";
 import { College } from "@/types/profile";
-import { UserProfile } from "@/types/profile";
 import { profileService } from "@/services/profileService";
  
 const IconList = () => (
@@ -28,18 +27,31 @@ export default function Navbar() {
   const pathname = usePathname();
   const router   = useRouter();
  
-  const [college, setCollege] = useState<College | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [college,     setCollege]     = useState<College | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
  
+  // Load profile for display name on mount and route changes
   useEffect(() => {
-    setCollege(getActiveCollege());
-    // Load profile to display name + position
+    const col = getActiveCollege();
+    setCollege(col);
+ 
     const token = getToken();
-    if (token) {
-      profileService.get(token)
-        .then(p => setProfile(p))
-        .catch(() => setProfile(null));
-    }
+    if (!token) return;
+ 
+    profileService.get(token).then(profile => {
+      if (!profile) return;
+      const first    = profile.first_name ?? "";
+      const last     = profile.last_name  ?? "";
+      const fullName = [first, last].filter(Boolean).join(" ");
+      const course   = profile.course ?? "";
+      const position = profile.position ? ` ${profile.position}` : " Teacher";
+      // Format: "Maria Santos, Computer Science Teacher"
+      if (fullName && course) {
+        setDisplayName(`${fullName}, ${course}${position}`);
+      } else if (fullName) {
+        setDisplayName(`${fullName}${position}`);
+      }
+    }).catch(() => {});
   }, [pathname]);
  
   const handleSignOut = () => {
@@ -48,88 +60,72 @@ export default function Navbar() {
     router.replace("/login");
   };
  
-  // Build display name: "Last Name, First Name · Position"
-  const displayName = (() => {
-    if (!profile?.first_name && !profile?.last_name) return null;
-    const name = [profile.last_name, profile.first_name].filter(Boolean).join(", ");
-    return profile.position ? `${name}` : name;
-  })();
- 
   const col = college ? COLLEGE_COLORS[college] : null;
  
   return (
     <nav className="sidebar" aria-label="Main navigation">
  
-      {/* User identity block */}
-      {(displayName || college) && (
-        <div style={{
-          padding:       "0.75rem 0.5rem 1rem",
-          marginBottom:  "0.25rem",
-          borderBottom:  "1px solid var(--border)",
-          display:       "flex",
-          flexDirection: "column",
-          alignItems:    "center",
-          gap:           "0.4rem",
-          textAlign:     "center",
-        }}>
-          {/* College initials avatar */}
-          {col && college && (
-            <div style={{
-              width: 44, height: 44, borderRadius: "50%",
-              background: col.bg, color: col.color,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "0.85rem", fontWeight: 700,
-              fontFamily: "var(--font-heading)",
-            }} aria-hidden="true">
-              {col.initials}
-            </div>
-          )}
+      {/* College badge + user identity */}
+      {college && col && (
+        <div
+          style={{
+            display:       "flex",
+            flexDirection: "column",
+            alignItems:    "center",
+            gap:           "0.35rem",
+            padding:       "0.75rem 0.5rem 0.9rem",
+            marginBottom:  "0.4rem",
+            borderBottom:  "1px solid var(--border)",
+            width:         "100%",
+          }}
+        >
+          {/* Initials circle */}
+          <div
+            style={{
+              width:          48, height: 48,
+              borderRadius:   "50%",
+              background:     col.bg, color: col.color,
+              display:        "flex", alignItems: "center", justifyContent: "center",
+              fontSize:       "1rem", fontWeight: 700,
+              fontFamily:     "var(--font-heading)",
+            }}
+            aria-hidden="true"
+          >
+            {col.initials}
+          </div>
  
-          {/* Last Name, First Name */}
+          {/* College abbreviation */}
+          <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--navy)" }}>
+            {college}
+          </span>
+ 
+          {/* Name, Course Teacher */}
           {displayName && (
-            <span style={{
-              fontSize: "0.82rem",
-              fontWeight: 600,
-              color: "var(--navy)",
-              lineHeight: 1.3,
-            }}>
+            <span
+              style={{
+                fontSize:   "0.7rem",
+                color:      "var(--text-muted)",
+                textAlign:  "center",
+                lineHeight: 1.4,
+                wordBreak:  "break-word",
+              }}
+            >
               {displayName}
             </span>
           )}
  
-          {/* Position */}
-          {profile?.position && (
-            <span style={{
-              fontSize: "0.72rem",
-              color: "var(--text-muted)",
-              lineHeight: 1.3,
-            }}>
-              {profile.position}
-            </span>
-          )}
- 
-          {/* College abbreviation + switch link */}
-          {college && (
-            <button
-              className="sidebar-item"
-              onClick={() => router.push("/college")}
-              aria-label="Switch college"
-              style={{
-                fontSize:  "0.72rem",
-                padding:   "0.2rem 0.6rem",
-                color:     "var(--text-muted)",
-                gap:       "0.3rem",
-                marginTop: "0.1rem",
-              }}
-            >
-              <IconSwitch />
-              {college} · Switch
-            </button>
-          )}
+          {/* Switch college */}
+          <button
+            className="sidebar-item"
+            onClick={() => router.push("/college")}
+            style={{ fontSize: "0.72rem", padding: "0.2rem 0.6rem", color: "var(--text-muted)", gap: "0.3rem", marginTop: "0.2rem" }}
+            aria-label="Switch college"
+          >
+            <IconSwitch /> Switch
+          </button>
         </div>
       )}
  
-      {/* Nav links */}
       <Link
         href="/exams"
         className={`sidebar-item${pathname.startsWith("/exams") ? " active" : ""}`}
@@ -139,11 +135,7 @@ export default function Navbar() {
         Manage Exams
       </Link>
  
-      <button
-        className="sidebar-item signout"
-        onClick={handleSignOut}
-        aria-label="Sign out"
-      >
+      <button className="sidebar-item signout" onClick={handleSignOut} aria-label="Sign out">
         <IconLogout />
         Sign out
       </button>

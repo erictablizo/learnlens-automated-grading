@@ -10,19 +10,12 @@ class CollegeEnum(str, Enum):
     CoEd  = "CoEd"
     CAST  = "CAST"
  
-COLLEGE_LABELS = {
-    "CVMAS": "College of Veterinary Medicine and Agricultural Sciences (CVMAS)",
-    "CBMA":  "College of Business, Management, and Accountancy (CBMA)",
-    "CoEd":  "College of Education (CoEd)",
-    "CAST":  "College of Arts, Sciences and Technology (CAST)",
-}
- 
  
 class ProfileSetup(BaseModel):
     first_name: Optional[str] = None
     last_name:  Optional[str] = None
     college:    Optional[CollegeEnum] = None
-    department: Optional[str] = None
+    course:     Optional[str] = None     # ← new
     position:   Optional[str] = None
  
  
@@ -32,7 +25,7 @@ class ProfileResponse(BaseModel):
     first_name:       Optional[str] = None
     last_name:        Optional[str] = None
     college:          Optional[str] = None
-    department:       Optional[str] = None
+    course:           Optional[str] = None    # ← new
     position:         Optional[str] = None
     avatar_path:      Optional[str] = None
     profile_complete: bool

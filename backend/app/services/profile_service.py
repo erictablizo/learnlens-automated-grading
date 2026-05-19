@@ -23,22 +23,25 @@ async def update_profile(
     db: AsyncSession,
     user_id: int,
     first_name: Optional[str],
-    last_name: Optional[str],
-    college: Optional[str],
-    department: Optional[str],
-    position: Optional[str],
+    last_name:  Optional[str],
+    college:    Optional[str],
+    course:     Optional[str],
+    position:   Optional[str],
 ) -> UserProfile:
     profile = await get_or_create_profile(db, user_id)
+ 
     if first_name is not None: profile.first_name = first_name.strip() or None
     if last_name  is not None: profile.last_name  = last_name.strip()  or None
     if college    is not None: profile.college    = college
-    if department is not None: profile.department = department.strip()  or None
+    if course     is not None: profile.course     = course.strip()     or None
     if position   is not None: profile.position   = position.strip()   or None
  
-    # Mark complete if core fields are filled
+    # Profile is complete when name, college AND course are all provided
     profile.profile_complete = bool(
-        profile.first_name and profile.last_name and profile.college
+        profile.first_name and profile.last_name
+        and profile.college and profile.course
     )
+ 
     await db.commit()
     await db.refresh(profile)
     return profile
