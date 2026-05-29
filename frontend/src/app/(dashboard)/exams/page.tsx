@@ -4,20 +4,41 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import ExamGrid from "@/components/exams/ExamGrid";
 import { useExams } from "@/hooks/useExams";
-import { isAuthenticated } from "@/lib/auth";
-import { hasActiveCollege, getActiveCollege, COLLEGE_FULL_NAMES } from "@/lib/college";
+import { isAuthenticated, getToken } from "@/lib/auth";
+import { hasActiveCollege, getActiveCollege, COLLEGE_FULL_NAMES, COLLEGE_COLORS } from "@/lib/college";
+import { profileService } from "@/services/profileService";
+import { UserProfile, College } from "@/types/profile";
 import { Exam } from "@/types/exam";
+ 
+const API_BASE    = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+const STATIC_BASE = API_BASE.replace("/api", "");
+ 
+function avatarUrl(path: string | null): string | null {
+  if (!path) return null;
+  return `${STATIC_BASE}/${path.replace(/\\/g, "/").replace(/^\//, "")}`;
+}
  
 export default function ManageExamsPage() {
   const router  = useRouter();
   const { exams, isLoading, error, usingDemo, fetchExams, deleteExam } = useExams();
-  const [mounted, setMounted] = useState(false);
+  const [mounted,  setMounted]  = useState(false);
+  const [profile,  setProfile]  = useState<UserProfile | null>(null);
+  const [imgError, setImgError] = useState(false);
  
   useEffect(() => {
     setMounted(true);
     if (!isAuthenticated())  { router.replace("/login");   return; }
     if (!hasActiveCollege()) { router.replace("/college"); return; }
+ 
     fetchExams();
+ 
+    // Load profile for avatar + display name
+    const token = getToken();
+    if (token) {
+      profileService.get(token)
+        .then(p => { setProfile(p); setImgError(false); })
+        .catch(() => {});
+    }
   }, [fetchExams, router]);
  
   const handleAdd    = () => router.push("/exams/create");
@@ -29,24 +50,86 @@ export default function ManageExamsPage() {
  
   if (!mounted) return null;
  
-  const college     = getActiveCollege();
+  const college     = getActiveCollege() as College | null;
   const collegeName = college ? COLLEGE_FULL_NAMES[college] : null;
+  const col         = college ? COLLEGE_COLORS[college] : null;
+ 
+  const firstName  = profile?.first_name ?? "";
+  const lastName   = profile?.last_name  ?? "";
+  const fullName   = [firstName, lastName].filter(Boolean).join(" ");
+  const course     = profile?.course    ?? "";
+  const position   = profile?.position  ?? "Teacher";
+  const displayName = fullName && course
+    ? `${fullName}, ${course} ${position}`
+    : fullName || "";
+ 
+  const initials   = [firstName[0], lastName[0]].filter(Boolean).join("").toUpperCase() || col?.initials || "?";
+  const avatarSrc  = profile ? avatarUrl(profile.avatar_path) : null;
  
   return (
     <div className="dashboard-layout">
       <Navbar />
       <main className="main-content" aria-label="Manage Exams">
  
-        {/* Active college context label */}
-        {collegeName && (
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.2rem", letterSpacing: "0.02em" }}>
-            {collegeName}
-          </p>
-        )}
+        {/* ── Top identity bar ── */}
+        <div style={{
+          display:       "flex",
+          alignItems:    "center",
+          gap:           "0.75rem",
+          marginBottom:  "1.25rem",
+          paddingBottom: "1rem",
+          borderBottom:  "1px solid var(--border)",
+        }}>
+          {/* Avatar */}
+          <div style={{
+            width:          48,
+            height:         48,
+            borderRadius:   "50%",
+            overflow:       "hidden",
+            border:         "2px solid var(--border)",
+            background:     col?.bg ?? "var(--bg)",
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "center",
+            flexShrink:     0,
+          }}>
+            {avatarSrc && !imgError ? (
+              <img
+                src={avatarSrc}
+                alt={fullName || "Profile"}
+                onError={() => setImgError(true)}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <span style={{
+                fontSize:   "1rem",
+                fontWeight: 700,
+                color:      col?.color ?? "var(--text-muted)",
+                fontFamily: "var(--font-heading)",
+              }}>
+                {initials}
+              </span>
+            )}
+          </div>
+ 
+          {/* Name + college */}
+          <div>
+            {displayName && (
+              <p style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--navy)", lineHeight: 1.3 }}>
+                {displayName}
+              </p>
+            )}
+            {collegeName && (
+              <p style={{ fontSize: "0.73rem", color: "var(--text-muted)", marginTop: "0.1rem" }}>
+                {collegeName}
+              </p>
+            )}
+          </div>
+        </div>
  
         <h1 className="page-title">Exams</h1>
  
-        {/* Demo data notice (HCI: visibility of system status) */}
+        {/* Demo notice */}
         {usingDemo && !isLoading && (
           <div
             role="status"
