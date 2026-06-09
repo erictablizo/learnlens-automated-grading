@@ -2,10 +2,9 @@
 import { Paper } from "@/types/paper";
 import Button from "@/components/ui/Button";
  
-const IconEye = () => (
+const IconEdit = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.536-6.536a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.94l-3 1 1-3a4 4 0 01.94-1.414z" />
   </svg>
 );
 const IconTrash = () => (
@@ -14,23 +13,37 @@ const IconTrash = () => (
   </svg>
 );
  
-interface PapersTableProps {
-  papers: Paper[];
-  onView: (paper: Paper) => void;
-  onDelete: (paperId: number) => void;
+interface Props {
+  papers:          Paper[];
+  selectedPaperId: number | null;
+  onSelect:        (paper: Paper) => void;
+  onEdit:          (paper: Paper) => void;
+  onDelete:        (paperId: number) => void;
 }
  
-export default function PapersTable({ papers, onView, onDelete }: PapersTableProps) {
+function ScoreCell({ paper }: { paper: Paper }) {
+  if (paper.total_score !== null && paper.total_score !== undefined) {
+    return <span style={{ fontWeight: 700, color: "var(--navy)" }}>{paper.total_score}</span>;
+  }
+  return <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>—</span>;
+}
+ 
+export default function PapersTable({ papers, selectedPaperId, onSelect, onEdit, onDelete }: Props) {
   if (papers.length === 0) {
     return (
       <div className="table-wrapper">
         <table>
           <thead>
-            <tr><th>Name</th><th>Score</th><th>Actions</th></tr>
+            <tr>
+              <th style={{ width: 40 }}>ID</th>
+              <th>Name</th>
+              <th style={{ width: 80 }}>Score</th>
+              <th style={{ width: 90 }}>Actions</th>
+            </tr>
           </thead>
           <tbody>
             <tr>
-              <td colSpan={3} style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem" }}>
+              <td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem" }}>
                 No test papers added yet.
               </td>
             </tr>
@@ -45,30 +58,58 @@ export default function PapersTable({ papers, onView, onDelete }: PapersTablePro
       <table aria-label="Test papers">
         <thead>
           <tr>
+            <th style={{ width: 40 }}>ID</th>
             <th>Name</th>
-            <th>Score</th>
-            <th>Actions</th>
+            <th style={{ width: 80 }}>Score</th>
+            <th style={{ width: 90 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {papers.map(p => (
-            <tr key={p.paper_id}>
-              <td>{p.student_name}</td>
-              <td>
-                {p.total_score !== null && p.total_score !== undefined
-                  ? `${p.total_score} pts`
-                  : <span style={{ color: "var(--text-muted)" }}>—</span>}
-              </td>
-              <td style={{ display: "flex", gap: "0.4rem" }}>
-                <Button variant="icon" onClick={() => onView(p)} aria-label={`View paper for ${p.student_name}`} title="View paper">
-                  <IconEye />
-                </Button>
-                <Button variant="danger-icon" onClick={() => onDelete(p.paper_id)} aria-label={`Delete paper for ${p.student_name}`} title="Delete paper">
-                  <IconTrash />
-                </Button>
-              </td>
-            </tr>
-          ))}
+          {papers.map((p, idx) => {
+            const isSelected = p.paper_id === selectedPaperId;
+            return (
+              <tr
+                key={p.paper_id}
+                onClick={() => onSelect(p)}
+                aria-selected={isSelected}
+                style={{
+                  cursor:     "pointer",
+                  background: isSelected ? "var(--orange-light)" : undefined,
+                  outline:    isSelected ? "1.5px solid var(--orange)" : undefined,
+                }}
+              >
+                <td style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{idx + 1}</td>
+                <td style={{
+                  fontWeight: isSelected ? 600 : 500,
+                  color:      isSelected ? "var(--orange)" : "var(--navy)",
+                }}>
+                  {p.student_name}
+                </td>
+                <td><ScoreCell paper={p} /></td>
+                <td onClick={e => e.stopPropagation()}>
+                  <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                    <Button
+                      variant="icon"
+                      onClick={() => onEdit(p)}
+                      aria-label={`Edit ${p.student_name}`}
+                      title="Edit paper"
+                      style={{ color: "var(--orange)" }}
+                    >
+                      <IconEdit />
+                    </Button>
+                    <Button
+                      variant="danger-icon"
+                      onClick={() => onDelete(p.paper_id)}
+                      aria-label={`Delete ${p.student_name}`}
+                      title="Delete paper"
+                    >
+                      <IconTrash />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

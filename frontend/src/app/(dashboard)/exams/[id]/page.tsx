@@ -3,63 +3,116 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import Button from "@/components/ui/Button";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import PapersTable from "@/components/papers/PapersTable";
 import AddEditPaperModal from "@/components/papers/AddEditPaperModal";
-import ViewPaperModal from "@/components/papers/ViewPaperModal";
+import EditPaperModal from "@/components/papers/EditPaperModal";
 import { examService } from "@/services/examService";
-import { Exam, ExamPage } from "@/types/exam";
+import { paperService } from "@/services/paperService";
+import { Exam } from "@/types/exam";
 import { Paper } from "@/types/paper";
 import { usePapers } from "@/hooks/usePapers";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
  
+// ── icons ─────────────────────────────────────────────────────────────────────
 const IconBack = () => (
   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
   </svg>
 );
-const IconChevronLeft = () => (
+const IconLeft = () => (
   <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
   </svg>
 );
-const IconChevronRight = () => (
+const IconRight = () => (
   <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
   </svg>
 );
  
+// ── helpers ───────────────────────────────────────────────────────────────────
+const API_BASE    = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+const STATIC_BASE = API_BASE.replace("/api", "");
+ 
+function imgUrl(path: string): string {
+  return `${STATIC_BASE}/${path.replace(/\\/g, "/").replace(/^\//, "")}`;
+}
+ 
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; onDone: () => void }) {
+  useEffect(() => { const t = setTimeout(onDone, 4000); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div
+      role={type === "error" ? "alert" : "status"}
+      aria-live={type === "error" ? "assertive" : "polite"}
+      style={{
+        position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+        background: type === "success" ? "var(--success-bg)" : "var(--error-bg)",
+        border: `1px solid ${type === "success" ? "#b2dfb2" : "#feb2b2"}`,
+        color: type === "success" ? "var(--success)" : "var(--error)",
+        borderRadius: "var(--radius-sm)", padding: "0.6rem 1.25rem",
+        fontSize: "0.875rem", fontWeight: 500, zIndex: 9999,
+        boxShadow: "var(--shadow)", display: "flex", alignItems: "center",
+        gap: "0.5rem", whiteSpace: "nowrap",
+      }}
+    >
+      {type === "success" ? "✓" : "⚠"} {msg}
+    </div>
+  );
+}
+ 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function ViewExamPage() {
-  const params = useParams();
-  const router = useRouter();
-  const examId = Number(params?.exam_id ?? params?.id ?? 0);
+  const params  = useParams();
+  const router  = useRouter();
+  const examId  = Number(params?.exam_id ?? 0);
  
-  const [exam, setExam] = useState<Exam | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
- 
-  // Page viewer state
-  const [examPageIdx, setExamPageIdx] = useState(0);
+  // Exam
+  const [exam,          setExam]          = useState<Exam | null>(null);
+  const [loading,       setLoading]       = useState(true);
+  const [loadError,     setLoadError]     = useState<string | null>(null);
   const [generatingKey, setGeneratingKey] = useState(false);
-  const [keyMsg, setKeyMsg] = useState<string | null>(null);
  
-  // Paper modals
+  // Page viewer
+  const [pageIdx,     setPageIdx]     = useState(0);
+  const [examImgErr,  setExamImgErr]  = useState(false);
+  const [paperImgErr, setPaperImgErr] = useState(false);
+ 
+  // Selected paper
+  const [selectedPaper,     setSelectedPaper]     = useState<Paper | null>(null);
+  const [selectedPaperFull, setSelectedPaperFull] = useState<Paper | null>(null);
+  const [loadingPaper,      setLoadingPaper]       = useState(false);
+ 
+  // Grading
+  const [checking, setChecking] = useState(false);
+ 
+  // Delete confirm dialog
+  const [deletingPaper, setDeletingPaper] = useState<Paper | null>(null);
+  const [deleting,      setDeleting]      = useState(false);
+ 
+  // Modals
   const [showAddPaper, setShowAddPaper] = useState(false);
-  const [viewPaper, setViewPaper] = useState<Paper | null>(null);
+  const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
+ 
+  // Toast
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
  
   const { papers, fetchPapers, deletePaper } = usePapers(examId);
  
+  // ── Load exam ─────────────────────────────────────────────────────────────
   const loadExam = useCallback(async () => {
     if (!examId) return;
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
-    setLoading(true); setError(null);
+    setLoading(true); setLoadError(null);
     try {
       const data = await examService.get(examId, token);
       setExam(data);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) { router.replace("/login"); return; }
-      setError("Could not load exam.");
+      setLoadError("Could not load exam.");
     } finally { setLoading(false); }
   }, [examId, router]);
  
@@ -69,67 +122,158 @@ export default function ViewExamPage() {
     fetchPapers();
   }, [loadExam, fetchPapers, router]);
  
-  const pages: ExamPage[] = exam?.pages ?? [];
-  const totalPages = Math.max(pages.length, 1);
-  const currentPage = pages[examPageIdx];
+  // ── Load full paper detail ────────────────────────────────────────────────
+  const loadPaperDetail = useCallback(async (paper: Paper) => {
+    setLoadingPaper(true); setPaperImgErr(false);
+    const token = getToken();
+    if (!token) { setLoadingPaper(false); return; }
+    try {
+      const full = await paperService.get(examId, paper.paper_id, token);
+      setSelectedPaperFull(full);
+    } catch {
+      setSelectedPaperFull(null);
+    } finally { setLoadingPaper(false); }
+  }, [examId]);
  
-  const handleGenerateKey = async () => {
-    if (!currentPage) return;
+  // ── Select paper row ──────────────────────────────────────────────────────
+  const handleSelectPaper = useCallback(async (paper: Paper) => {
+    if (selectedPaper?.paper_id === paper.paper_id) {
+      setSelectedPaper(null); setSelectedPaperFull(null); return;
+    }
+    setSelectedPaper(paper); setSelectedPaperFull(null); setPageIdx(0);
+    await loadPaperDetail(paper);
+  }, [selectedPaper, loadPaperDetail]);
+ 
+  // ── Edit paper ────────────────────────────────────────────────────────────
+  const handleEditPaper = useCallback(async (paper: Paper) => {
     const token = getToken();
     if (!token) return;
-    setGeneratingKey(true); setKeyMsg(null);
     try {
-      const res = await examService.generateAnswerKey(examId, currentPage.page_id, token);
-      setKeyMsg(res.message ?? "Answer key generation started.");
-      await loadExam();
+      const full = await paperService.get(examId, paper.paper_id, token);
+      setEditingPaper(full);
     } catch {
-      setKeyMsg("Generation failed. Please try again.");
+      setEditingPaper(paper);
+    }
+  }, [examId]);
+ 
+  const handleEditSuccess = useCallback(async (msg: string) => {
+    setEditingPaper(null);
+    await fetchPapers();
+    if (selectedPaper) {
+      const token = getToken();
+      if (token) {
+        try {
+          const updated = await paperService.get(examId, selectedPaper.paper_id, token);
+          setSelectedPaper(updated); setSelectedPaperFull(updated);
+        } catch {}
+      }
+    }
+    setToast({ msg, type: "success" });
+  }, [fetchPapers, selectedPaper, examId]);
+ 
+  // ── Delete paper — step 1: show confirm dialog ────────────────────────────
+  const handleDeleteRequest = useCallback((paper: Paper) => {
+    setDeletingPaper(paper);
+  }, []);
+ 
+  // ── Delete paper — step 2: confirmed ─────────────────────────────────────
+  const handleDeleteConfirmed = async () => {
+    if (!deletingPaper) return;
+    setDeleting(true);
+    try {
+      await deletePaper(deletingPaper.paper_id);
+      if (selectedPaper?.paper_id === deletingPaper.paper_id) {
+        setSelectedPaper(null); setSelectedPaperFull(null);
+      }
+      setDeletingPaper(null);
+      setToast({ msg: "Paper deleted successfully.", type: "success" });
+    } catch {
+      setDeletingPaper(null);
+      setToast({ msg: "Something went wrong while deleting the paper. Please try again.", type: "error" });
+    } finally { setDeleting(false); }
+  };
+ 
+  // ── Check / grade paper ───────────────────────────────────────────────────
+  const handleCheckPaper = async () => {
+    if (!selectedPaper) return;
+    const token = getToken();
+    if (!token) return;
+    setChecking(true);
+    try {
+      const result = await paperService.grade(examId, selectedPaper.paper_id, token);
+      await fetchPapers();
+      const full = await paperService.get(examId, selectedPaper.paper_id, token);
+      setSelectedPaper(full); setSelectedPaperFull(full);
+      setToast({ msg: `Graded: ${result.correct} / ${result.total_items} (${result.score_percent}%)`, type: "success" });
+    } catch (e: unknown) {
+      setToast({ msg: e instanceof Error ? e.message : "Something went wrong while checking the paper. Please try again.", type: "error" });
+    } finally { setChecking(false); }
+  };
+ 
+  // ── Paper added ───────────────────────────────────────────────────────────
+  const handlePaperAdded = async () => {
+    await fetchPapers();
+    setToast({ msg: "Paper added successfully.", type: "success" });
+  };
+ 
+  // ── Generate answer key ───────────────────────────────────────────────────
+  const handleGenerateKey = async () => {
+    const currentExamPage = examPages[pageIdx];
+    if (!currentExamPage) return;
+    const token = getToken();
+    if (!token) return;
+    setGeneratingKey(true);
+    try {
+      await examService.generateAnswerKey(examId, currentExamPage.page_id, token);
+      await loadExam();
+      setToast({ msg: "The exam key has been successfully generated.", type: "success" });
+    } catch {
+      setToast({ msg: "We couldn't generate the exam key. Please try again.", type: "error" });
     } finally { setGeneratingKey(false); }
   };
  
-  const handleDeletePaper = async (paperId: number) => {
-    if (!confirm("Delete this test paper?")) return;
-    await deletePaper(paperId);
-    await fetchPapers();
+  // ── Page nav ──────────────────────────────────────────────────────────────
+  const examPages  = exam?.pages ?? [];
+  const paperPages = selectedPaperFull?.paper_pages ?? [];
+  const totalPages = Math.max(examPages.length, 1);
+ 
+  const goPage = (dir: 1 | -1) => {
+    setPageIdx(i => Math.min(Math.max(0, i + dir), examPages.length - 1));
+    setExamImgErr(false); setPaperImgErr(false);
   };
  
-  if (loading) {
-    return (
-      <div className="dashboard-layout">
-        <Navbar />
-        <main className="main-content" style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <span className="spinner spinner-dark" aria-hidden="true" />
-          <span style={{ color: "var(--text-muted)" }}>Loading exam…</span>
-        </main>
-      </div>
-    );
-  }
+  const currentExamPage  = examPages[pageIdx];
+  const currentPaperPage = paperPages[pageIdx];
  
-  if (error || !exam) {
-    return (
-      <div className="dashboard-layout">
-        <Navbar />
-        <main className="main-content">
-          <div className="alert alert-error" role="alert">{error ?? "Exam not found."}</div>
-          <Button variant="secondary" onClick={() => router.push("/exams")}>← Back to Exams</Button>
-        </main>
-      </div>
-    );
-  }
+  // ── Loading / error ───────────────────────────────────────────────────────
+  if (loading) return (
+    <div className="dashboard-layout">
+      <Navbar />
+      <main className="main-content" style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <span className="spinner spinner-dark" />
+        <span style={{ color: "var(--text-muted)" }}>Loading exam…</span>
+      </main>
+    </div>
+  );
+ 
+  if (loadError || !exam) return (
+    <div className="dashboard-layout">
+      <Navbar />
+      <main className="main-content">
+        <div className="alert alert-error" role="alert">{loadError ?? "Exam not found."}</div>
+        <Button variant="secondary" onClick={() => router.push("/exams")}>← Back to Exams</Button>
+      </main>
+    </div>
+  );
  
   return (
     <div className="dashboard-layout">
       <Navbar />
- 
       <main className="main-content">
-        {/* Header row */}
+ 
+        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
-          <button
-            className="btn-icon"
-            onClick={() => router.push("/exams")}
-            aria-label="Back to Manage Exams"
-            style={{ color: "var(--navy)" }}
-          >
+          <button className="btn-icon" onClick={() => router.push("/exams")} aria-label="Back" style={{ color: "var(--navy)" }}>
             <IconBack />
           </button>
           <h1 style={{ fontFamily: "var(--font-heading)", fontSize: "1.5rem", fontWeight: 700, color: "var(--navy)", flex: 1, textAlign: "center" }}>
@@ -137,150 +281,160 @@ export default function ViewExamPage() {
           </h1>
         </div>
  
-        {/* Description */}
         {exam.description && (
           <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem", lineHeight: 1.6 }}>
             {exam.description}
           </p>
         )}
  
-        {/* ── Exam Pages Section ── */}
+        {/* ── Exam section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Exam</p>
-          <Button
-            variant="secondary"
-            onClick={() => router.push(`/exams/${examId}/create`)}
-            style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}
-          >
+          <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/create`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
             Edit Exam
           </Button>
         </div>
  
-        {/* Page viewer (2-up layout) */}
+        {/* Side-by-side viewer */}
         <div className="page-viewer">
           <div className="page-viewer-slot">
-            {currentPage ? (
-              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                📄 Page {currentPage.page_number}
-                <br />
-                <span style={{ fontSize: "0.75rem" }}>{currentPage.image_path.split("/").pop()}</span>
-              </span>
+            {currentExamPage && !examImgErr ? (
+              <img src={imgUrl(currentExamPage.image_path)} alt={`Exam page ${currentExamPage.page_number}`}
+                onError={() => setExamImgErr(true)}
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
             ) : (
-              <span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>No pages uploaded</span>
+              <span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
+                {examPages.length === 0 ? "No pages uploaded" : "Page unavailable"}
+              </span>
             )}
           </div>
-          <div className="page-viewer-slot" style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
-            Select test paper to check
+          <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.5rem" }}>
+            {loadingPaper ? (
+              <span className="spinner spinner-dark" aria-label="Loading paper…" />
+            ) : selectedPaperFull && currentPaperPage && !paperImgErr ? (
+              <>
+                <img src={imgUrl(currentPaperPage.image_path)} alt={`Paper page ${currentPaperPage.page_number}`}
+                  onError={() => setPaperImgErr(true)}
+                  style={{ maxWidth: "100%", maxHeight: "90%", objectFit: "contain" }} />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{selectedPaper?.student_name}</span>
+              </>
+            ) : selectedPaper ? (
+              <span style={{ fontSize: "0.875rem", color: "var(--text-muted)", textAlign: "center", padding: "0.5rem" }}>
+                {paperImgErr ? "Image unavailable" : "No pages for this paper"}<br />
+                <span style={{ fontSize: "0.78rem" }}>{selectedPaper.student_name}</span>
+              </span>
+            ) : (
+              <span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>Select test paper to check</span>
+            )}
           </div>
         </div>
  
-        {/* Page navigation */}
-        {pages.length > 1 && (
-          <div className="page-nav" aria-label="Page navigation">
-            <button
-              className="btn-icon"
-              onClick={() => setExamPageIdx(i => Math.max(0, i - 1))}
-              disabled={examPageIdx === 0}
-              aria-label="Previous page"
-            >
-              <IconChevronLeft />
-            </button>
-            <span>Page {examPageIdx + 1} of {totalPages}</span>
-            <button
-              className="btn-icon"
-              onClick={() => setExamPageIdx(i => Math.min(pages.length - 1, i + 1))}
-              disabled={examPageIdx >= pages.length - 1}
-              aria-label="Next page"
-            >
-              <IconChevronRight />
-            </button>
-          </div>
-        )}
-        {pages.length <= 1 && (
-          <p className="page-nav">Page 1 of {totalPages}</p>
-        )}
+        {/* Page nav */}
+        <div className="page-nav">
+          <button className="btn-icon" onClick={() => goPage(-1)} disabled={pageIdx === 0} aria-label="Previous page"><IconLeft /></button>
+          <span>Page {pageIdx + 1} of {totalPages}</span>
+          <button className="btn-icon" onClick={() => goPage(1)} disabled={pageIdx >= examPages.length - 1} aria-label="Next page"><IconRight /></button>
+          {selectedPaper && (
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginLeft: "0.5rem" }}>
+              {selectedPaper.student_name}
+            </span>
+          )}
+        </div>
  
-        {/* ── Answer Key Section ── */}
+        {/* ── Answer Key section ── */}
         <p className="section-title">Answer Key</p>
- 
-        {keyMsg && (
-          <div role="status" aria-live="polite" className="alert alert-success" style={{ marginBottom: "0.75rem" }}>
-            {keyMsg}
-          </div>
-        )}
- 
         <div className="page-viewer" style={{ marginBottom: "1.5rem" }}>
-          <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.75rem" }}>
+          <div className="page-viewer-slot" style={{ alignItems: exam.answer_keys?.length ? "flex-start" : "center", padding: exam.answer_keys?.length ? "1rem" : 0, overflowY: "auto" }}>
             {exam.answer_keys && exam.answer_keys.length > 0 ? (
-              <div style={{ padding: "0.75rem", width: "100%", overflowY: "auto", maxHeight: "340px" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: "left", color: "var(--text-muted)", padding: "0.25rem 0.5rem" }}>#</th>
-                      <th style={{ textAlign: "left", color: "var(--text-muted)", padding: "0.25rem 0.5rem" }}>Answer</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {exam.answer_keys.map(ak => (
-                      <tr key={ak.answer_key_id}>
-                        <td style={{ padding: "0.2rem 0.5rem", color: "var(--text-muted)" }}>{ak.question_number}</td>
-                        <td style={{ padding: "0.2rem 0.5rem", fontWeight: 600, color: "var(--navy)" }}>{ak.correct_answer}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
+                {exam.answer_keys.slice().sort((a, b) => a.question_number - b.question_number).map(ak => (
+                  <div key={ak.answer_key_id} style={{ fontSize: "0.82rem", color: "var(--navy)", padding: "0.1rem 0" }}>
+                    <span style={{ color: "var(--text-muted)", minWidth: 24, display: "inline-block" }}>{ak.question_number}.</span>
+                    <span style={{ fontWeight: 600 }}>{ak.correct_answer}</span>
+                  </div>
+                ))}
               </div>
             ) : (
-              <Button
-                variant="primary"
-                onClick={handleGenerateKey}
-                loading={generatingKey}
-                disabled={!currentPage}
-                style={{ width: "auto", padding: "0.65rem 1.25rem" }}
-              >
+              <Button variant="primary" onClick={handleGenerateKey} loading={generatingKey} disabled={!currentExamPage} style={{ width: "auto", padding: "0.65rem 1.25rem" }}>
                 {generatingKey ? "Generating…" : "Generate Answer Key"}
               </Button>
             )}
           </div>
-          <div className="page-viewer-slot" style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
-            Select test paper to check
+          <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.75rem" }}>
+            {selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%", padding: "1rem", overflowY: "auto" }}>
+                {(selectedPaperFull.paper_scores ?? []).slice().sort((a, b) => a.question_number - b.question_number).map(s => (
+                  <div key={s.score_id} style={{ fontSize: "0.82rem", padding: "0.1rem 0", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <span style={{ color: "var(--text-muted)", minWidth: 24 }}>{s.question_number}.</span>
+                    <span style={{ fontWeight: 600, color: s.is_correct ? "var(--success)" : "var(--error)" }}>
+                      {s.student_answer}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : selectedPaper ? (
+              <Button variant="primary" onClick={handleCheckPaper} loading={checking} disabled={checking} style={{ width: "auto", padding: "0.65rem 1.5rem" }}>
+                {checking ? "Checking…" : "Check Paper"}
+              </Button>
+            ) : (
+              <span style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>Select test paper to check</span>
+            )}
           </div>
         </div>
  
-        {/* ── Test Papers Section ── */}
+        {/* ── Test Papers section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Test Papers</p>
-          <Button
-            variant="secondary"
-            onClick={() => setShowAddPaper(true)}
-            style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem", borderColor: "var(--orange)", color: "var(--orange)" }}
-          >
+          <Button variant="secondary" onClick={() => setShowAddPaper(true)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem", borderColor: "var(--orange)", color: "var(--orange)" }}>
             Add paper
           </Button>
         </div>
  
         <PapersTable
           papers={papers}
-          onView={p => setViewPaper(p)}
-          onDelete={handleDeletePaper}
+          selectedPaperId={selectedPaper?.paper_id ?? null}
+          onSelect={handleSelectPaper}
+          onEdit={handleEditPaper}
+          onDelete={(paperId) => {
+            const paper = papers.find(p => p.paper_id === paperId);
+            if (paper) handleDeleteRequest(paper);
+          }}
         />
  
-        {/* Add paper modal */}
+        {/* ── Delete confirm dialog ── */}
+        {deletingPaper && (
+          <ConfirmDialog
+            title="Delete Test Paper"
+            message={`You are about to delete test paper "${deletingPaper.student_name}". Are you sure you want to continue?`}
+            confirmLabel={deleting ? "Deleting…" : "Yes"}
+            cancelLabel="No"
+            onConfirm={handleDeleteConfirmed}
+            onCancel={() => setDeletingPaper(null)}
+            dangerous
+          />
+        )}
+ 
+        {/* ── Modals ── */}
         {showAddPaper && (
           <AddEditPaperModal
             examId={examId}
+            examPages={examPages.length || 1}
             onClose={() => setShowAddPaper(false)}
-            onSuccess={fetchPapers}
+            onSuccess={handlePaperAdded}
           />
         )}
  
-        {/* View paper modal */}
-        {viewPaper && (
-          <ViewPaperModal
-            paper={viewPaper}
-            onClose={() => setViewPaper(null)}
+        {editingPaper && (
+          <EditPaperModal
+            paper={editingPaper}
+            examId={examId}
+            onClose={() => setEditingPaper(null)}
+            onSuccess={handleEditSuccess}
           />
         )}
+ 
+        {/* Toast */}
+        {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
       </main>
     </div>
   );
