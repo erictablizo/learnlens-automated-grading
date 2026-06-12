@@ -12,7 +12,7 @@ class Settings(BaseSettings):
  
     # Tesseract OCR executable path (Windows only — leave empty on Linux/Mac)
     # Example: C:\Program Files\Tesseract-OCR\tesseract.exe
-    TESSERACT_CMD: str = ""
+    TESSERACT_CMD: str = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
  
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
  
