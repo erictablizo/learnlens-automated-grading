@@ -395,10 +395,7 @@ export default function ViewExamPage() {
           selectedPaperId={selectedPaper?.paper_id ?? null}
           onSelect={handleSelectPaper}
           onEdit={handleEditPaper}
-          onDelete={(paperId) => {
-            const paper = papers.find(p => p.paper_id === paperId);
-            if (paper) handleDeleteRequest(paper);
-          }}
+          onDelete={handleDeleteRequest}
         />
  
         {/* ── Delete confirm dialog ── */}
