@@ -67,7 +67,7 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
 export default function ViewExamPage() {
   const params  = useParams();
   const router  = useRouter();
-  const examId  = Number(params?.exam_id ?? 0);
+  const examId = Number(params?.id ?? 0);
  
   // Exam
   const [exam,          setExam]          = useState<Exam | null>(null);
