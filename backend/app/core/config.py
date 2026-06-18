@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     UPLOAD_DIR: str = "uploads"
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:8000"]
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
  
     # Tesseract OCR executable path (Windows only — leave empty on Linux/Mac)
     # Example: C:\Program Files\Tesseract-OCR\tesseract.exe
