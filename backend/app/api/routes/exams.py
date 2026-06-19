@@ -3,12 +3,14 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
  
 from app.core.database import get_db
 from app.core.config import settings
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResponse, ExamListResponse
 from app.services import exam_service
 from app.services.auth_service import get_current_user
+from app.models.models import ExamPage
  
 router = APIRouter(prefix="/exams", tags=["exams"])
 bearer = HTTPBearer()
@@ -79,6 +81,34 @@ async def upload_exam_page(
         shutil.copyfileobj(file.file, f)
     page = await exam_service.add_exam_page(db, exam_id, page_number, file_path)
     return {"page_id": page.page_id, "page_number": page.page_number, "image_path": file_path}
+ 
+ 
+@router.delete("/{exam_id}/pages/{page_id}", status_code=204)
+async def delete_exam_page(
+    exam_id: int,
+    page_id: int,
+    uid: int = Depends(current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    exam = await exam_service.get_exam(db, exam_id, uid)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+ 
+    result = await db.execute(
+        select(ExamPage).where(ExamPage.page_id == page_id, ExamPage.exam_id == exam_id)
+    )
+    page = result.scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+ 
+    if os.path.exists(page.image_path):
+        try:
+            os.remove(page.image_path)
+        except OSError:
+            pass
+ 
+    await db.delete(page)
+    await db.commit()
  
  
 @router.post("/{exam_id}/answer-key/generate")

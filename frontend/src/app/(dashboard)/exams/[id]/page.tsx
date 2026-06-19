@@ -67,7 +67,7 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
 export default function ViewExamPage() {
   const params  = useParams();
   const router  = useRouter();
-  const examId = Number(params?.id ?? 0);
+  const examId  = Number(params?.id ?? params?.exam_id ?? 0);
  
   // Exam
   const [exam,          setExam]          = useState<Exam | null>(null);
@@ -290,7 +290,7 @@ export default function ViewExamPage() {
         {/* ── Exam section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Exam</p>
-          <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/create`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+          <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/edit`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
             Edit Exam
           </Button>
         </div>
