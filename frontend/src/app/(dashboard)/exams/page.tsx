@@ -1,150 +1,126 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import ExamGrid from "@/components/exams/ExamGrid";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useExams } from "@/hooks/useExams";
-import { isAuthenticated, getToken } from "@/lib/auth";
-import { hasActiveCollege, getActiveCollege, COLLEGE_FULL_NAMES, COLLEGE_COLORS } from "@/lib/college";
-import { profileService } from "@/services/profileService";
-import { UserProfile, College } from "@/types/profile";
+import { useExamCheckedPapers } from "@/hooks/useExamCheckedPapers";
+import { isAuthenticated } from "@/lib/auth";
 import { Exam } from "@/types/exam";
  
-const API_BASE    = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-const STATIC_BASE = API_BASE.replace("/api", "");
- 
-function avatarUrl(path: string | null): string | null {
-  if (!path) return null;
-  return `${STATIC_BASE}/${path.replace(/\\/g, "/").replace(/^\//, "")}`;
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; onDone: () => void }) {
+  useEffect(() => { const t = setTimeout(onDone, 4000); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div
+      role={type === "error" ? "alert" : "status"}
+      aria-live={type === "error" ? "assertive" : "polite"}
+      style={{
+        position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+        background: type === "success" ? "var(--success-bg)" : "var(--error-bg)",
+        border: `1px solid ${type === "success" ? "#b2dfb2" : "#feb2b2"}`,
+        color: type === "success" ? "var(--success)" : "var(--error)",
+        borderRadius: "var(--radius-sm)", padding: "0.6rem 1.25rem",
+        fontSize: "0.875rem", fontWeight: 500, zIndex: 9999,
+        boxShadow: "var(--shadow)", display: "flex", alignItems: "center",
+        gap: "0.5rem", whiteSpace: "nowrap",
+      }}
+    >
+      {type === "success" ? "✓" : "⚠"} {msg}
+    </div>
+  );
 }
  
 export default function ManageExamsPage() {
-  const router  = useRouter();
+  const router       = useRouter();
+  const searchParams = useSearchParams();
   const { exams, isLoading, error, usingDemo, fetchExams, deleteExam } = useExams();
-  const [mounted,  setMounted]  = useState(false);
-  const [profile,  setProfile]  = useState<UserProfile | null>(null);
-  const [imgError, setImgError] = useState(false);
+  const { hasCheckedPapers } = useExamCheckedPapers();
+ 
+  const [mounted, setMounted] = useState(false);
+  const [toast,   setToast]   = useState<{ msg: string; type: "success" | "error" } | null>(null);
+ 
+  // Edit confirm (when exam has checked papers)
+  const [editConfirmExam, setEditConfirmExam] = useState<Exam | null>(null);
+  const [checkingEdit,    setCheckingEdit]    = useState<number | null>(null);
+ 
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<Exam | null>(null);
+  const [deleting,     setDeleting]     = useState(false);
  
   useEffect(() => {
     setMounted(true);
-    if (!isAuthenticated())  { router.replace("/login");   return; }
-    if (!hasActiveCollege()) { router.replace("/college"); return; }
- 
+    if (!isAuthenticated()) { router.replace("/login"); return; }
     fetchExams();
  
-    // Load profile for avatar + display name
-    const token = getToken();
-    if (token) {
-      profileService.get(token)
-        .then(p => { setProfile(p); setImgError(false); })
-        .catch(() => {});
+    // Show success toast after redirect from Edit Exam save
+    if (searchParams.get("updated") === "1") {
+      setToast({ msg: "Exam updated successfully.", type: "success" });
+      router.replace("/exams"); // clean the URL
     }
-  }, [fetchExams, router]);
+  }, [fetchExams, router, searchParams]);
  
-  const handleAdd    = () => router.push("/exams/create");
-  const handleEdit   = (exam: Exam) => router.push(`/exams/${exam.exam_id}`);
-  const handleDelete = async (id: number) => {
-    if (!confirm("Delete this exam? This cannot be undone.")) return;
-    await deleteExam(id);
+  const handleAdd = () => router.push("/exams/create");
+ 
+  // ── Edit click — check for graded papers first ────────────────────────────
+  const handleEdit = useCallback(async (exam: Exam) => {
+    setCheckingEdit(exam.exam_id);
+    const hasChecked = await hasCheckedPapers(exam.exam_id);
+    setCheckingEdit(null);
+ 
+    if (hasChecked) {
+      setEditConfirmExam(exam);
+    } else {
+      router.push(`/exams/${exam.exam_id}/edit`);
+    }
+  }, [hasCheckedPapers, router]);
+ 
+  const handleEditConfirmed = () => {
+    if (editConfirmExam) {
+      router.push(`/exams/${editConfirmExam.exam_id}/edit`);
+    }
+    setEditConfirmExam(null);
+  };
+ 
+  // ── Delete click ───────────────────────────────────────────────────────────
+  const handleDeleteRequest = (id: number) => {
+    const exam = exams.find(e => e.exam_id === id);
+    if (exam) setDeleteTarget(exam);
+  };
+ 
+  const handleDeleteConfirmed = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteExam(deleteTarget.exam_id);
+      setDeleteTarget(null);
+      setToast({ msg: "Exam deleted successfully.", type: "success" });
+    } catch {
+      setDeleteTarget(null);
+      setToast({ msg: "Something went wrong while deleting the exam. Please try again.", type: "error" });
+    } finally {
+      setDeleting(false);
+    }
   };
  
   if (!mounted) return null;
- 
-  const college     = getActiveCollege() as College | null;
-  const collegeName = college ? COLLEGE_FULL_NAMES[college] : null;
-  const col         = college ? COLLEGE_COLORS[college] : null;
- 
-  const firstName  = profile?.first_name ?? "";
-  const lastName   = profile?.last_name  ?? "";
-  const fullName   = [firstName, lastName].filter(Boolean).join(" ");
-  const course     = profile?.course    ?? "";
-  const position   = profile?.position  ?? "Teacher";
-  const displayName = fullName && course
-    ? `${fullName}, ${course} ${position}`
-    : fullName || "";
- 
-  const initials   = [firstName[0], lastName[0]].filter(Boolean).join("").toUpperCase() || col?.initials || "?";
-  const avatarSrc  = profile ? avatarUrl(profile.avatar_path) : null;
  
   return (
     <div className="dashboard-layout">
       <Navbar />
       <main className="main-content" aria-label="Manage Exams">
- 
-        {/* ── Top identity bar ── */}
-        <div style={{
-          display:       "flex",
-          alignItems:    "center",
-          gap:           "0.75rem",
-          marginBottom:  "1.25rem",
-          paddingBottom: "1rem",
-          borderBottom:  "1px solid var(--border)",
-        }}>
-          {/* Avatar */}
-          <div style={{
-            width:          48,
-            height:         48,
-            borderRadius:   "50%",
-            overflow:       "hidden",
-            border:         "2px solid var(--border)",
-            background:     col?.bg ?? "var(--bg)",
-            display:        "flex",
-            alignItems:     "center",
-            justifyContent: "center",
-            flexShrink:     0,
-          }}>
-            {avatarSrc && !imgError ? (
-              <img
-                src={avatarSrc}
-                alt={fullName || "Profile"}
-                onError={() => setImgError(true)}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            ) : (
-              <span style={{
-                fontSize:   "1rem",
-                fontWeight: 700,
-                color:      col?.color ?? "var(--text-muted)",
-                fontFamily: "var(--font-heading)",
-              }}>
-                {initials}
-              </span>
-            )}
-          </div>
- 
-          {/* Name + college */}
-          <div>
-            {displayName && (
-              <p style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--navy)", lineHeight: 1.3 }}>
-                {displayName}
-              </p>
-            )}
-            {collegeName && (
-              <p style={{ fontSize: "0.73rem", color: "var(--text-muted)", marginTop: "0.1rem" }}>
-                {collegeName}
-              </p>
-            )}
-          </div>
-        </div>
- 
         <h1 className="page-title">Exams</h1>
  
-        {/* Demo notice */}
         {usingDemo && !isLoading && (
           <div
             role="status"
             aria-live="polite"
             style={{
-              background:   "var(--orange-light)",
-              border:       "1px solid var(--orange)",
-              borderRadius: "var(--radius-sm)",
-              padding:      "0.6rem 1rem",
-              fontSize:     "0.82rem",
-              color:        "var(--navy)",
-              marginBottom: "1.25rem",
-              display:      "flex",
-              alignItems:   "center",
-              gap:          "0.5rem",
+              background: "var(--orange-light)", border: "1px solid var(--orange)",
+              borderRadius: "var(--radius-sm)", padding: "0.6rem 1rem",
+              fontSize: "0.82rem", color: "var(--navy)", marginBottom: "1.25rem",
+              display: "flex", alignItems: "center", gap: "0.5rem",
             }}
           >
             <span>💡</span>
@@ -159,14 +135,43 @@ export default function ManageExamsPage() {
               Loading exams…
             </div>
           )}
-          {error && (
-            <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>{error}</div>}
         </div>
  
-        <ExamGrid exams={exams} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} />
+        <ExamGrid
+          exams={exams}
+          onAdd={handleAdd}
+          onEdit={handleEdit}
+          onDelete={handleDeleteRequest}
+        />
+ 
+        {/* Edit confirm dialog — only shown if exam has checked papers */}
+        {editConfirmExam && (
+          <ConfirmDialog
+            title="Are you sure you want to continue?"
+            message={`You are about to make changes to exam "${editConfirmExam.exam_name}". Proceeding will reset the scores of test papers under this exam.`}
+            confirmLabel="Yes"
+            cancelLabel="No"
+            onConfirm={handleEditConfirmed}
+            onCancel={() => setEditConfirmExam(null)}
+            dangerous
+          />
+        )}
+ 
+        {/* Delete confirm dialog */}
+        {deleteTarget && (
+          <ConfirmDialog
+            title="Delete Test Paper"
+            message={`You are about to delete exam "${deleteTarget.exam_name}". Are you sure you want to continue?`}
+            confirmLabel={deleting ? "Deleting…" : "Yes"}
+            cancelLabel="No"
+            onConfirm={handleDeleteConfirmed}
+            onCancel={() => setDeleteTarget(null)}
+            dangerous
+          />
+        )}
+ 
+        {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
       </main>
     </div>
   );

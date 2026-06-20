@@ -44,6 +44,15 @@ async def get_exam(exam_id: int, uid: int = Depends(current_user_id), db: AsyncS
     return exam
  
  
+@router.get("/{exam_id}/has-checked-papers")
+async def check_has_checked_papers(exam_id: int, uid: int = Depends(current_user_id), db: AsyncSession = Depends(get_db)):
+    exam = await exam_service.get_exam(db, exam_id, uid)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    has_checked = await exam_service.has_checked_papers(db, exam_id)
+    return {"has_checked_papers": has_checked}
+ 
+ 
 @router.put("/{exam_id}", response_model=ExamListResponse)
 async def update_exam(exam_id: int, data: ExamUpdate, uid: int = Depends(current_user_id), db: AsyncSession = Depends(get_db)):
     exam = await exam_service.update_exam(db, exam_id, uid, exam_name=data.exam_name, description=data.description)
@@ -80,6 +89,10 @@ async def upload_exam_page(
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     page = await exam_service.add_exam_page(db, exam_id, page_number, file_path)
+ 
+    # If pages changed and there were checked papers, reset their scores
+    await exam_service.reset_exam_paper_scores(db, exam_id)
+ 
     return {"page_id": page.page_id, "page_number": page.page_number, "image_path": file_path}
  
  
@@ -109,6 +122,9 @@ async def delete_exam_page(
  
     await db.delete(page)
     await db.commit()
+ 
+    # Reset checked papers since the exam structure changed
+    await exam_service.reset_exam_paper_scores(db, exam_id)
  
  
 @router.post("/{exam_id}/answer-key/generate")
