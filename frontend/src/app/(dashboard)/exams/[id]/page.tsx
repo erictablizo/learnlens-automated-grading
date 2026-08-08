@@ -68,7 +68,6 @@ export default function ViewExamPage() {
   const params  = useParams();
   const router  = useRouter();
   const examId  = Number(params?.id ?? params?.exam_id ?? 0);
-  console.log("params:", params, "examId:", examId);
  
   // Exam
   const [exam,          setExam]          = useState<Exam | null>(null);
