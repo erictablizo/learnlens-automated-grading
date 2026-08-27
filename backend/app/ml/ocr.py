@@ -119,22 +119,52 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     """
     import cv2
     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1,
+    #     minDist   = 30,
+    #     param1    = 100,
+    #     param2    = 20,
+    #     minRadius = 15,
+    #     maxRadius = 20,
+    # )
+    # if circles is None:
+    #     return []
+    # return [
+    #     (int(x), int(y), int(r))
+    #     for x, y, r in np.round(circles[0, :]).astype("int")
+    # ]
+
     circles = cv2.HoughCircles(
-        blur,
-        cv2.HOUGH_GRADIENT,
-        dp        = 1,
-        minDist   = 30,
-        param1    = 100,
-        param2    = 20,
-        minRadius = 15,
-        maxRadius = 20,
+    blur,
+    cv2.HOUGH_GRADIENT,
+    dp        = 1,
+    minDist   = 15,
+    param1    = 50,
+    param2    = 15,
+    minRadius = 12,
+    maxRadius = 25,
     )
+
     if circles is None:
         return []
-    return [
-        (int(x), int(y), int(r))
-        for x, y, r in np.round(circles[0, :]).astype("int")
-    ]
+
+    # ✓ NEW: Filter duplicate/overlapping circles
+    raw_circles = np.round(circles[0, :]).astype("int").tolist()
+    filtered_circles = []
+
+    for x, y, r in raw_circles:
+        is_duplicate = False
+        for fx, fy, fr in filtered_circles:
+            dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+            if dist < (r + fr) * 0.7:
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            filtered_circles.append((x, y, r))
+
+    return filtered_circles
 
 
 # ---------------------------------------------------------------------------

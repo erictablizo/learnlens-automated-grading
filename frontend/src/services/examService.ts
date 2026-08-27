@@ -19,8 +19,14 @@ export const examService = {
   deletePage: (examId: number, pageId: number, token: string) =>
     api.delete<void>(`/exams/${examId}/pages/${pageId}`, token),
  
+  // generateAnswerKey: (examId: number, pageId: number, token: string) =>
+  //   api.post<{ message: string; detected?: number }>(
+  //     `/exams/${examId}/answer-key/generate?page_id=${pageId}`,
+  //     {},
+  //     token,
+  //   ),
   generateAnswerKey: (examId: number, pageId: number, token: string) =>
-    api.post<{ message: string; detected?: number }>(
+    api.post<{ success: boolean; message: string; detected?: number }>(
       `/exams/${examId}/answer-key/generate?page_id=${pageId}`,
       {},
       token,

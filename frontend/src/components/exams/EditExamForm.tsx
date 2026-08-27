@@ -1,4 +1,5 @@
 "use client";
+import ExamKeyViewer from "@/components/exams/ExamKeyViewer";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
@@ -34,6 +35,8 @@ export default function EditExamForm({ examId }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
  
   const [saving, setSaving] = useState(false);
+  
+  const [regeneratingKey, setRegeneratingKey] = useState(false);
  
   // ── Load exam ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -279,6 +282,59 @@ export default function EditExamForm({ examId }: Props) {
         {formError && (
           <div role="alert" aria-live="assertive" className="alert alert-error" style={{ marginBottom: "1rem" }}>
             {formError}
+          </div>
+        )}
+
+        {/* ── Answer Key Viewer ── */}
+        {exam && exam.answer_keys && exam.answer_keys.length > 0 && (
+          <div style={{ 
+            marginTop: "2rem", 
+            paddingTop: "2rem", 
+            borderTop: "1px solid var(--border)" 
+          }}>
+            <ExamKeyViewer
+              answerKeys={exam.answer_keys}
+              examId={examId}
+              pageId={exam.pages?.[0]?.page_id ?? 0}
+              onRegenerate={async () => {
+                setRegeneratingKey(true);
+                setFormError(null);
+                try {
+                  const token = getToken();
+                  if (!token) {
+                    setFormError("Session expired. Please login again.");
+                    setRegeneratingKey(false);
+                    return;
+                  }
+                  if (!exam.pages?.[0]) {
+                    setFormError("No exam pages found. Upload an answer sheet first.");
+                    setRegeneratingKey(false);
+                    return;
+                  }
+
+                  const result = await examService.generateAnswerKey(
+                    examId,
+                    exam.pages[0].page_id,
+                    token
+                  );
+
+                  if (!result.success) {
+                    setFormError(`Generation failed: ${result.message}`);
+                    setRegeneratingKey(false);
+                    return;
+                  }
+
+                  const updated = await examService.get(examId, token);
+                  setExam(updated);
+                } catch (e: unknown) {
+                  const msg = e instanceof Error ? e.message : "Unknown error";
+                  setFormError(`Failed: ${msg}`);
+                } finally {
+                  setRegeneratingKey(false);
+                }
+              }}
+              isRegenerating={regeneratingKey}
+            />
           </div>
         )}
  
