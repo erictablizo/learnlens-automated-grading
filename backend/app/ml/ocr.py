@@ -179,21 +179,45 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     #     minRadius = 12,
     #     maxRadius = 25,
     # )
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1,
+    #     minDist   = 10,        # ← REDUCED from 15
+    #     param1    = 30,        # ← REDUCED from 50 (MORE sensitive)
+    #     param2    = 10,        # ← REDUCED from 15 (LOWER threshold)
+    #     minRadius = 10,        # ← REDUCED from 12
+    #     maxRadius = 30,        # ← INCREASED from 25
+    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 10,        # ← REDUCED from 15
-        param1    = 30,        # ← REDUCED from 50 (MORE sensitive)
-        param2    = 10,        # ← REDUCED from 15 (LOWER threshold)
-        minRadius = 10,        # ← REDUCED from 12
-        maxRadius = 30,        # ← INCREASED from 25
+        minDist   = 20,        # ← INCREASE from 10 (space out circles)
+        param1    = 30,        # Keep this
+        param2    = 15,        # ← INCREASE from 10 (filter weak circles)
+        minRadius = 10,        # Keep this
+        maxRadius = 30,        # Keep this
     )
 
     if circles is None:
         return []
 
     # Filter duplicate/overlapping circles
+    # raw_circles = np.round(circles[0, :]).astype("int").tolist()
+    # filtered_circles = []
+
+    # for x, y, r in raw_circles:
+    #     is_duplicate = False
+    #     for fx, fy, fr in filtered_circles:
+    #         dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+    #         if dist < (r + fr) * 0.7:
+    #             is_duplicate = True
+    #             break
+    #     if not is_duplicate:
+    #         filtered_circles.append((x, y, r))
+
+    # return filtered_circles
     raw_circles = np.round(circles[0, :]).astype("int").tolist()
     filtered_circles = []
 
@@ -201,7 +225,7 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
         is_duplicate = False
         for fx, fy, fr in filtered_circles:
             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
-            if dist < (r + fr) * 0.7:
+            if dist < (r + fr) * 0.5:  # ← STRICTER (was 0.7)
                 is_duplicate = True
                 break
         if not is_duplicate:
