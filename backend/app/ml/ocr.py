@@ -169,15 +169,25 @@ def thick_font(bw: "np.ndarray") -> "np.ndarray":
 def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     import cv2
     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1,
+    #     minDist   = 15,
+    #     param1    = 50,
+    #     param2    = 15,
+    #     minRadius = 12,
+    #     maxRadius = 25,
+    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 15,
-        param1    = 50,
-        param2    = 15,
-        minRadius = 12,
-        maxRadius = 25,
+        minDist   = 10,        # ← REDUCED from 15
+        param1    = 30,        # ← REDUCED from 50 (MORE sensitive)
+        param2    = 10,        # ← REDUCED from 15 (LOWER threshold)
+        minRadius = 10,        # ← REDUCED from 12
+        maxRadius = 30,        # ← INCREASED from 25
     )
 
     if circles is None:
