@@ -166,58 +166,92 @@ def thick_font(bw: "np.ndarray") -> "np.ndarray":
 
 #     return filtered_circles
 
+# def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
+#     import cv2
+#     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1,
+#     #     minDist   = 15,
+#     #     param1    = 50,
+#     #     param2    = 15,
+#     #     minRadius = 12,
+#     #     maxRadius = 25,
+#     # )
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1,
+#     #     minDist   = 10,        # ← REDUCED from 15
+#     #     param1    = 30,        # ← REDUCED from 50 (MORE sensitive)
+#     #     param2    = 10,        # ← REDUCED from 15 (LOWER threshold)
+#     #     minRadius = 10,        # ← REDUCED from 12
+#     #     maxRadius = 30,        # ← INCREASED from 25
+#     # )
+#     circles = cv2.HoughCircles(
+#         blur,
+#         cv2.HOUGH_GRADIENT,
+#         dp        = 1,
+#         minDist   = 20,        # ← INCREASE from 10 (space out circles)
+#         param1    = 30,        # Keep this
+#         param2    = 15,        # ← INCREASE from 10 (filter weak circles)
+#         minRadius = 10,        # Keep this
+#         maxRadius = 30,        # Keep this
+#     )
+
+#     if circles is None:
+#         return []
+
+#     # Filter duplicate/overlapping circles
+#     # raw_circles = np.round(circles[0, :]).astype("int").tolist()
+#     # filtered_circles = []
+
+#     # for x, y, r in raw_circles:
+#     #     is_duplicate = False
+#     #     for fx, fy, fr in filtered_circles:
+#     #         dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+#     #         if dist < (r + fr) * 0.7:
+#     #             is_duplicate = True
+#     #             break
+#     #     if not is_duplicate:
+#     #         filtered_circles.append((x, y, r))
+
+#     # return filtered_circles
+#     raw_circles = np.round(circles[0, :]).astype("int").tolist()
+#     filtered_circles = []
+
+#     for x, y, r in raw_circles:
+#         is_duplicate = False
+#         for fx, fy, fr in filtered_circles:
+#             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+#             if dist < (r + fr) * 0.5:  # ← STRICTER (was 0.7)
+#                 is_duplicate = True
+#                 break
+#         if not is_duplicate:
+#             filtered_circles.append((x, y, r))
+
+#     return filtered_circles
+
 def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
+    """Detect encircled answers using HoughCircles."""
     import cv2
     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 15,
-    #     param1    = 50,
-    #     param2    = 15,
-    #     minRadius = 12,
-    #     maxRadius = 25,
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 10,        # ← REDUCED from 15
-    #     param1    = 30,        # ← REDUCED from 50 (MORE sensitive)
-    #     param2    = 10,        # ← REDUCED from 15 (LOWER threshold)
-    #     minRadius = 10,        # ← REDUCED from 12
-    #     maxRadius = 30,        # ← INCREASED from 25
-    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 20,        # ← INCREASE from 10 (space out circles)
-        param1    = 30,        # Keep this
-        param2    = 15,        # ← INCREASE from 10 (filter weak circles)
-        minRadius = 10,        # Keep this
-        maxRadius = 30,        # Keep this
+        minDist   = 25,        # Space circles out more
+        param1    = 30,
+        param2    = 20,        # Stricter detection
+        minRadius = 10,
+        maxRadius = 30,
     )
 
     if circles is None:
         return []
 
-    # Filter duplicate/overlapping circles
-    # raw_circles = np.round(circles[0, :]).astype("int").tolist()
-    # filtered_circles = []
-
-    # for x, y, r in raw_circles:
-    #     is_duplicate = False
-    #     for fx, fy, fr in filtered_circles:
-    #         dist = np.sqrt((x - fx)**2 + (y - fy)**2)
-    #         if dist < (r + fr) * 0.7:
-    #             is_duplicate = True
-    #             break
-    #     if not is_duplicate:
-    #         filtered_circles.append((x, y, r))
-
-    # return filtered_circles
+    # Filter duplicate/overlapping circles - STRICT
     raw_circles = np.round(circles[0, :]).astype("int").tolist()
     filtered_circles = []
 
@@ -225,14 +259,15 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
         is_duplicate = False
         for fx, fy, fr in filtered_circles:
             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
-            if dist < (r + fr) * 0.5:  # ← STRICTER (was 0.7)
+            if dist < (r + fr) * 0.4:  # ← VERY STRICT (was 0.5)
                 is_duplicate = True
                 break
         if not is_duplicate:
             filtered_circles.append((x, y, r))
 
-    return filtered_circles
-
+    # Sort by position (top-left to bottom-right) and keep only first 12
+    filtered_circles.sort(key=lambda c: (c[1], c[0]))  # Sort by y, then x
+    return filtered_circles[:12]  # ← CAP AT 12 QUESTIONS
 
 # ---------------------------------------------------------------------------
 # Step 5 — Per-circle OCR
