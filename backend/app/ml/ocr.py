@@ -382,6 +382,53 @@ def thick_font(bw: "np.ndarray") -> "np.ndarray":
 
 #     return filtered_circles[:12]
 
+# def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
+#     """Detect encircled answers using HoughCircles."""
+#     import cv2
+#     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+#     circles = cv2.HoughCircles(
+#         blur,
+#         cv2.HOUGH_GRADIENT,
+#         dp        = 1,
+#         minDist   = 8,
+#         param1    = 20,
+#         param2    = 8,
+#         minRadius = 8,
+#         maxRadius = 40,
+#     )
+
+#     if circles is None:
+#         print("DEBUG: No circles detected at all")
+#         return []
+
+#     # Debug: print raw circles
+#     raw_circles = np.round(circles[0, :]).astype("int").tolist()
+#     print(f"DEBUG: Raw circles detected: {len(raw_circles)}")
+#     print(f"DEBUG: Circle coords (x, y, r): {raw_circles[:15]}")  # Print first 15
+    
+#     raw_circles.sort(key=lambda c: (c[1], c[0]))
+    
+#     filtered_circles = []
+#     MIN_DISTANCE = 10
+    
+#     for x, y, r in raw_circles:
+#         is_duplicate = False
+#         for fx, fy, fr in filtered_circles:
+#             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+#             if dist < MIN_DISTANCE:
+#                 is_duplicate = True
+#                 break
+#         if not is_duplicate:
+#             filtered_circles.append((x, y, r))
+
+#     print(f"DEBUG: After filtering: {len(filtered_circles)} circles")
+#     print(f"DEBUG: Filtered circles: {filtered_circles}")
+    
+#     result = filtered_circles[:12]
+#     print(f"DEBUG: Final result (capped at 12): {len(result)} circles")
+    
+#     return result
+
 def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     """Detect encircled answers using HoughCircles."""
     import cv2
@@ -398,20 +445,21 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     )
 
     if circles is None:
-        print("DEBUG: No circles detected at all")
         return []
 
-    # Debug: print raw circles
     raw_circles = np.round(circles[0, :]).astype("int").tolist()
-    print(f"DEBUG: Raw circles detected: {len(raw_circles)}")
-    print(f"DEBUG: Circle coords (x, y, r): {raw_circles[:15]}")  # Print first 15
+    print(f"DEBUG: Raw circles: {len(raw_circles)}")
     
-    raw_circles.sort(key=lambda c: (c[1], c[0]))
+    # ✓ FILTER 1: Only keep circles with CONSISTENT RADIUS (18-28px)
+    consistent_radius = [c for c in raw_circles if 18 <= c[2] <= 28]
+    print(f"DEBUG: After radius filter (18-28px): {len(consistent_radius)}")
     
+    # ✓ FILTER 2: Remove duplicates (very close circles)
+    consistent_radius.sort(key=lambda c: (c[1], c[0]))
     filtered_circles = []
-    MIN_DISTANCE = 10
+    MIN_DISTANCE = 15
     
-    for x, y, r in raw_circles:
+    for x, y, r in consistent_radius:
         is_duplicate = False
         for fx, fy, fr in filtered_circles:
             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
@@ -420,14 +468,11 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
                 break
         if not is_duplicate:
             filtered_circles.append((x, y, r))
-
-    print(f"DEBUG: After filtering: {len(filtered_circles)} circles")
-    print(f"DEBUG: Filtered circles: {filtered_circles}")
     
-    result = filtered_circles[:12]
-    print(f"DEBUG: Final result (capped at 12): {len(result)} circles")
+    print(f"DEBUG: After duplicate filter: {len(filtered_circles)}")
+    print(f"DEBUG: Final circles: {filtered_circles}")
     
-    return result
+    return filtered_circles[:12]
 
 # ---------------------------------------------------------------------------
 # Step 5 — Per-circle OCR
