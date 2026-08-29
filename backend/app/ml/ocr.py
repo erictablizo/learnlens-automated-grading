@@ -457,7 +457,8 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     # ✓ FILTER 2: Remove duplicates (very close circles)
     consistent_radius.sort(key=lambda c: (c[1], c[0]))
     filtered_circles = []
-    MIN_DISTANCE = 15
+    # MIN_DISTANCE = 15
+    MIN_DISTANCE = 50
     
     for x, y, r in consistent_radius:
         is_duplicate = False
