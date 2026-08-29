@@ -269,6 +269,42 @@ def thick_font(bw: "np.ndarray") -> "np.ndarray":
 #     filtered_circles.sort(key=lambda c: (c[1], c[0]))  # Sort by y, then x
 #     return filtered_circles[:12]  # ← CAP AT 12 QUESTIONS
 
+# def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
+#     """Detect encircled answers using HoughCircles."""
+#     import cv2
+#     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+#     circles = cv2.HoughCircles(
+#         blur,
+#         cv2.HOUGH_GRADIENT,
+#         dp        = 1,
+#         minDist   = 18,        # ← LOOSEN (was 25)
+#         param1    = 30,
+#         param2    = 17,        # ← LOOSEN (was 20)
+#         minRadius = 10,
+#         maxRadius = 30,
+#     )
+
+#     if circles is None:
+#         return []
+
+#     # Filter duplicate/overlapping circles - MODERATE
+#     raw_circles = np.round(circles[0, :]).astype("int").tolist()
+#     filtered_circles = []
+
+#     for x, y, r in raw_circles:
+#         is_duplicate = False
+#         for fx, fy, fr in filtered_circles:
+#             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+#             if dist < (r + fr) * 0.45:  # ← LOOSEN (was 0.4)
+#                 is_duplicate = True
+#                 break
+#         if not is_duplicate:
+#             filtered_circles.append((x, y, r))
+
+#     # Sort by position and cap at 12 (but should naturally be ~12)
+#     filtered_circles.sort(key=lambda c: (c[1], c[0]))
+#     return filtered_circles[:12]
+
 def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     """Detect encircled answers using HoughCircles."""
     import cv2
@@ -277,32 +313,36 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 18,        # ← LOOSEN (was 25)
-        param1    = 30,
-        param2    = 17,        # ← LOOSEN (was 20)
+        minDist   = 12,        # ← LENIENT (space allows closer detection)
+        param1    = 40,        # ← MODERATE (not too strict on edges)
+        param2    = 12,        # ← LENIENT (low accumulator threshold)
         minRadius = 10,
-        maxRadius = 30,
+        maxRadius = 35,        # ← INCREASED (allow larger variations)
     )
 
     if circles is None:
         return []
 
-    # Filter duplicate/overlapping circles - MODERATE
+    # Sort by y first (rows), then x (columns)
     raw_circles = np.round(circles[0, :]).astype("int").tolist()
+    raw_circles.sort(key=lambda c: (c[1], c[0]))  # Sort by y, then x
+    
+    # Filter duplicates in SAME ROW ONLY (tolerance = 40px vertical)
     filtered_circles = []
-
+    ROW_TOLERANCE = 40
+    
     for x, y, r in raw_circles:
         is_duplicate = False
         for fx, fy, fr in filtered_circles:
-            dist = np.sqrt((x - fx)**2 + (y - fy)**2)
-            if dist < (r + fr) * 0.45:  # ← LOOSEN (was 0.4)
-                is_duplicate = True
-                break
+            # Only check duplicates in same row (within ROW_TOLERANCE pixels)
+            if abs(y - fy) < ROW_TOLERANCE:
+                dist = np.sqrt((x - fx)**2)  # Only check horizontal distance
+                if dist < (r + fr) * 0.5:
+                    is_duplicate = True
+                    break
         if not is_duplicate:
             filtered_circles.append((x, y, r))
 
-    # Sort by position and cap at 12 (but should naturally be ~12)
-    filtered_circles.sort(key=lambda c: (c[1], c[0]))
     return filtered_circles[:12]
 
 # ---------------------------------------------------------------------------
