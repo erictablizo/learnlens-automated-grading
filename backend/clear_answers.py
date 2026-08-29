@@ -1,14 +1,15 @@
-from sqlalchemy.orm import sessionmaker
-from app.core.database import engine
+import asyncio
+from app.core.database import AsyncSessionLocal
 from app.models.models import AnswerKey
 
-# Create session
-Session = sessionmaker(bind=engine)
-db = Session()
+async def clear_exam_answers(exam_id: int):
+    async with AsyncSessionLocal() as session:
+        # Query for answers to delete
+        from sqlalchemy import delete
+        stmt = delete(AnswerKey).where(AnswerKey.exam_id == exam_id)
+        result = await session.execute(stmt)
+        await session.commit()
+        print(f"Cleared {result.rowcount} answer keys for exam {exam_id}")
 
-# Clear answers
-count = db.query(AnswerKey).filter(AnswerKey.exam_id == 42).delete()
-db.commit()
-db.close()
-
-print(f"Cleared {count} answer keys for exam 42")
+if __name__ == "__main__":
+    asyncio.run(clear_exam_answers(42))
