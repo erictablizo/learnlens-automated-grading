@@ -305,6 +305,46 @@ def thick_font(bw: "np.ndarray") -> "np.ndarray":
 #     filtered_circles.sort(key=lambda c: (c[1], c[0]))
 #     return filtered_circles[:12]
 
+# def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
+#     """Detect encircled answers using HoughCircles."""
+#     import cv2
+#     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+#     circles = cv2.HoughCircles(
+#         blur,
+#         cv2.HOUGH_GRADIENT,
+#         dp        = 1,
+#         minDist   = 12,        # ← LENIENT (space allows closer detection)
+#         param1    = 40,        # ← MODERATE (not too strict on edges)
+#         param2    = 12,        # ← LENIENT (low accumulator threshold)
+#         minRadius = 10,
+#         maxRadius = 35,        # ← INCREASED (allow larger variations)
+#     )
+
+#     if circles is None:
+#         return []
+
+#     # Sort by y first (rows), then x (columns)
+#     raw_circles = np.round(circles[0, :]).astype("int").tolist()
+#     raw_circles.sort(key=lambda c: (c[1], c[0]))  # Sort by y, then x
+    
+#     # Filter duplicates in SAME ROW ONLY (tolerance = 40px vertical)
+#     filtered_circles = []
+#     ROW_TOLERANCE = 40
+    
+#     for x, y, r in raw_circles:
+#         is_duplicate = False
+#         for fx, fy, fr in filtered_circles:
+#             # Only check duplicates in same row (within ROW_TOLERANCE pixels)
+#             if abs(y - fy) < ROW_TOLERANCE:
+#                 dist = np.sqrt((x - fx)**2)  # Only check horizontal distance
+#                 if dist < (r + fr) * 0.5:
+#                     is_duplicate = True
+#                     break
+#         if not is_duplicate:
+#             filtered_circles.append((x, y, r))
+
+#     return filtered_circles[:12]
+
 def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     """Detect encircled answers using HoughCircles."""
     import cv2
@@ -313,33 +353,30 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 12,        # ← LENIENT (space allows closer detection)
-        param1    = 40,        # ← MODERATE (not too strict on edges)
-        param2    = 12,        # ← LENIENT (low accumulator threshold)
-        minRadius = 10,
-        maxRadius = 35,        # ← INCREASED (allow larger variations)
+        minDist   = 8,         # ← VERY LENIENT (close spacing allowed)
+        param1    = 20,        # ← VERY LENIENT (loose edge detection)
+        param2    = 8,         # ← VERY LENIENT (very low threshold)
+        minRadius = 8,
+        maxRadius = 40,
     )
 
     if circles is None:
         return []
 
-    # Sort by y first (rows), then x (columns)
+    # Minimal filtering - only remove obvious duplicates (very close)
     raw_circles = np.round(circles[0, :]).astype("int").tolist()
-    raw_circles.sort(key=lambda c: (c[1], c[0]))  # Sort by y, then x
+    raw_circles.sort(key=lambda c: (c[1], c[0]))
     
-    # Filter duplicates in SAME ROW ONLY (tolerance = 40px vertical)
     filtered_circles = []
-    ROW_TOLERANCE = 40
+    MIN_DISTANCE = 10  # Only filter if circles are VERY close (<10px)
     
     for x, y, r in raw_circles:
         is_duplicate = False
         for fx, fy, fr in filtered_circles:
-            # Only check duplicates in same row (within ROW_TOLERANCE pixels)
-            if abs(y - fy) < ROW_TOLERANCE:
-                dist = np.sqrt((x - fx)**2)  # Only check horizontal distance
-                if dist < (r + fr) * 0.5:
-                    is_duplicate = True
-                    break
+            dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+            if dist < MIN_DISTANCE:  # ← Only filter VERY close circles
+                is_duplicate = True
+                break
         if not is_duplicate:
             filtered_circles.append((x, y, r))
 
