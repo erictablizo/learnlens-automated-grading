@@ -98,7 +98,8 @@ export default function ExamKeyViewer({
                 </td>
                 <td style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
                   {ak.ocr_confidence !== null && ak.ocr_confidence !== undefined
-                    ? `${(ak.ocr_confidence * 100).toFixed(0)}%`
+                    // ? `${(ak.ocr_confidence * 100).toFixed(0)}%`
+                    ? `${Math.min(100, Math.round((ak.ocr_confidence || 0) * 100))}%`
                     : "—"}
                 </td>
               </tr>
