@@ -433,13 +433,23 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     """Detect encircled answers using HoughCircles."""
     import cv2
     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1,
+    #     minDist   = 8,
+    #     param1    = 20,
+    #     param2    = 8,
+    #     minRadius = 8,
+    #     maxRadius = 40,
+    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
         minDist   = 8,
-        param1    = 20,
-        param2    = 8,
+        param1    = 15,        # ← REDUCED from 20
+        param2    = 3,         # ← REDUCED from 8 (MUCH MORE LENIENT)
         minRadius = 8,
         maxRadius = 40,
     )
@@ -464,8 +474,7 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     # MIN_DISTANCE = 100
     # MIN_DISTANCE = 150
     # MIN_DISTANCE = 200
-    # MIN_DISTANCE = 250
-    MIN_DISTANCE = 205
+    MIN_DISTANCE = 80
     
     for x, y, r in consistent_radius:
         is_duplicate = False
