@@ -451,7 +451,8 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     print(f"DEBUG: Raw circles: {len(raw_circles)}")
     
     # ✓ FILTER 1: Only keep circles with CONSISTENT RADIUS (18-28px)
-    consistent_radius = [c for c in raw_circles if 18 <= c[2] <= 28]
+    # consistent_radius = [c for c in raw_circles if 18 <= c[2] <= 28]
+    consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 32]
     print(f"DEBUG: After radius filter (18-28px): {len(consistent_radius)}")
     
     # ✓ FILTER 2: Remove duplicates (very close circles)
@@ -459,7 +460,8 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     filtered_circles = []
     # MIN_DISTANCE = 15
     # MIN_DISTANCE = 50
-    MIN_DISTANCE = 100
+    # MIN_DISTANCE = 100
+    MIN_DISTANCE = 150
     
     for x, y, r in consistent_radius:
         is_duplicate = False
