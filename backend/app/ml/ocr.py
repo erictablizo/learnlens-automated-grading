@@ -453,15 +453,25 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     #     minRadius = 8,
     #     maxRadius = 40,
     # )
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1.2,       # ← Changed
+    #     minDist   = 5,         # ← VERY LENIENT
+    #     param1    = 10,        # ← VERY LENIENT
+    #     param2    = 5,         # ← MODERATE
+    #     minRadius = 5,         # ← SMALLER
+    #     maxRadius = 50,        # ← LARGER
+    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
-        dp        = 1.2,       # ← Changed
-        minDist   = 5,         # ← VERY LENIENT
-        param1    = 10,        # ← VERY LENIENT
-        param2    = 5,         # ← MODERATE
-        minRadius = 5,         # ← SMALLER
-        maxRadius = 50,        # ← LARGER
+        dp        = 1,
+        minDist   = 6,         # ← SLIGHTLY REDUCED
+        param1    = 18,        # ← BALANCED (was 20, then 15)
+        param2    = 5,         # ← BALANCED (was 8, then 3)
+        minRadius = 8,
+        maxRadius = 40,
     )
 
     if circles is None:
@@ -484,7 +494,7 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     # MIN_DISTANCE = 100
     # MIN_DISTANCE = 150
     # MIN_DISTANCE = 200
-    MIN_DISTANCE = 80
+    MIN_DISTANCE = 120
     
     for x, y, r in consistent_radius:
         is_duplicate = False
@@ -616,8 +626,10 @@ def ocr_page(image_path: str) -> OCRPageResult:
         # ── HoughCircles on preprocessed gray (Eric's step 4) ─────────────
         # gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
         # circles = detect_circles(gray)
-                # HoughCircles on RAW image (skip preprocessing)
-        gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # HoughCircles on RAW image (skip preprocessing)
+        # gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # circles = detect_circles(gray)
+        gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
         circles = detect_circles(gray)
 
         if not circles:
