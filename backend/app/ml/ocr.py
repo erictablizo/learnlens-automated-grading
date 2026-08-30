@@ -429,85 +429,162 @@ def thick_font(bw: "np.ndarray") -> "np.ndarray":
     
 #     return result
 
+# def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
+#     """Detect encircled answers using HoughCircles."""
+#     import cv2
+#     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1,
+#     #     minDist   = 8,
+#     #     param1    = 20,
+#     #     param2    = 8,
+#     #     minRadius = 8,
+#     #     maxRadius = 40,
+#     # )
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1,
+#     #     minDist   = 8,
+#     #     param1    = 15,        # ← REDUCED from 20
+#     #     param2    = 3,         # ← REDUCED from 8 (MUCH MORE LENIENT)
+#     #     minRadius = 8,
+#     #     maxRadius = 40,
+#     # )
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1.2,       # ← Changed
+#     #     minDist   = 5,         # ← VERY LENIENT
+#     #     param1    = 10,        # ← VERY LENIENT
+#     #     param2    = 5,         # ← MODERATE
+#     #     minRadius = 5,         # ← SMALLER
+#     #     maxRadius = 50,        # ← LARGER
+#     # )
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1,
+#     #     minDist   = 6,         # ← SLIGHTLY REDUCED
+#     #     param1    = 18,        # ← BALANCED (was 20, then 15)
+#     #     param2    = 5,         # ← BALANCED (was 8, then 3)
+#     #     minRadius = 8,
+#     #     maxRadius = 40,
+#     # )
+#     # circles = cv2.HoughCircles(
+#     #     blur,
+#     #     cv2.HOUGH_GRADIENT,
+#     #     dp        = 1,
+#     #     minDist   = 7,         # ← REDUCED (allow closer circles)
+#     #     param1    = 18,        # ← SLIGHTLY REDUCED
+#     #     param2    = 6,         # ← REDUCED (more sensitive)
+#     #     minRadius = 8,
+#     #     maxRadius = 40,
+#     # )
+#     circles = cv2.HoughCircles(
+#         blur,
+#         cv2.HOUGH_GRADIENT,
+#         dp        = 1,
+#         minDist   = 5,         # ← VERY SMALL (allow very close circles)
+#         param1    = 12,        # ← VERY SENSITIVE
+#         param2    = 4,         # ← VERY LENIENT
+#         minRadius = 8,
+#         maxRadius = 40,
+#     )
+
+#     if circles is None:
+#         return []
+
+#     raw_circles = np.round(circles[0, :]).astype("int").tolist()
+#     print(f"DEBUG: Raw circles: {len(raw_circles)}")
+    
+#     # ✓ FILTER 1: Only keep circles with CONSISTENT RADIUS (18-28px)
+#     # consistent_radius = [c for c in raw_circles if 18 <= c[2] <= 28]
+#     # consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 32]
+#     consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 35]
+#     print(f"DEBUG: After radius filter (18-28px): {len(consistent_radius)}")
+    
+#     # ✓ FILTER 2: Remove duplicates (very close circles)
+#     consistent_radius.sort(key=lambda c: (c[1], c[0]))
+#     filtered_circles = []
+#     # MIN_DISTANCE = 15
+#     # MIN_DISTANCE = 50
+#     # MIN_DISTANCE = 100
+#     # MIN_DISTANCE = 150
+#     # MIN_DISTANCE = 200
+#     # MIN_DISTANCE = 120
+#     MIN_DISTANCE = 110
+    
+#     for x, y, r in consistent_radius:
+#         is_duplicate = False
+#         for fx, fy, fr in filtered_circles:
+#             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
+#             if dist < MIN_DISTANCE:
+#                 is_duplicate = True
+#                 break
+#         if not is_duplicate:
+#             filtered_circles.append((x, y, r))
+    
+#     print(f"DEBUG: After duplicate filter: {len(filtered_circles)}")
+#     print(f"DEBUG: Final circles: {filtered_circles}")
+    
+#     return filtered_circles[:12]
+
 def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
-    """Detect encircled answers using HoughCircles."""
+    """Detect encircled answers using HoughCircles with contour verification."""
     import cv2
     blur    = cv2.GaussianBlur(gray, (9, 9), 2)
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 8,
-    #     param1    = 20,
-    #     param2    = 8,
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 8,
-    #     param1    = 15,        # ← REDUCED from 20
-    #     param2    = 3,         # ← REDUCED from 8 (MUCH MORE LENIENT)
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1.2,       # ← Changed
-    #     minDist   = 5,         # ← VERY LENIENT
-    #     param1    = 10,        # ← VERY LENIENT
-    #     param2    = 5,         # ← MODERATE
-    #     minRadius = 5,         # ← SMALLER
-    #     maxRadius = 50,        # ← LARGER
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 6,         # ← SLIGHTLY REDUCED
-    #     param1    = 18,        # ← BALANCED (was 20, then 15)
-    #     param2    = 5,         # ← BALANCED (was 8, then 3)
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
+    
+    # AGGRESSIVE parameters to find ALL circles
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 7,         # ← REDUCED (allow closer circles)
-        param1    = 18,        # ← SLIGHTLY REDUCED
-        param2    = 6,         # ← REDUCED (more sensitive)
-        minRadius = 8,
-        maxRadius = 40,
+        minDist   = 5,         # AGGRESSIVE
+        param1    = 10,        # SENSITIVE
+        param2    = 3,         # LENIENT
+        minRadius = 5,
+        maxRadius = 50,
     )
 
     if circles is None:
         return []
 
     raw_circles = np.round(circles[0, :]).astype("int").tolist()
-    print(f"DEBUG: Raw circles: {len(raw_circles)}")
+    print(f"DEBUG: Raw circles detected: {len(raw_circles)}")
     
-    # ✓ FILTER 1: Only keep circles with CONSISTENT RADIUS (18-28px)
-    # consistent_radius = [c for c in raw_circles if 18 <= c[2] <= 28]
-    # consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 32]
-    consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 35]
-    print(f"DEBUG: After radius filter (18-28px): {len(consistent_radius)}")
+    # ✓ NEW: Verify circles contain letters using contours
+    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # ✓ FILTER 2: Remove duplicates (very close circles)
-    consistent_radius.sort(key=lambda c: (c[1], c[0]))
+    # Filter circles that have contours inside them
+    valid_circles = []
+    for x, y, r in raw_circles:
+        # Check if any contour is inside this circle
+        has_letter = False
+        for contour in contours:
+            M = cv2.moments(contour)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                # Check if contour center is inside circle
+                dist = np.sqrt((cx - x)**2 + (cy - y)**2)
+                if dist < r:
+                    has_letter = True
+                    break
+        if has_letter:
+            valid_circles.append((x, y, r))
+    
+    print(f"DEBUG: Circles with letters: {len(valid_circles)}")
+    
+    # Sort by position and remove close duplicates
+    valid_circles.sort(key=lambda c: (c[1], c[0]))
     filtered_circles = []
-    # MIN_DISTANCE = 15
-    # MIN_DISTANCE = 50
-    # MIN_DISTANCE = 100
-    # MIN_DISTANCE = 150
-    # MIN_DISTANCE = 200
-    # MIN_DISTANCE = 120
-    MIN_DISTANCE = 110
+    MIN_DISTANCE = 50
     
-    for x, y, r in consistent_radius:
+    for x, y, r in valid_circles:
         is_duplicate = False
         for fx, fy, fr in filtered_circles:
             dist = np.sqrt((x - fx)**2 + (y - fy)**2)
@@ -517,9 +594,7 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
         if not is_duplicate:
             filtered_circles.append((x, y, r))
     
-    print(f"DEBUG: After duplicate filter: {len(filtered_circles)}")
-    print(f"DEBUG: Final circles: {filtered_circles}")
-    
+    print(f"DEBUG: Final circles: {len(filtered_circles)}")
     return filtered_circles[:12]
 
 # ---------------------------------------------------------------------------
