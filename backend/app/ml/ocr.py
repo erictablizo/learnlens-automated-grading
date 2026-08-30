@@ -464,7 +464,8 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     # MIN_DISTANCE = 100
     # MIN_DISTANCE = 150
     # MIN_DISTANCE = 200
-    MIN_DISTANCE = 250
+    # MIN_DISTANCE = 250
+    MIN_DISTANCE = 300
     
     for x, y, r in consistent_radius:
         is_duplicate = False
