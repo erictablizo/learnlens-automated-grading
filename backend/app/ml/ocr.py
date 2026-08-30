@@ -443,15 +443,25 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     #     minRadius = 8,
     #     maxRadius = 40,
     # )
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1,
+    #     minDist   = 8,
+    #     param1    = 15,        # ← REDUCED from 20
+    #     param2    = 3,         # ← REDUCED from 8 (MUCH MORE LENIENT)
+    #     minRadius = 8,
+    #     maxRadius = 40,
+    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
-        dp        = 1,
-        minDist   = 8,
-        param1    = 15,        # ← REDUCED from 20
-        param2    = 3,         # ← REDUCED from 8 (MUCH MORE LENIENT)
-        minRadius = 8,
-        maxRadius = 40,
+        dp        = 1.2,       # ← Changed
+        minDist   = 5,         # ← VERY LENIENT
+        param1    = 10,        # ← VERY LENIENT
+        param2    = 5,         # ← MODERATE
+        minRadius = 5,         # ← SMALLER
+        maxRadius = 50,        # ← LARGER
     )
 
     if circles is None:
@@ -604,7 +614,10 @@ def ocr_page(image_path: str) -> OCRPageResult:
         dilated = thick_font(cleaned)   # returns BGR
 
         # ── HoughCircles on preprocessed gray (Eric's step 4) ─────────────
-        gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
+        # gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
+        # circles = detect_circles(gray)
+                # HoughCircles on RAW image (skip preprocessing)
+        gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         circles = detect_circles(gray)
 
         if not circles:
