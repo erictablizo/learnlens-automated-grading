@@ -211,7 +211,8 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     print(f"DEBUG: After duplicate filter: {len(filtered_circles)}")
     print(f"DEBUG: Final circles: {filtered_circles}")
     
-    return filtered_circles[:12]
+    # return filtered_circles[:12]
+    return filtered_circles
 
 # ---------------------------------------------------------------------------
 # Step 5 — Per-circle OCR
