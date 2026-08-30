@@ -463,13 +463,23 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     #     minRadius = 5,         # ← SMALLER
     #     maxRadius = 50,        # ← LARGER
     # )
+    # circles = cv2.HoughCircles(
+    #     blur,
+    #     cv2.HOUGH_GRADIENT,
+    #     dp        = 1,
+    #     minDist   = 6,         # ← SLIGHTLY REDUCED
+    #     param1    = 18,        # ← BALANCED (was 20, then 15)
+    #     param2    = 5,         # ← BALANCED (was 8, then 3)
+    #     minRadius = 8,
+    #     maxRadius = 40,
+    # )
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
         dp        = 1,
-        minDist   = 6,         # ← SLIGHTLY REDUCED
-        param1    = 18,        # ← BALANCED (was 20, then 15)
-        param2    = 5,         # ← BALANCED (was 8, then 3)
+        minDist   = 7,         # ← REDUCED (allow closer circles)
+        param1    = 18,        # ← SLIGHTLY REDUCED
+        param2    = 6,         # ← REDUCED (more sensitive)
         minRadius = 8,
         maxRadius = 40,
     )
@@ -494,7 +504,8 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     # MIN_DISTANCE = 100
     # MIN_DISTANCE = 150
     # MIN_DISTANCE = 200
-    MIN_DISTANCE = 120
+    # MIN_DISTANCE = 120
+    MIN_DISTANCE = 110
     
     for x, y, r in consistent_radius:
         is_duplicate = False
