@@ -360,7 +360,7 @@ export default function ViewExamPage() {
               </Button>
             )}
           </div>
-          <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.75rem" }}>
+          {/* <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.75rem" }}>
             {selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%", padding: "1rem", overflowY: "auto" }}>
                 {(selectedPaperFull.paper_scores ?? []).slice().sort((a, b) => a.question_number - b.question_number).map(s => (
@@ -369,6 +369,16 @@ export default function ViewExamPage() {
                     <span style={{ fontWeight: 600, color: s.is_correct ? "var(--success)" : "var(--error)" }}>
                       {s.student_answer}
                     </span>
+                  </div>
+                ))}
+              </div> */}
+            <div className="page-viewer-slot" style={{ alignItems: selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? "flex-start" : "center", padding: selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? "1rem" : 0, overflowY: "auto" }}>
+            {selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
+                {(selectedPaperFull.paper_scores ?? []).slice().sort((a, b) => a.question_number - b.question_number).map(s => (
+                  <div key={s.score_id} style={{ fontSize: "0.82rem", color: s.is_correct ? "var(--success)" : "var(--error)", padding: "0.1rem 0" }}>
+                    <span style={{ color: "var(--text-muted)", minWidth: 24, display: "inline-block" }}>{s.question_number}.</span>
+                    <span style={{ fontWeight: 600 }}>{s.student_answer}</span>
                   </div>
                 ))}
               </div>
