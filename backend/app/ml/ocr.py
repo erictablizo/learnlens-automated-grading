@@ -214,6 +214,51 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     # return filtered_circles[:12]
     return filtered_circles
 
+# True/False detection (not part of Eric's original script, but useful for certain exams)
+def detect_true_false(gray: "np.ndarray") -> list[tuple[int, int, str]]:
+    """Detect WRITTEN True/False answers."""
+    import cv2
+    import pytesseract
+    
+    # Threshold for text detection
+    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    
+    # Find contours (text regions)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    true_false_answers = []
+    
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        
+        # Filter by size - True/False should be short
+        if w < 15 or h < 15 or w > 200 or h > 80:
+            continue
+        
+        # Extract region
+        roi = gray[y:y+h, x:x+w]
+        
+        # OCR the text
+        text = pytesseract.image_to_string(
+            roi,
+            config="--psm 6"
+        ).strip().upper()
+        
+        if not text or len(text) == 0:
+            continue
+        
+        # Check if it's T or F
+        if text.startswith('T') or text == 'TRUE' or text == 'T':
+            true_false_answers.append((y, x, 'T'))
+        elif text.startswith('F') or text == 'FALSE' or text == 'F':
+            true_false_answers.append((y, x, 'F'))
+    
+    # Sort by position (top to bottom, left to right)
+    ROW_TOLERANCE = 40
+    true_false_answers.sort(key=lambda item: (item[0] // ROW_TOLERANCE, item[1]))
+    
+    return true_false_answers
+
 # ---------------------------------------------------------------------------
 # Step 5 — Per-circle OCR
 # ---------------------------------------------------------------------------
