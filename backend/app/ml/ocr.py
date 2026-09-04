@@ -354,9 +354,87 @@ def _sort_answers(answers: list[DetectedAnswer]) -> list[DetectedAnswer]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def ocr_page(image_path: str) -> OCRPageResult:
+# Commented on 2026-09-04:
+# def ocr_page(image_path: str) -> OCRPageResult:
+#     """
+#     Run the full pipeline on one exam/answer-sheet image.
+#     Returns OCRPageResult with answers in reading order.
+#     """
+#     try:
+#         import cv2
+
+#         img = cv2.imread(image_path)
+#         if img is None:
+#             raise FileNotFoundError(f"Cannot read image: {image_path}")
+
+#         # ── Preprocessing pipeline (Eric's steps 1-3) ─────────────────────
+#         bw      = binarize(img)
+#         cleaned = remove_noise(bw)
+#         dilated = thick_font(cleaned)   # returns BGR
+
+#         # ── HoughCircles on preprocessed gray (Eric's step 4) ─────────────
+#         # gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
+#         # circles = detect_circles(gray)
+#         # HoughCircles on RAW image (skip preprocessing)
+#         # gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+#         # circles = detect_circles(gray)
+#         gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
+#         circles = detect_circles(gray)
+
+#         if not circles:
+#             return OCRPageResult(
+#                 image_path = image_path,
+#                 answers    = [],
+#                 mean_conf  = 0.0,
+#                 error      = (
+#                     "No circles detected. Ensure the image is clear and "
+#                     "answers are circled (not underlined or ticked)."
+#                 ),
+#             )
+
+#         # ── Per-circle OCR (Eric's step 5) ────────────────────────────────
+#         raw: list[DetectedAnswer] = []
+#         for (cx, cy, r) in circles:
+#             letter, conf = read_circle_letter(gray, cx, cy, r)
+#             if letter:
+#                 raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf))
+
+#         if not raw:
+#             return OCRPageResult(
+#                 image_path = image_path,
+#                 answers    = [],
+#                 mean_conf  = 0.0,
+#                 error      = (
+#                     "Circles detected but no letters could be read. "
+#                     "Ensure letters A/B/C/D are clearly visible inside each circle."
+#                 ),
+#             )
+
+#         # ── Sort (Eric's step 6) ───────────────────────────────────────────
+#         answers   = _sort_answers(raw)
+#         mean_conf = round(sum(a.confidence for a in answers) / len(answers), 2)
+
+#         return OCRPageResult(
+#             image_path = image_path,
+#             answers    = answers,
+#             mean_conf  = mean_conf,
+#         )
+
+#     except Exception as exc:
+#         return OCRPageResult(
+#             image_path = image_path,
+#             answers    = [],
+#             mean_conf  = 0.0,
+#             error      = str(exc),
+#         )
+def ocr_page(image_path: str, question_type: str = "encircled") -> OCRPageResult:
     """
     Run the full pipeline on one exam/answer-sheet image.
+    
+    Args:
+        image_path: Path to the exam/answer sheet image
+        question_type: "encircled" for Multiple Choice OR "true_false" for T/F questions
+    
     Returns OCRPageResult with answers in reading order.
     """
     try:
@@ -371,32 +449,55 @@ def ocr_page(image_path: str) -> OCRPageResult:
         cleaned = remove_noise(bw)
         dilated = thick_font(cleaned)   # returns BGR
 
-        # ── HoughCircles on preprocessed gray (Eric's step 4) ─────────────
-        # gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
-        # circles = detect_circles(gray)
-        # HoughCircles on RAW image (skip preprocessing)
-        # gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # circles = detect_circles(gray)
-        gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
-        circles = detect_circles(gray)
+        # ── Route based on question type ──────────────────────────────────
+        gray = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
+        
+        if question_type == "true_false":
+            # True/False: Detect written T/F answers
+            print(f"DEBUG: Processing True/False questions from {image_path}")
+            written_data = detect_true_false(gray)
+            
+            if not written_data:
+                return OCRPageResult(
+                    image_path = image_path,
+                    answers    = [],
+                    mean_conf  = 0.0,
+                    error      = (
+                        "No True/False answers detected. Ensure T or F is clearly written."
+                    ),
+                )
+            
+            # Convert written answers to DetectedAnswer objects
+            raw: list[DetectedAnswer] = []
+            for y, x, text in written_data:
+                raw.append(DetectedAnswer(y=y, x=x, letter=text, confidence=0.90))
+            
+            print(f"DEBUG: Detected {len(raw)} True/False answers")
+        
+        else:  # question_type == "encircled" (default)
+            # Multiple Choice: Detect circled answers
+            print(f"DEBUG: Processing Multiple Choice (encircled) questions from {image_path}")
+            circles = detect_circles(gray)
 
-        if not circles:
-            return OCRPageResult(
-                image_path = image_path,
-                answers    = [],
-                mean_conf  = 0.0,
-                error      = (
-                    "No circles detected. Ensure the image is clear and "
-                    "answers are circled (not underlined or ticked)."
-                ),
-            )
+            if not circles:
+                return OCRPageResult(
+                    image_path = image_path,
+                    answers    = [],
+                    mean_conf  = 0.0,
+                    error      = (
+                        "No circles detected. Ensure the image is clear and "
+                        "answers are circled (not underlined or ticked)."
+                    ),
+                )
 
-        # ── Per-circle OCR (Eric's step 5) ────────────────────────────────
-        raw: list[DetectedAnswer] = []
-        for (cx, cy, r) in circles:
-            letter, conf = read_circle_letter(gray, cx, cy, r)
-            if letter:
-                raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf))
+            # ── Per-circle OCR (Eric's step 5) ────────────────────────────────
+            raw: list[DetectedAnswer] = []
+            for (cx, cy, r) in circles:
+                letter, conf = read_circle_letter(gray, cx, cy, r)
+                if letter:
+                    raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf))
+            
+            print(f"DEBUG: Detected {len(raw)} Multiple Choice answers")
 
         if not raw:
             return OCRPageResult(
@@ -404,8 +505,8 @@ def ocr_page(image_path: str) -> OCRPageResult:
                 answers    = [],
                 mean_conf  = 0.0,
                 error      = (
-                    "Circles detected but no letters could be read. "
-                    "Ensure letters A/B/C/D are clearly visible inside each circle."
+                    "No answers could be read. "
+                    "Ensure answers are clearly marked or written."
                 ),
             )
 
