@@ -8,6 +8,7 @@ import PapersTable from "@/components/papers/PapersTable";
 import AddEditPaperModal from "@/components/papers/AddEditPaperModal";
 import EditPaperModal from "@/components/papers/EditPaperModal";
 import { examService } from "@/services/examService";
+import QuestionTypeModal from "@/components/exams/QuestionTypeModal";
 import { paperService } from "@/services/paperService";
 import { Exam } from "@/types/exam";
 import { Paper } from "@/types/paper";
@@ -73,7 +74,12 @@ export default function ViewExamPage() {
   const [exam,          setExam]          = useState<Exam | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [loadError,     setLoadError]     = useState<string | null>(null);
+
+  // Commented on 2026-09-4:
+  // const [generatingKey, setGeneratingKey] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [showQuestionTypeModal, setShowQuestionTypeModal] = useState(false);
+  const [selectedQuestionType, setSelectedQuestionType] = useState<"true_false" | "encircled" | null>(null);
  
   // Page viewer
   const [pageIdx,     setPageIdx]     = useState(0);
@@ -216,20 +222,46 @@ export default function ViewExamPage() {
     setToast({ msg: "Paper added successfully.", type: "success" });
   };
  
+  // Commented on 2026-09-4:
   // ── Generate answer key ───────────────────────────────────────────────────
-  const handleGenerateKey = async () => {
+  // const handleGenerateKey = async () => {
+  //   const currentExamPage = examPages[pageIdx];
+  //   if (!currentExamPage) return;
+  //   const token = getToken();
+  //   if (!token) return;
+  //   setGeneratingKey(true);
+  //   try {
+  //     await examService.generateAnswerKey(examId, currentExamPage.page_id, token);
+  //     await loadExam();
+  //     setToast({ msg: "The exam key has been successfully generated.", type: "success" });
+  //   } catch {
+  //     setToast({ msg: "We couldn't generate the exam key. Please try again.", type: "error" });
+  //   } finally { setGeneratingKey(false); }
+  // };
+  // ── Generate answer key (open modal) ───────────────────────────────────
+  const handleGenerateKey = () => {
+    setShowQuestionTypeModal(true);
+  };
+
+  // ── Generate answer key with selected type ────────────────────────────
+  const handleGenerateKeyWithType = async (questionType: "true_false" | "encircled") => {
+    setShowQuestionTypeModal(false);
     const currentExamPage = examPages[pageIdx];
     if (!currentExamPage) return;
     const token = getToken();
     if (!token) return;
     setGeneratingKey(true);
+    setSelectedQuestionType(questionType);
     try {
-      await examService.generateAnswerKey(examId, currentExamPage.page_id, token);
+      await examService.generateAnswerKey(examId, currentExamPage.page_id, token, questionType);
       await loadExam();
       setToast({ msg: "The exam key has been successfully generated.", type: "success" });
     } catch {
       setToast({ msg: "We couldn't generate the exam key. Please try again.", type: "error" });
-    } finally { setGeneratingKey(false); }
+    } finally { 
+      setGeneratingKey(false);
+      setSelectedQuestionType(null);
+    }
   };
  
   // ── Page nav ──────────────────────────────────────────────────────────────
@@ -439,7 +471,13 @@ export default function ViewExamPage() {
             onSuccess={handleEditSuccess}
           />
         )}
- 
+        {/* Question Type Modal */}
+        <QuestionTypeModal
+          isOpen={showQuestionTypeModal}
+          onClose={() => setShowQuestionTypeModal(false)}
+          onSelect={handleGenerateKeyWithType}
+          loading={generatingKey}
+        />
         {/* Toast */}
         {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
       </main>

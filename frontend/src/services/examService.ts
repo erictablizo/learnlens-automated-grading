@@ -25,10 +25,17 @@ export const examService = {
   //     {},
   //     token,
   //   ),
-  generateAnswerKey: (examId: number, pageId: number, token: string) =>
+  // Commented on 2026-09-4: 
+  // generateAnswerKey: (examId: number, pageId: number, token: string) =>
+  //   api.post<{ success: boolean; message: string; detected?: number }>(
+  //     `/exams/${examId}/answer-key/generate?page_id=${pageId}`,
+  //     {},
+  //     token,
+  //   ),
+  generateAnswerKey: (examId: number, pageId: number, token: string, questionType?: "true_false" | "encircled") =>
     api.post<{ success: boolean; message: string; detected?: number }>(
-      `/exams/${examId}/answer-key/generate?page_id=${pageId}`,
+      `/exams/${examId}/answer-key/generate?page_id=${pageId}${questionType ? `&question_type=${questionType}` : ""}`,
       {},
-      token,
+      token
     ),
 };
