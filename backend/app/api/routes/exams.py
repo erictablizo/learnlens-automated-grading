@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from fastapi import Query  # ← ADD THIS if not already imported
  
 from app.core.database import get_db
 from app.core.config import settings
@@ -126,18 +127,34 @@ async def delete_exam_page(
     # Reset checked papers since the exam structure changed
     await exam_service.reset_exam_paper_scores(db, exam_id)
  
- 
+
+#  Commented on 2026-09-06:
+# @router.post("/{exam_id}/answer-key/generate")
+# async def generate_answer_key(
+#     exam_id: int,
+#     page_id: int,
+#     uid: int = Depends(current_user_id),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     exam = await exam_service.get_exam(db, exam_id, uid)
+#     if not exam:
+#         raise HTTPException(status_code=404, detail="Exam not found")
+#     result = await exam_service.generate_answer_key(db, exam_id, page_id)
+#     if not result.get("success"):
+#         raise HTTPException(status_code=422, detail=result.get("reason", "Answer key generation failed."))
+#     return result
 @router.post("/{exam_id}/answer-key/generate")
 async def generate_answer_key(
     exam_id: int,
     page_id: int,
+    question_type: str = Query("encircled"),  # ← ADD THIS
     uid: int = Depends(current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     exam = await exam_service.get_exam(db, exam_id, uid)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
-    result = await exam_service.generate_answer_key(db, exam_id, page_id)
+    result = await exam_service.generate_answer_key(db, exam_id, page_id, question_type)  # ← PASS IT
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("reason", "Answer key generation failed."))
     return result

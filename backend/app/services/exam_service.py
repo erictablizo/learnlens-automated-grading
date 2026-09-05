@@ -96,9 +96,49 @@ async def reset_exam_paper_scores(db: AsyncSession, exam_id: int) -> int:
         await db.commit()
     return count
  
+# Commented on 2026-09-06: 
+# async def generate_answer_key(db: AsyncSession, exam_id: int, page_id: int) -> dict:
+#     """Run OCR pipeline on the exam page image to extract the answer key."""
+#     page_result = await db.execute(
+#         select(ExamPage).where(ExamPage.page_id == page_id, ExamPage.exam_id == exam_id)
+#     )
+#     page = page_result.scalar_one_or_none()
+#     if not page:
+#         return {"success": False, "reason": "Exam page not found."}
  
-async def generate_answer_key(db: AsyncSession, exam_id: int, page_id: int) -> dict:
-    """Run OCR pipeline on the exam page image to extract the answer key."""
+#     if not os.path.exists(page.image_path):
+#         return {"success": False, "reason": f"Image file not found: {page.image_path}"}
+ 
+#     try:
+#         from app.ml.ocr import ocr_page, setup_tesseract
+#         from app.core.config import settings
+#         cmd = getattr(settings, "TESSERACT_CMD", "")
+#         if cmd:
+#             setup_tesseract(cmd)
+#         result = ocr_page(page.image_path)
+#     except ImportError:
+#         return {"success": False, "reason": "OCR libraries not installed."}
+#     except Exception as exc:
+#         return {"success": False, "reason": f"OCR error: {exc}"}
+ 
+#     if result.error:
+#         return {"success": False, "reason": result.error}
+ 
+#     if not result.answers:
+#         return {
+#             "success": False,
+#             "reason": "No encircled answers detected on this page. Make sure the image is clear and answers are clearly circled.",
+#         }
+async def generate_answer_key(db: AsyncSession, exam_id: int, page_id: int, question_type: str = "encircled") -> dict:
+    """
+    Run OCR pipeline on the exam page image to extract the answer key.
+    
+    Args:
+        db: Database session
+        exam_id: Exam ID
+        page_id: Page ID
+        question_type: "encircled" for Multiple Choice OR "true_false" for T/F questions
+    """
     page_result = await db.execute(
         select(ExamPage).where(ExamPage.page_id == page_id, ExamPage.exam_id == exam_id)
     )
@@ -115,7 +155,7 @@ async def generate_answer_key(db: AsyncSession, exam_id: int, page_id: int) -> d
         cmd = getattr(settings, "TESSERACT_CMD", "")
         if cmd:
             setup_tesseract(cmd)
-        result = ocr_page(page.image_path)
+        result = ocr_page(page.image_path, question_type=question_type)  # ← PASS question_type
     except ImportError:
         return {"success": False, "reason": "OCR libraries not installed."}
     except Exception as exc:
@@ -125,9 +165,11 @@ async def generate_answer_key(db: AsyncSession, exam_id: int, page_id: int) -> d
         return {"success": False, "reason": result.error}
  
     if not result.answers:
+        # Generic error message for both question types
+        answer_type = "True/False answers" if question_type == "true_false" else "encircled answers"
         return {
             "success": False,
-            "reason": "No encircled answers detected on this page. Make sure the image is clear and answers are clearly circled.",
+            "reason": f"No {answer_type} detected on this page. Ensure answers are clearly marked.",
         }
  
     await db.execute(
