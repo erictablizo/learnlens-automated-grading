@@ -11,9 +11,9 @@ This is the main entry point for OCR processing.
  
 from __future__ import annotations
  
-from ocr_shared import OCRPageResult, setup_tesseract
-from ocr_encircled import ocr_page_encircled
-from ocr_true_false import ocr_page_true_false
+from app.ml.ocr_shared import OCRPageResult, setup_tesseract
+from app.ml.ocr_encircled import ocr_page_encircled
+from app.ml.ocr_true_false import ocr_page_true_false
  
  
 # ---------------------------------------------------------------------------

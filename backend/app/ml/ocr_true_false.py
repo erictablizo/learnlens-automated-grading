@@ -10,7 +10,7 @@ from __future__ import annotations
  
 import numpy as np
  
-from ocr_shared import (
+from app.ml.ocr_shared import (
     DetectedAnswer,
     OCRPageResult,
     binarize,
