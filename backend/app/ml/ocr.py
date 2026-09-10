@@ -69,7 +69,7 @@ def ocr_page(image_path: str, question_type: str = "encircled") -> OCRPageResult
 # Re-export shared classes for backward compatibility
 # ---------------------------------------------------------------------------
  
-from ocr_shared import (
+from app.ml.ocr_shared import (
     DetectedAnswer,
     OCRPageResult,
 )
