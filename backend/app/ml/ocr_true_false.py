@@ -120,6 +120,8 @@ def ocr_page_true_false(image_path: str) -> OCRPageResult:
         # ── Sort ───────────────────────────────────────────────────────────
         answers   = _sort_answers(raw)
         mean_conf = round(sum(a.confidence for a in answers) / len(answers), 2)
+        
+        print(f"Answers from {answers}")
  
         return OCRPageResult(
             image_path = image_path,
