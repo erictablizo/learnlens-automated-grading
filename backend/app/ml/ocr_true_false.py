@@ -52,9 +52,9 @@ def detect_true_false(gray: "np.ndarray") -> list[tuple[int, int, str]]:
             continue
         
         # Check if it's T or F
-        if text.startswith('T') or text == 'TRUE' or text == 'T':
+        if text.startswith('TRU') or text == 'TRUE' or text == 'T':
             true_false_answers.append((y, x, 'T'))
-        elif text.startswith('F') or text == 'FALSE' or text == 'F':
+        elif text.startswith('FAL') or text == 'FALSE' or text == 'F':
             true_false_answers.append((y, x, 'F'))
     
     # Sort by position (top to bottom, left to right)
