@@ -52,9 +52,9 @@ def detect_true_false(gray: "np.ndarray") -> list[tuple[int, int, str]]:
             continue
         
         # Check if it's T or F
-        if text.startswith('TRU') or text == 'TRUE' or text == 'T':
+        if text.startswith('TRU') or text == 'TRUE' or text == 'TRU':
             true_false_answers.append((y, x, 'T'))
-        elif text.startswith('FAL') or text == 'FALSE' or text == 'F':
+        elif text.startswith('FAL') or text == 'FALSE' or text == 'FAL':
             true_false_answers.append((y, x, 'F'))
     
     # Sort by position (top to bottom, left to right)
@@ -120,7 +120,7 @@ def ocr_page_true_false(image_path: str) -> OCRPageResult:
         # ── Sort ───────────────────────────────────────────────────────────
         answers   = _sort_answers(raw)
         mean_conf = round(sum(a.confidence for a in answers) / len(answers), 2)
-        
+
         print(f"Answers from {answers}")
  
         return OCRPageResult(
