@@ -121,7 +121,7 @@ def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
     print(f"DEBUG: Final circles: {filtered_circles}")
     
     # return filtered_circles[:12]
-    return filtered_circles
+    return filtered_circles[:12]
 
 def read_circle_letter(
     gray:   "np.ndarray",
