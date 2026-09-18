@@ -39,7 +39,7 @@ def detect_true_false_line_based(gray: "np.ndarray") -> list[tuple[int, int, str
     height, width = gray.shape
 
     # Skip header/instructions (~400px at top)
-    HEADER_HEIGHT = 400
+    HEADER_HEIGHT = 800
     usable_height = height - HEADER_HEIGHT
     
     # Estimate line height (assume ~60 pixels per question line)
