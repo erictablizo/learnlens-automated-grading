@@ -37,11 +37,17 @@ def detect_true_false_line_based(gray: "np.ndarray") -> list[tuple[int, int, str
     
     # Image dimensions
     height, width = gray.shape
+
+    # Skip header/instructions (~400px at top)
+    HEADER_HEIGHT = 400
+    usable_height = height - HEADER_HEIGHT
     
     # Estimate line height (assume ~60 pixels per question line)
     # Adjust based on your actual spacing
-    LINE_HEIGHT = 160
-    num_lines = height // LINE_HEIGHT
+    # Commented on 2026-09-18:
+    # LINE_HEIGHT = 160
+    LINE_HEIGHT = usable_height // 20  # Should be ~131px
+    num_lines = 20
     
     # Margin to search (leftmost 100px where answers should be)
     MARGIN_WIDTH = 200
