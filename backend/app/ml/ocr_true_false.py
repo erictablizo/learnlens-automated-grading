@@ -19,7 +19,7 @@ from app.ml.ocr_shared import (
     _sort_answers,
 )
 
-def detect_true_false_line_based(gray: "np.ndarray") -> list[tuple[int, int, str]]:
+def detect_true_false_line_based(gray: "np.ndarray", original_gray: "np.ndarray") -> list[tuple[int, int, str]]:
     """
     Detect written True/False answers using LINE-BASED detection.
     
@@ -62,7 +62,7 @@ def detect_true_false_line_based(gray: "np.ndarray") -> list[tuple[int, int, str
         y_end = min(y_start + LINE_HEIGHT, height)
         
         # Extract LEFT MARGIN ONLY (answer region)
-        margin_region = gray[y_start:y_end, 0:MARGIN_WIDTH]
+        margin_region = original_gray[y_start:y_end, 0:MARGIN_WIDTH]
         
         if margin_region.size == 0:
             continue
@@ -143,7 +143,7 @@ def detect_true_false_line_based(gray: "np.ndarray") -> list[tuple[int, int, str
     
 #     return true_false_answers
 
-def detect_true_false(gray: "np.ndarray") -> list[tuple[int, int, str]]:
+def detect_true_false(gray: "np.ndarray", original_gray: "np.ndarray") -> list[tuple[int, int, str]]:
     """
     Detect written True/False answers using LINE-BASED detection.
     
@@ -151,7 +151,7 @@ def detect_true_false(gray: "np.ndarray") -> list[tuple[int, int, str]]:
     
     Returns list of (y, x, text) tuples where text is 'T' or 'F'.
     """
-    return detect_true_false_line_based(gray)
+    return detect_true_false_line_based(gray, original_gray)
 
 # Commented on 2026-09-17
 # def ocr_page_true_false(image_path: str) -> OCRPageResult:
@@ -256,7 +256,8 @@ def ocr_page_true_false(image_path: str) -> OCRPageResult:
  
         # ── Detect True/False answers (LINE-BASED) ────────────────────────
         gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
-        written_data = detect_true_false(gray)
+        original_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # Add this line
+        written_data = detect_true_false(gray, original_gray)
  
         if not written_data:
             return OCRPageResult(
