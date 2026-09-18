@@ -44,7 +44,7 @@ def detect_true_false_line_based(gray: "np.ndarray") -> list[tuple[int, int, str
     num_lines = height // LINE_HEIGHT
     
     # Margin to search (leftmost 100px where answers should be)
-    MARGIN_WIDTH = 100
+    MARGIN_WIDTH = 200
     
     true_false_answers = []
     
