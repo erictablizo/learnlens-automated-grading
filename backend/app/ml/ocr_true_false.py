@@ -80,14 +80,27 @@ def detect_true_false_line_based(gray: "np.ndarray", original_gray: "np.ndarray"
         
         # Extract FIRST T or F from the text
         # This handles cases like "TRUE something else" or "T/F confused"
+        # Commented on 2026-09-18: 
+        # first_tf = None
+        # for char in text:
+        #     if char == 'T':
+        #         first_tf = 'T'
+        #         break
+        #     elif char == 'F':
+        #         first_tf = 'F'
+        #         break
+        # Look for complete words "TRUE" or "FALSE"
         first_tf = None
-        for char in text:
-            if char == 'T':
-                first_tf = 'T'
-                break
-            elif char == 'F':
-                first_tf = 'F'
-                break
+        text_clean = text.replace('\n', ' ')  # Remove newlines
+
+        if 'TRUE' in text_clean:
+            first_tf = 'T'
+        elif 'FALSE' in text_clean:
+            first_tf = 'F'
+        elif text_clean.startswith('T') and len(text_clean) > 0:  # Only if full word
+            first_tf = 'T'
+        elif text_clean.startswith('F') and len(text_clean) > 0:
+            first_tf = 'F'
         
         if first_tf:
             # Store with y-position of line center
