@@ -264,14 +264,14 @@ def ocr_page_true_false(image_path: str) -> OCRPageResult:
         print(f"\nDEBUG: Processing True/False questions from {image_path}")
  
         # ── Preprocessing pipeline ─────────────────────────────────────────
-        bw      = binarize(img)
-        cleaned = remove_noise(bw)
-        dilated = thick_font(cleaned)
+        # bw      = binarize(img)
+        # cleaned = remove_noise(bw)
+        # dilated = thick_font(cleaned)
  
         # ── Detect True/False answers (LINE-BASED) ────────────────────────
-        gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
+        # gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
         original_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # Add this line
-        written_data = detect_true_false(gray, original_gray)
+        written_data = detect_true_false(original_gray, original_gray)
  
         if not written_data:
             return OCRPageResult(
