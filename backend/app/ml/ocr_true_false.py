@@ -63,6 +63,7 @@ def detect_true_false_line_based(gray: "np.ndarray", original_gray: "np.ndarray"
         
         # Extract LEFT MARGIN ONLY (answer region)
         margin_region = original_gray[y_start:y_end, 0:MARGIN_WIDTH]
+        _, margin_region = cv2.threshold(margin_region, 150, 255, cv2.THRESH_BINARY)
         
         if margin_region.size == 0:
             continue
