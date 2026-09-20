@@ -20,9 +20,9 @@ class Settings(BaseSettings):
     SMTP_SERVER: str = "smtp.office365.com"  # or your school's Exchange server
     SMTP_PORT: int = 587
     SMTP_USE_TLS: bool = True
-    SMTP_USER: str = ""  # Your school email address (e.g., teacher@schooldomain.edu)
-    SMTP_PASSWORD: str = ""  # Your Outlook password or app-specific password
-    SMTP_FROM_EMAIL: str = ""  # Same as SMTP_USER
+    SMTP_USER: str = "eric.tablizo@dlsau.edu.ph"  # Your school email address (e.g., teacher@schooldomain.edu)
+    SMTP_PASSWORD: str = "BabyEric09@@"  # Your Outlook password or app-specific password
+    SMTP_FROM_EMAIL: str = "eric.tablizo@dlsau.edu.ph"  # Same as SMTP_USER
  
  
 settings = Settings()
