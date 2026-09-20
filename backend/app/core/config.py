@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     TESSERACT_CMD: str = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
  
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    # Email configuration
+    SMTP_SERVER: str = "smtp.office365.com"  # or your school's Exchange server
+    SMTP_PORT: int = 587
+    SMTP_USE_TLS: bool = True
+    SMTP_USER: str = ""  # Your school email address (e.g., teacher@schooldomain.edu)
+    SMTP_PASSWORD: str = ""  # Your Outlook password or app-specific password
+    SMTP_FROM_EMAIL: str = ""  # Same as SMTP_USER
  
  
 settings = Settings()
