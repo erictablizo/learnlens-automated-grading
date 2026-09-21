@@ -49,21 +49,9 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     )
  
 # Commented on 2026-09-20 
-# @router.post("/forgot-password")
-# async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
-#     await create_password_reset_token(db, data.email)
-#     return {"message": "If that email exists, a reset link has been sent."}
 @router.post("/forgot-password")
 async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
-    token_result = await create_password_reset_token(db, data.email)
-    if token_result:
-        # SEND EMAIL HERE - add your email service call
-        from app.core.email import send_password_reset_email  # ← import your email function
-        await send_password_reset_email(
-            email=token_result["email"],
-            token=token_result["token"],
-            reset_url=f"http://localhost:3000/reset-password?token={token_result['token']}"
-        )
+    await create_password_reset_token(db, data.email)
     return {"message": "If that email exists, a reset link has been sent."}
  
  

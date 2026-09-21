@@ -67,18 +67,7 @@ async def get_current_user(db: AsyncSession, token: str) -> Optional[User]:
     return result.scalar_one_or_none()
  
 # Commented on 2026-09-20: 
-# async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[str]:
-#     result = await db.execute(select(User).where(User.email == email))
-#     user = result.scalar_one_or_none()
-#     if not user:
-#         return None
-#     token = secrets.token_urlsafe(32)
-#     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-#     reset = PasswordReset(user_id=user.user_id, token=token, expires_at=expires_at)
-#     db.add(reset)
-#     await db.commit()
-#     return token
-async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[dict]:
+async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[str]:
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if not user:
@@ -88,12 +77,7 @@ async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[
     reset = PasswordReset(user_id=user.user_id, token=token, expires_at=expires_at)
     db.add(reset)
     await db.commit()
-    return {
-        "success": True,
-        "token": token,
-        "user_id": user.user_id,
-        "email": email
-    }
+    return token
  
  
 async def reset_password(db: AsyncSession, token: str, new_password: str) -> bool:
