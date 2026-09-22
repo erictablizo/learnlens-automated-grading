@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
 import { setAuth, clearAuth, getToken, getUser } from "@/lib/auth";
 import { clearActiveCollege } from "@/lib/college";
+import { ForgotPasswordResponse } from "@/types/user";
  
 export function useAuth() {
   const router = useRouter();
@@ -42,14 +43,37 @@ export function useAuth() {
     } finally { setIsLoading(false); }
   }, [router]);
  
-  const forgotPassword = useCallback(async (email: string): Promise<boolean> => {
-    if (!email) { setError("Email is required."); return false; }
+  // Commented out 2026-09-22: FIX 2026-09-22: returns the server response (or null) instead of true/false, so the Check Email page knows whether the email was really sent.
+  // const forgotPassword = useCallback(async (email: string): Promise<boolean> => {
+  //   if (!email) { setError("Email is required."); return false; }
+  //   setIsLoading(true); setError(null);
+  //   try {
+  //     await authService.forgotPassword({ email });
+  //     return true;
+  //   } catch (e: unknown) {
+  //     setError(e instanceof Error ? e.message : "Request failed");
+  //     return false;
+  //   } finally { setIsLoading(false); }
+  // }, []);
+  const forgotPassword = useCallback(async (email: string): Promise<ForgotPasswordResponse | null> => {
+    if (!email.trim()) { setError("Email is required."); return null; }
     setIsLoading(true); setError(null);
     try {
-      await authService.forgotPassword({ email });
-      return true;
+      return await authService.forgotPassword({ email: email.trim() });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Request failed");
+      return null;
+    } finally { setIsLoading(false); }
+  }, []);
+ 
+  // NEW 2026-09-22
+  const resetPassword = useCallback(async (token: string, newPassword: string): Promise<boolean> => {
+    setIsLoading(true); setError(null);
+    try {
+      await authService.resetPassword(token, newPassword);
+      return true;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not reset the password.");
       return false;
     } finally { setIsLoading(false); }
   }, []);
@@ -60,5 +84,5 @@ export function useAuth() {
     router.replace("/login");
   }, [router]);
  
-  return { login, register, forgotPassword, logout, isLoading, error, setError, getToken, getUser };
+  return { login, register, forgotPassword, resetPassword, logout, isLoading, error, setError, getToken, getUser };
 }

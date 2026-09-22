@@ -15,10 +15,14 @@ export default function ForgotPasswordForm() {
     if (!email.trim()) { setError("Please enter your email address."); return; }
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
-    const ok = await forgotPassword(email);
-    if (ok) {
-      // Pass email via query param for the check-email page to display
-      router.push(`/login/forgot_password/check_email?email=${encodeURIComponent(email)}`);
+    const res = await forgotPassword(email);
+    if (res) {
+      // Commented out 2026-09-22: tell the next page if the backend is in DEV MODE (no SMTP)
+      // router.push(`/login/forgot_password/check_email?email=${encodeURIComponent(email)}`);
+      const dev = res.email_sent ? "" : "&dev=1";
+      router.push(
+        `/login/forgot_password/check_email?email=${encodeURIComponent(email)}${dev}`
+      );
     }
   };
  

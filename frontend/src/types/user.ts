@@ -24,8 +24,20 @@ export interface RegisterPayload {
 export interface ForgotPasswordPayload {
   email: string;
 }
+
+// NEW 2026-09-22
+export interface ForgotPasswordResponse {
+  message: string;
+  email_sent: boolean;   // false = backend DEV MODE (link printed in the terminal)
+}
  
 export interface ResetPasswordPayload {
   token: string;
   new_password: string;
+}
+
+// Added on 2026-09-22: 
+export interface ValidateResetTokenResponse {
+  valid: boolean;
+  email: string;
 }
