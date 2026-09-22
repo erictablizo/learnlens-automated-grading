@@ -1,21 +1,21 @@
 "use client";
 /**
- * NEW 2026-09-22 — the page the emailed link opens:
- *   /login/forgot_password/reset_password?token=...
- * Previously this page did not exist, so the flow ended at "Check your email".
+ * "Choose a new password" screen, opened from the link in the email:
+ *     /login/forgot_password?token=…
+ * FIX 2026-09-23: token comes as a PROP from ForgotPasswordForm (same page),
+ * so no separate /reset_password route is needed. Falls back to ?token= in the URL.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { authService } from "@/services/authService";
 
-export default function ResetPasswordForm() {
-  const params = useSearchParams();
+export default function ResetPasswordForm({ token: tokenProp }: { token?: string }) {
   const router = useRouter();
-  const token = params.get("token") ?? "";
   const { resetPassword, isLoading, error, setError } = useAuth();
 
+  const [token, setToken] = useState(tokenProp ?? "");
   const [checking, setChecking] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -24,16 +24,18 @@ export default function ResetPasswordForm() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    if (!token) {
+    const t = tokenProp || new URLSearchParams(window.location.search).get("token") || "";
+    setToken(t);
+    if (!t) {
       setLinkError("This reset link is incomplete. Please request a new one.");
       setChecking(false);
       return;
     }
-    authService.validateResetToken(token)
+    authService.validateResetToken(t)
       .then(r => setEmail(r.email))
       .catch((e: unknown) => setLinkError(e instanceof Error ? e.message : "This reset link is invalid or has expired."))
       .finally(() => setChecking(false));
-  }, [token]);
+  }, [tokenProp]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +62,7 @@ export default function ResetPasswordForm() {
           <>
             <div role="alert" className="alert alert-error">{linkError}</div>
             <p className="auth-footer" style={{ marginTop: "1rem" }}>
-              <Link href="/login/forgot_password" className="link-orange">Request a new link</Link>
+              <a href="/login/forgot_password" className="link-orange">Request a new link</a>
             </p>
           </>
         )}
