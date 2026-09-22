@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 import secrets
  
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update, func
  
 from app.core.config import settings
 from app.models.models import User, PasswordReset
@@ -35,7 +35,14 @@ def decode_token(token: str) -> Optional[dict]:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError:
         return None
- 
+
+# Recently added on 2026-09-22: async def _user_by_email(db: AsyncSession, email: str) -> Optional[User]:
+async def _user_by_email(db: AsyncSession, email: str) -> Optional[User]:
+    # FIX 2026-09-22: case-insensitive, so "Grace@Gmail.com" finds "grace@gmail.com"
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == email.strip().lower())
+    )
+    return result.scalar_one_or_none()
  
 async def register_user(db: AsyncSession, email: str, password: str) -> User:
     result = await db.execute(select(User).where(User.email == email))
@@ -65,21 +72,65 @@ async def get_current_user(db: AsyncSession, token: str) -> Optional[User]:
         return None
     result = await db.execute(select(User).where(User.user_id == int(user_id)))
     return result.scalar_one_or_none()
+
+# Recently added on 2026-09-22:
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
  
-# Commented on 2026-09-20: 
-async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[str]:
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
+# Commented on 2026-09-22: 
+# async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[str]:
+#     result = await db.execute(select(User).where(User.email == email))
+#     user = result.scalar_one_or_none()
+#     if not user:
+#         return None
+#     token = secrets.token_urlsafe(32)
+#     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+#     reset = PasswordReset(user_id=user.user_id, token=token, expires_at=expires_at)
+#     db.add(reset)
+#     await db.commit()
+#     return token
+
+async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[Tuple[User, str]]:
+    """
+    FIX 2026-09-22: now returns (user, token) so the route can email the user.
+    Older unused links of this user are cancelled, so only the newest link works
+    (important when the user presses "Resend email").
+    """
+    user = await _user_by_email(db, email)
     if not user:
         return None
+    await db.execute(
+        update(PasswordReset)
+        .where(PasswordReset.user_id == user.user_id, PasswordReset.used == False)  # noqa: E712
+        .values(used=True)
+    )
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-    reset = PasswordReset(user_id=user.user_id, token=token, expires_at=expires_at)
-    db.add(reset)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
+    db.add(PasswordReset(user_id=user.user_id, token=token, expires_at=expires_at))
     await db.commit()
-    return token
+    return user, token
+ 
+#  Recently added on 2026-09-22:
+async def _valid_reset(db: AsyncSession, token: str) -> Optional[PasswordReset]:
+    if not token:
+        return None
+    result = await db.execute(
+        select(PasswordReset).where(PasswordReset.token == token, PasswordReset.used == False)  # noqa: E712
+    )
+    reset = result.scalar_one_or_none()
+    if not reset or _aware(reset.expires_at) < datetime.now(timezone.utc):
+        return None
+    return reset
  
  
+async def verify_reset_token(db: AsyncSession, token: str) -> Optional[str]:
+    """NEW: used by the reset page to check the link before showing the form. Returns the email."""
+    reset = await _valid_reset(db, token)
+    if not reset:
+        return None
+    user = (await db.execute(select(User).where(User.user_id == reset.user_id))).scalar_one_or_none()
+    return user.email if user else None
+
 async def reset_password(db: AsyncSession, token: str, new_password: str) -> bool:
     result = await db.execute(
         select(PasswordReset).where(

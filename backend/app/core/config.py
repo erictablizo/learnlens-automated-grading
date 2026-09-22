@@ -13,6 +13,23 @@ class Settings(BaseSettings):
     # Tesseract OCR executable path (Windows only — leave empty on Linux/Mac)
     # Example: C:\Program Files\Tesseract-OCR\tesseract.exe
     TESSERACT_CMD: str = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+
+    # Added on 2026-09-22: For password reset emails:
+    # ── Forgot Password (FIX 2026-09-22) ──────────────────────────────────
+    # Where the reset link in the email should point (your Next.js app).
+    FRONTEND_URL: str = "http://localhost:3000"
+    RESET_TOKEN_EXPIRE_MINUTES: int = 60
+ 
+    # SMTP. Leave SMTP_HOST empty = DEV MODE (link is printed in the uvicorn terminal).
+    # Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USER=you@gmail.com,
+    #        SMTP_PASSWORD=<16-char App Password, NOT your normal password>
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""          # defaults to SMTP_USER when empty
+    SMTP_FROM_NAME: str = "LearnLens"
+    SMTP_USE_SSL: bool = False   # True only for port 465
  
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 settings = Settings()

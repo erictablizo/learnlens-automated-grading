@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime
 from typing import Optional
  
@@ -30,8 +30,19 @@ class Token(BaseModel):
  
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
- 
+
+#  Recently added on 2026-09-22:
+class ForgotPasswordResponse(BaseModel):          # NEW 2026-09-22
+    message: str
+    email_sent: bool                              # False = DEV MODE (link printed in terminal)
  
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+    # Recently added on 2026-09-22: optional email field for logging/debugging:
+    @field_validator("new_password")
+    @classmethod
+    def _min_len(cls, v: str) -> str:              # same rule as Register
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        return v
