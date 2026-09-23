@@ -26,6 +26,7 @@ export interface Paper {
 }
  
 export interface GradeResult {
+  warning: any;
   success:       boolean;
   total_items:   number;
   answered:      number;

@@ -210,7 +210,13 @@ export default function ViewExamPage() {
       await fetchPapers();
       const full = await paperService.get(examId, selectedPaper.paper_id, token);
       setSelectedPaper(full); setSelectedPaperFull(full);
-      setToast({ msg: `Graded: ${result.correct} / ${result.total_items} (${result.score_percent}%)`, type: "success" });
+      // Commented on 2026-09-23:
+      // setToast({ msg: `Graded: ${result.correct} / ${result.total_items} (${result.score_percent}%)`, type: "success" });
+      setToast({
+        msg: `Graded: ${result.correct} / ${result.total_items} (${result.score_percent}%)`
+             + (result.warning ? ` — ${result.warning}` : ""),
+        type: result.warning ? "error" : "success",
+      });
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : "Something went wrong while checking the paper. Please try again.", type: "error" });
     } finally { setChecking(false); }
@@ -244,25 +250,53 @@ export default function ViewExamPage() {
   };
 
   // ── Generate answer key with selected type ────────────────────────────
-  const handleGenerateKeyWithType = async (questionType: "true_false" | "encircled") => {
-    setShowQuestionTypeModal(false);
-    const currentExamPage = examPages[pageIdx];
-    if (!currentExamPage) return;
-    const token = getToken();
-    if (!token) return;
-    setGeneratingKey(true);
-    setSelectedQuestionType(questionType);
-    try {
-      await examService.generateAnswerKey(examId, currentExamPage.page_id, token, questionType);
-      await loadExam();
-      setToast({ msg: "The exam key has been successfully generated.", type: "success" });
-    } catch {
-      setToast({ msg: "We couldn't generate the exam key. Please try again.", type: "error" });
-    } finally { 
-      setGeneratingKey(false);
-      setSelectedQuestionType(null);
-    }
-  };
+  // Commented on 2026-09-23:
+  // const handleGenerateKeyWithType = async (questionType: "true_false" | "encircled") => {
+  //   setShowQuestionTypeModal(false);
+  //   const currentExamPage = examPages[pageIdx];
+  //   if (!currentExamPage) return;
+  //   const token = getToken();
+  //   if (!token) return;
+  //   setGeneratingKey(true);
+  //   setSelectedQuestionType(questionType);
+  //   try {
+  //     await examService.generateAnswerKey(examId, currentExamPage.page_id, token, questionType);
+  //     await loadExam();
+  //     setToast({ msg: "The exam key has been successfully generated.", type: "success" });
+  //   } catch {
+  //     setToast({ msg: "We couldn't generate the exam key. Please try again.", type: "error" });
+  //   } finally { 
+  //     setGeneratingKey(false);
+  //     setSelectedQuestionType(null);
+  //   }
+  // };
+    const handleGenerateKeyWithType = async (
+      questionType: "true_false" | "encircled",
+      expectedItems: number | null = null,
+    ) => {
+      const currentPage = examPages[pageIdx];
+      if (!currentPage) { setShowQuestionTypeModal(false); return; }
+      const token = getToken();
+      if (!token) { router.replace("/login"); return; }
+      setGeneratingKey(true);
+      setSelectedQuestionType(questionType);
+      try {
+        const res = await examService.generateAnswerKey(
+          examId, currentPage.page_id, token, questionType, expectedItems);
+        await loadExam();
+        await fetchPapers();   // checked papers are reset when the key changes
+        setToast({
+          msg: res.warning ? `${res.message} ${res.warning}` : res.message,
+          type: res.warning ? "error" : "success",
+        });
+      } catch (e: unknown) {
+        setToast({ msg: e instanceof Error ? e.message : "We couldn't generate the exam key. Please try again.", type: "error" });
+      } finally {
+        setGeneratingKey(false);
+        setSelectedQuestionType(null);
+        setShowQuestionTypeModal(false);   // close AFTER it finishes, so the spinner shows
+      }
+    };
  
   // ── Page nav ──────────────────────────────────────────────────────────────
   const examPages  = exam?.pages ?? [];
@@ -276,6 +310,11 @@ export default function ViewExamPage() {
  
   const currentExamPage  = examPages[pageIdx];
   const currentPaperPage = paperPages[pageIdx];
+    // FIX 2026-09-22: show only the answers of the page being viewed
+  const currentPageKeys = (exam?.answer_keys ?? [])
+    .filter(ak => !currentExamPage || ak.page_id == null || ak.page_id === currentExamPage.page_id)
+    .slice()
+    .sort((a, b) => a.question_number - b.question_number);
  
   // ── Loading / error ───────────────────────────────────────────────────────
   if (loading) return (
@@ -376,15 +415,23 @@ export default function ViewExamPage() {
         {/* ── Answer Key section ── */}
         <p className="section-title">Answer Key</p>
         <div className="page-viewer" style={{ marginBottom: "1.5rem" }}>
-          <div className="page-viewer-slot" style={{ alignItems: exam.answer_keys?.length ? "flex-start" : "center", padding: exam.answer_keys?.length ? "1rem" : 0, overflowY: "auto" }}>
-            {exam.answer_keys && exam.answer_keys.length > 0 ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
-                {exam.answer_keys.slice().sort((a, b) => a.question_number - b.question_number).map(ak => (
-                  <div key={ak.answer_key_id} style={{ fontSize: "0.82rem", color: "var(--navy)", padding: "0.1rem 0" }}>
-                    <span style={{ color: "var(--text-muted)", minWidth: 24, display: "inline-block" }}>{ak.question_number}.</span>
-                    <span style={{ fontWeight: 600 }}>{ak.correct_answer}</span>
-                  </div>
-                ))}
+            <div className="page-viewer-slot" style={{ alignItems: currentPageKeys.length ? "flex-start" : "center", padding: currentPageKeys.length ? "1rem" : 0, overflowY: "auto" }}>
+            {currentPageKeys.length > 0 ? (
+              <div style={{ width: "100%" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
+                  {currentPageKeys.map(ak => (
+                    <div key={ak.answer_key_id} style={{ fontSize: "0.82rem", color: "var(--navy)", padding: "0.1rem 0" }}>
+                      <span style={{ color: "var(--text-muted)", minWidth: 24, display: "inline-block" }}>{ak.question_number}.</span>
+                      <span style={{ fontWeight: 600 }}>{ak.correct_answer}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                  <span>{currentPageKeys.length} answer(s) on page {examPages[pageIdx]?.page_number ?? 1}</span>
+                  <Button variant="secondary" onClick={handleGenerateKey} loading={generatingKey} disabled={!currentExamPage} style={{ fontSize: "0.78rem", padding: "0.3rem 0.8rem" }}>
+                    Regenerate
+                  </Button>
+                </div>
               </div>
             ) : (
               <Button variant="primary" onClick={handleGenerateKey} loading={generatingKey} disabled={!currentExamPage} style={{ width: "auto", padding: "0.65rem 1.25rem" }}>
@@ -471,10 +518,18 @@ export default function ViewExamPage() {
             onSuccess={handleEditSuccess}
           />
         )}
-        {/* Question Type Modal */}
+        {/* Commented on 2026-09-23 */}
+        {/* Question Type Modal
         <QuestionTypeModal
           isOpen={showQuestionTypeModal}
           onClose={() => setShowQuestionTypeModal(false)}
+          onSelect={handleGenerateKeyWithType}
+          loading={generatingKey}
+        /> */}
+        <QuestionTypeModal
+          isOpen={showQuestionTypeModal}
+          pageNumber={examPages[pageIdx]?.page_number}
+          onClose={() => { if (!generatingKey) setShowQuestionTypeModal(false); }}
           onSelect={handleGenerateKeyWithType}
           loading={generatingKey}
         />

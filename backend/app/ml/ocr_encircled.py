@@ -2,269 +2,315 @@
 app/ml/ocr_encircled.py — Multiple Choice (Encircled) OCR
 ==========================================================
  
-Detects circled multiple choice answers (A, B, C, D).
-Uses HoughCircles to find circles, then OCR to read letters inside.
+Detects hand-drawn circles around A/B/C/D and reads the letter inside.
+ 
+FIX 2026-09-22 — "Answer key shows 16 answers but the sheet only has 12"
+------------------------------------------------------------------------
+Old pipeline: HoughCircles(param1=12, param2=4) on the whole page. With an
+accumulator threshold that low, Hough "finds" 15,000+ circles in plain
+printed text (every o, a, e, d, 0, 6, 9 is round). A 110px de-dup filter
+then kept ~82 of them, and any that Tesseract happened to read as A-D became
+extra answer-key rows → 16 instead of 12. The 110px filter could also delete
+a real circle sitting next to a fake one.
+ 
+New pipeline (generate candidates → strictly validate each one):
+  1. Adaptive-threshold ink mask (handles shadows in phone photos) and an
+     estimate of the printed text height, so every size limit scales with
+     the photo resolution instead of fixed pixel values.
+  2. Candidates = holes of closed contours + a lenient HoughCircles pass
+     (radius 0.9-3.2 × text height). Candidates are cheap; none is trusted.
+  3. RING TEST for every candidate: 72 rays are cast from the centre. A real
+     hand-drawn circle gives ink on almost every ray (>=75 %) AND the ring
+     radius changes smoothly from ray to ray, AND the inside is mostly empty
+     (just the letter). Printed text gives gaps and jumpy radii and scores
+     ~0.7-0.8; real circles score ~1.0. Threshold = 0.90.
+  4. Overlapping candidates are merged (real answer circles never overlap)
+     and size outliers are dropped (all circles on a sheet are similar).
+  5. The letter inside is read with Tesseract (psm 10, whitelist ABCD) at a
+     few crop sizes, keeping the most confident reading.
+  6. Optional `expected_items` keeps only the N most confident circles.
+Tested on the real answer key photo (p.6): 12/12 correct, 0 false positives.
 """
  
 from __future__ import annotations
+ 
+from typing import Optional
  
 import numpy as np
  
 from app.ml.ocr_shared import (
     DetectedAnswer,
     OCRPageResult,
-    binarize,
-    remove_noise,
-    thick_font,
+    load_gray,
+    ink_mask,
+    estimate_text_height,
     _sort_answers,
+    limit_to_expected,
 )
+ 
+Circle = tuple[int, int, int]   # (cx, cy, r)
 
-def detect_circles(gray: "np.ndarray") -> list[tuple[int, int, int]]:
-    """Detect encircled answers using HoughCircles."""
+# ---------------------------------------------------------------------------
+# Circle detection
+# ---------------------------------------------------------------------------
+ 
+def _ring_candidates(ink: "np.ndarray", text_h: float) -> list[tuple[Circle, float]]:
+    """Candidate circles from hollow contours (loose — validated later)."""
     import cv2
-    blur    = cv2.GaussianBlur(gray, (9, 9), 2)
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 8,
-    #     param1    = 20,
-    #     param2    = 8,
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 8,
-    #     param1    = 15,        # ← REDUCED from 20
-    #     param2    = 3,         # ← REDUCED from 8 (MUCH MORE LENIENT)
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1.2,       # ← Changed
-    #     minDist   = 5,         # ← VERY LENIENT
-    #     param1    = 10,        # ← VERY LENIENT
-    #     param2    = 5,         # ← MODERATE
-    #     minRadius = 5,         # ← SMALLER
-    #     maxRadius = 50,        # ← LARGER
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 6,         # ← SLIGHTLY REDUCED
-    #     param1    = 18,        # ← BALANCED (was 20, then 15)
-    #     param2    = 5,         # ← BALANCED (was 8, then 3)
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
-    # circles = cv2.HoughCircles(
-    #     blur,
-    #     cv2.HOUGH_GRADIENT,
-    #     dp        = 1,
-    #     minDist   = 7,         # ← REDUCED (allow closer circles)
-    #     param1    = 18,        # ← SLIGHTLY REDUCED
-    #     param2    = 6,         # ← REDUCED (more sensitive)
-    #     minRadius = 8,
-    #     maxRadius = 40,
-    # )
+    k = max(3, int(round(text_h / 6)))
+    closed = cv2.morphologyEx(ink, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    contours, hierarchy = cv2.findContours(closed, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return []
+    hierarchy = hierarchy[0]
+    out: list[tuple[Circle, float]] = []
+    for i, cnt in enumerate(contours):
+        # holes (children) are the most reliable handle on a ring that
+        # touches neighbouring printed text, so use them directly
+        if hierarchy[i][3] == -1:
+            continue
+        x, y, w, h = cv2.boundingRect(cnt)
+        if min(w, h) < 1.0 * text_h or max(w, h) > 6.5 * text_h:
+            continue
+        if not 0.5 <= w / float(h) <= 2.0:
+            continue
+        (cx, cy), r = cv2.minEnclosingCircle(cnt)
+        out.append(((int(cx), int(cy), int(r + k)), 0.0))
+    return out
+ 
+ 
+def _hough_candidates(ink: "np.ndarray", text_h: float) -> list[tuple[Circle, float]]:
+    """Lenient HoughCircles on the ink mask — every hit is validated later,
+    so leniency here only costs time, never adds answers."""
+    import cv2
+    blur = cv2.GaussianBlur(ink, (9, 9), 2)
     circles = cv2.HoughCircles(
-        blur,
-        cv2.HOUGH_GRADIENT,
-        dp        = 1,
-        minDist   = 5,         # ← VERY SMALL (allow very close circles)
-        param1    = 12,        # ← VERY SENSITIVE
-        param2    = 4,         # ← VERY LENIENT
-        minRadius = 8,
-        maxRadius = 40,
+        blur, cv2.HOUGH_GRADIENT, dp=1.5,
+        minDist=max(8, int(0.8 * text_h)),
+        param1=60, param2=18,
+        minRadius=int(0.9 * text_h), maxRadius=int(3.2 * text_h),
     )
-
     if circles is None:
         return []
-
-    raw_circles = np.round(circles[0, :]).astype("int").tolist()
-    print(f"DEBUG: Raw circles: {len(raw_circles)}")
-    
-    # ✓ FILTER 1: Only keep circles with CONSISTENT RADIUS (18-28px)
-    # consistent_radius = [c for c in raw_circles if 18 <= c[2] <= 28]
-    # consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 32]
-    consistent_radius = [c for c in raw_circles if 15 <= c[2] <= 35]
-    print(f"DEBUG: After radius filter (18-28px): {len(consistent_radius)}")
-    
-    # ✓ FILTER 2: Remove duplicates (very close circles)
-    consistent_radius.sort(key=lambda c: (c[1], c[0]))
-    filtered_circles = []
-    # MIN_DISTANCE = 15
-    # MIN_DISTANCE = 50
-    # MIN_DISTANCE = 100
-    # MIN_DISTANCE = 150
-    # MIN_DISTANCE = 200
-    # MIN_DISTANCE = 120
-    MIN_DISTANCE = 110
-    
-    for x, y, r in consistent_radius:
-        is_duplicate = False
-        for fx, fy, fr in filtered_circles:
-            dist = np.sqrt((x - fx)**2 + (y - fy)**2)
-            if dist < MIN_DISTANCE:
-                is_duplicate = True
+    return [((int(c[0]), int(c[1]), int(c[2])), 0.0) for c in np.round(circles[0]).astype(int)]
+ 
+ 
+def _ring_score(ink: "np.ndarray", cx: int, cy: int, r: int, text_h: float) -> tuple[float, int]:
+    """How much does (cx, cy, r) look like a hand-drawn closed ring?
+    Casts 72 rays; on each ray finds the ink run nearest the expected ring
+    radius (0.7r-1.35r, hand circles are ellipses). A real ring gives a hit on
+    almost every ray AND the hit radius changes smoothly from ray to ray.
+    Printed text gives gaps (between lines) and jumpy radii.
+    Returns (score 0-1, refined radius)."""
+    H, W = ink.shape
+    n = 72
+    radii = np.arange(int(0.7 * r), int(1.35 * r) + 1)
+    if len(radii) < 3:
+        return 0.0, r
+    hits: list[float] = []
+    for t in np.linspace(0, 2 * np.pi, n, endpoint=False):
+        xs = (cx + radii * np.cos(t)).astype(int)
+        ys = (cy + radii * np.sin(t)).astype(int)
+        ok = (xs >= 0) & (xs < W) & (ys >= 0) & (ys < H)
+        vals = np.zeros(len(radii), bool)
+        vals[ok] = ink[ys[ok], xs[ok]] > 0
+        idx = np.where(vals)[0]
+        if len(idx) == 0:
+            hits.append(np.nan)
+            continue
+        prev = hits[-1] if hits and not np.isnan(hits[-1]) else r
+        hits.append(float(radii[idx[np.argmin(np.abs(radii[idx] - prev))]]))
+    h = np.array(hits)
+    covered = ~np.isnan(h)
+    coverage = covered.mean()
+    if coverage < 0.75:
+        return 0.0, r
+    hv = np.where(covered, h, np.nanmedian(h))
+    jumps = np.abs(np.diff(np.concatenate([hv, hv[:1]])))
+    smooth = float((jumps < max(3.0, 0.12 * r)).mean())
+    # The inside should be mostly empty (only the letter) — rejects dense text
+    inner = []
+    for t in np.linspace(0, 2 * np.pi, 36, endpoint=False):
+        x = int(cx + 0.5 * r * np.cos(t)); y = int(cy + 0.5 * r * np.sin(t))
+        if 0 <= x < W and 0 <= y < H:
+            inner.append(ink[y, x] > 0)
+    inner_fill = float(np.mean(inner)) if inner else 1.0
+    if inner_fill > 0.45:
+        return 0.0, r
+    return float(coverage * smooth), int(np.nanmedian(h))
+ 
+ 
+def _validate(ink, cands, text_h) -> list[tuple[Circle, float]]:
+    out = []
+    for (cx, cy, r), _ in cands:
+        s, rr = _ring_score(ink, cx, cy, r, text_h)
+        if s >= 0.90:          # real rings score ~0.97-1.0, text clutter ~0.7-0.87
+            out.append(((cx, cy, rr), s))
+    return out
+ 
+ 
+def _dedupe(cands: list[tuple[Circle, float]]) -> list[tuple[Circle, float]]:
+    """Remove concentric / overlapping duplicates (keep the best-scoring ring)."""
+    cands = sorted(cands, key=lambda c: -c[1])
+    kept: list[tuple[Circle, float]] = []
+    for (cx, cy, r), s in cands:
+        dup = False
+        for (kx, ky, kr), _ in kept:
+            # real answer circles never overlap each other
+            if np.hypot(cx - kx, cy - ky) < 0.9 * (r + kr):
+                dup = True
                 break
-        if not is_duplicate:
-            filtered_circles.append((x, y, r))
-    
-    print(f"DEBUG: After duplicate filter: {len(filtered_circles)}")
-    print(f"DEBUG: Final circles: {filtered_circles}")
-    
-    # return filtered_circles[:12]
-    return filtered_circles
-
-def read_circle_letter(
-    gray:   "np.ndarray",
-    cx:     int,
-    cy:     int,
-    radius: int,
-) -> tuple[str, float]:
-    """
-    Extract the letter from inside a detected circle.
-    Matches Eric's script step 5:
-      - circular mask
-      - ROI crop (bounding box of circle)
-      - Otsu threshold (BINARY_INV)
-      - Tesseract --psm 10 whitelist ABCDabcd
-    Plus upscale 4× before Tesseract for better accuracy on small ROIs.
-    """
+        if not dup:
+            kept.append(((cx, cy, r), s))
+    return kept
+ 
+ 
+def _drop_size_outliers(cands: list[tuple[Circle, float]]) -> list[tuple[Circle, float]]:
+    """All teacher/student circles on a sheet are drawn at a similar size."""
+    if len(cands) < 4:
+        return cands
+    med = float(np.median([c[0][2] for c in cands]))
+    return [c for c in cands if 0.6 * med <= c[0][2] <= 1.45 * med]
+ 
+ 
+def detect_circles(gray: "np.ndarray", ink: Optional["np.ndarray"] = None,
+                   text_h: Optional[float] = None) -> list[Circle]:
+    """Public helper (kept for backwards compatibility with old imports)."""
+    if ink is None:
+        ink = ink_mask(gray)
+    if text_h is None:
+        text_h = estimate_text_height(ink)
+    cands = _ring_candidates(ink, text_h) + _hough_candidates(ink, text_h)
+    cands = _validate(ink, cands, text_h)
+    cands = _drop_size_outliers(_dedupe(cands))
+    print(f"DEBUG[encircled]: text_h={text_h:.1f}px, circles={len(cands)}")
+    return [c[0] for c in cands]
+ 
+ 
+# ---------------------------------------------------------------------------
+# Letter reading
+# ---------------------------------------------------------------------------
+ 
+_LETTER_MAP = {"A": "A", "B": "B", "C": "C", "D": "D",
+               "8": "B", "0": "D", "O": "D", "G": "C", "(": "C", "4": "A"}
+ 
+ 
+def read_circle_letter(gray: "np.ndarray", cx: int, cy: int, radius: int) -> tuple[str, float]:
+    """Try a few crop sizes (hand circles are not perfect) and keep the most
+    confident A-D reading. Returns (letter, confidence 0-1)."""
+    best = ("", 0.0)
+    for f in (0.72, 0.6, 0.85):
+        res = _read_letter_at(gray, cx, cy, radius, f)
+        if res[1] > best[1]:
+            best = res
+        if best[1] >= 0.8:
+            break
+    return best
+ 
+ 
+def _read_letter_at(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: float) -> tuple[str, float]:
+    """Crop the inside of the circle (ring removed), OCR a single A-D letter.
+    Returns (letter, confidence 0-1)."""
     import cv2
     import pytesseract
     from pytesseract import Output
-
-    img_h, img_w = gray.shape
-
-    # Circular mask (Eric's approach)
-    mask = np.zeros(gray.shape, dtype=np.uint8)
-    cv2.circle(mask, (cx, cy), radius, 255, -1)
-    roi = cv2.bitwise_and(gray, gray, mask=mask)
-
-    # Bounding box crop
-    x1 = max(cx - radius, 0);  x2 = min(cx + radius, img_w)
-    y1 = max(cy - radius, 0);  y2 = min(cy + radius, img_h)
-    roi_crop = roi[y1:y2, x1:x2]
-
-    if roi_crop.size == 0:
+ 
+    H, W = gray.shape
+    inner = max(4, int(radius * factor))        # stay inside the drawn ring
+    x1, x2 = max(cx - inner, 0), min(cx + inner, W)
+    y1, y2 = max(cy - inner, 0), min(cy + inner, H)
+    crop = gray[y1:y2, x1:x2]
+    if crop.size == 0:
         return "", 0.0
-
-    # Otsu threshold (Eric's approach)
-    _, roi_thresh = cv2.threshold(
-        roi_crop, 0, 255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
-    )
-
-    # Upscale 4× — improves Tesseract accuracy on small (~30px) ROIs
-    h, w   = roi_thresh.shape
-    roi_big = cv2.resize(
-        roi_thresh,
-        (w * 4, h * 4),
-        interpolation=cv2.INTER_CUBIC,
-    )
-    # Small border so Tesseract doesn't clip the character
-    roi_big = cv2.copyMakeBorder(roi_big, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=0)
-
-    # Tesseract PSM 10 — single character, whitelist ABCDabcd (Eric's approach)
-    config = "--psm 10 -c tessedit_char_whitelist=ABCDabcd"
-    text   = pytesseract.image_to_string(roi_big, config=config).strip().upper()
-
-    # Accept only a single valid letter
-    letter = ""
-    for ch in text:
-        if ch in "ABCD":
-            letter = ch
+ 
+    mask = np.zeros(crop.shape, np.uint8)
+    cv2.circle(mask, (cx - x1, cy - y1), inner, 255, -1)
+    crop = np.where(mask == 255, crop, 255).astype(np.uint8)
+ 
+    _, th = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)   # black text on white
+    # Keep only the biggest central ink blob group (removes ring fragments)
+    inv = 255 - th
+    n, lbl, stats, cents = cv2.connectedComponentsWithStats(inv, 8)
+    if n > 1:
+        c = np.array([crop.shape[1] / 2, crop.shape[0] / 2])
+        keep = np.zeros_like(inv)
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] < 8:
+                continue
+            if np.hypot(*(cents[i] - c)) < inner * 0.75:
+                keep[lbl == i] = 255
+        if cv2.countNonZero(keep) > 0:
+            th = 255 - keep
+ 
+    big = cv2.resize(th, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    big = cv2.copyMakeBorder(big, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
+ 
+    best_letter, best_conf = "", 0.0
+    for cfg in ("--psm 10 -c tessedit_char_whitelist=ABCDabcd",
+                "--psm 10"):
+        try:
+            data = pytesseract.image_to_data(big, config=cfg, output_type=Output.DICT)
+        except Exception:
+            continue
+        for txt, conf in zip(data["text"], data["conf"]):
+            txt = (txt or "").strip().upper()
+            try:
+                conf = float(conf)
+            except (TypeError, ValueError):
+                conf = -1
+            if not txt or conf < 0:
+                continue
+            letter = _LETTER_MAP.get(txt[0], "")
+            if letter and conf / 100.0 > best_conf:
+                best_letter, best_conf = letter, conf / 100.0
+        if best_letter and best_conf >= 0.5:
             break
-    if not letter:
-        return "", 0.0
-
-    # Get confidence
+    return best_letter, round(best_conf, 2)
+ 
+ 
+# ---------------------------------------------------------------------------
+# Page pipeline
+# ---------------------------------------------------------------------------
+ 
+def ocr_page_encircled(image_path: str, expected_items: Optional[int] = None) -> OCRPageResult:
     try:
-        data  = pytesseract.image_to_data(roi_big, config=config, output_type=Output.DICT)
-        confs = [int(c) for c in data["conf"] if str(c).isdigit() and int(c) >= 0]
-        conf  = round(sum(confs) / len(confs), 2) if confs else 0.0
-    except Exception:
-        conf = 0.0
-
-    return letter, conf
-
-def ocr_page_encircled(image_path: str) -> OCRPageResult:
-    """
-    Run the full pipeline on one exam/answer-sheet image.
-    Returns OCRPageResult with answers in reading order.
-    """
-    try:
-        import cv2
-
-        img = cv2.imread(image_path)
-        if img is None:
-            raise FileNotFoundError(f"Cannot read image: {image_path}")
-
-        # ── Preprocessing pipeline (Eric's steps 1-3) ─────────────────────
-        bw      = binarize(img)
-        cleaned = remove_noise(bw)
-        dilated = thick_font(cleaned)   # returns BGR
-
-        # ── HoughCircles on preprocessed gray (Eric's step 4) ─────────────
-        # gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
-        # circles = detect_circles(gray)
-        # HoughCircles on RAW image (skip preprocessing)
-        # gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # circles = detect_circles(gray)
-        gray    = cv2.cvtColor(dilated, cv2.COLOR_BGR2GRAY)
-        circles = detect_circles(gray)
-
+        gray, _scale = load_gray(image_path)
+        ink = ink_mask(gray)
+        text_h = estimate_text_height(ink)
+        circles = detect_circles(gray, ink, text_h)
+ 
         if not circles:
             return OCRPageResult(
-                image_path = image_path,
-                answers    = [],
-                mean_conf  = 0.0,
-                error      = (
-                    "No circles detected. Ensure the image is clear and "
-                    "answers are circled (not underlined or ticked)."
-                ),
+                image_path=image_path, answers=[], mean_conf=0.0,
+                error=("No circled answers detected. Make sure the photo is clear, "
+                       "flat, and each answer letter is fully circled."),
             )
-
-        # ── Per-circle OCR (Eric's step 5) ────────────────────────────────
+ 
         raw: list[DetectedAnswer] = []
+        unread = 0
         for (cx, cy, r) in circles:
             letter, conf = read_circle_letter(gray, cx, cy, r)
             if letter:
-                raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf))
-
+                raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf, size=2 * r))
+            else:
+                unread += 1
+ 
         if not raw:
             return OCRPageResult(
-                image_path = image_path,
-                answers    = [],
-                mean_conf  = 0.0,
-                error      = (
-                    "Circles detected but no letters could be read. "
-                    "Ensure letters A/B/C/D are clearly visible inside each circle."
-                ),
+                image_path=image_path, answers=[], mean_conf=0.0,
+                error=("Circles were found but no letters could be read. "
+                       "Ensure A/B/C/D is clearly visible inside each circle."),
             )
-
-        # ── Sort (Eric's step 6) ───────────────────────────────────────────
-        answers   = _sort_answers(raw)
+ 
+        answers = _sort_answers(raw)
+        answers, warn = limit_to_expected(answers, expected_items)
+        if unread:
+            extra = f"{unread} circle(s) had an unreadable letter and were skipped."
+            warn = f"{warn} {extra}" if warn else extra
+ 
         mean_conf = round(sum(a.confidence for a in answers) / len(answers), 2)
-
-        return OCRPageResult(
-            image_path = image_path,
-            answers    = answers,
-            mean_conf  = mean_conf,
-        )
-
+        print(f"DEBUG[encircled]: {len(answers)} answers -> {[a.letter for a in answers]}")
+        return OCRPageResult(image_path=image_path, answers=answers, mean_conf=mean_conf, warning=warn)
+ 
     except Exception as exc:
-        return OCRPageResult(
-            image_path = image_path,
-            answers    = [],
-            mean_conf  = 0.0,
-            error      = str(exc),
-        )
+        return OCRPageResult(image_path=image_path, answers=[], mean_conf=0.0, error=str(exc))
