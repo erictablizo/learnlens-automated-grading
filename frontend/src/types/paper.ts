@@ -4,16 +4,16 @@ export interface PaperPage {
   image_path:    string;
   uploaded_at:   string;
 }
- 
+
 export interface PaperScore {
   score_id:        number;
   question_number: number;
-  student_answer:  string;
+  student_answer:  string;     // "—" = left blank / not detected
   correct_answer:  string;
   is_correct:      boolean;
   ocr_confidence:  number | null;
 }
- 
+
 export interface Paper {
   paper_id:     number;
   exam_id:      number;
@@ -24,16 +24,17 @@ export interface Paper {
   paper_pages?: PaperPage[];
   paper_scores?: PaperScore[];
 }
- 
+
 export interface GradeResult {
-  warning: any;
   success:       boolean;
   total_items:   number;
   answered:      number;
   correct:       number;
   score_percent: number;
+  question_type?: "true_false" | "encircled" | null;   // NEW 2026-09-22
+  warning?:       string | null;                        // NEW 2026-09-22
 }
- 
+
 export interface PageUploadState {
   pageNumber: number;
   file:       File | null;

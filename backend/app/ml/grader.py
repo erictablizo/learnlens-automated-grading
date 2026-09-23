@@ -1,46 +1,39 @@
 """
 app/ml/grader.py
 ================
-Grading logic for LearnLens.
- 
-Takes OCR results from app/ml/ocr.py and compares them
-against the stored answer key to produce per-question scores.
- 
-Usage
------
-    from app.ml.ocr import ocr_page
-    from app.ml.grader import grade_pages
- 
-    page_results = [ocr_page(path) for path in image_paths]
-    result       = grade_pages(page_results, answer_key_map)
+Compares detected student answers with the answer key.
+
+FIX 2026-09-22:
+  * NEW `grade_detected(detected, key_map)`: detected answers are already
+    matched to question numbers by ocr_service (paper page N = exam page N),
+    so a page that fails no longer shifts every later question.
+  * A blank answer ("") is shown as "—", counts as unanswered and wrong.
+  * `page_number` is now filled in (it used to be the image path).
+  * `grade_pages()` kept for old callers.
 """
- 
+
 from __future__ import annotations
- 
+
 from dataclasses import dataclass, field
 from typing import Optional
- 
-from app.ml.ocr import OCRPageResult
- 
- 
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
- 
+
+from app.ml.ocr_shared import OCRPageResult
+
+BLANK = "—"
+
+
 @dataclass
 class QuestionResult:
-    """Grading result for a single question."""
     question_number: int
-    student_answer:  str        # '' or '—' if not detected
+    student_answer:  str
     correct_answer:  str
     is_correct:      bool
     ocr_confidence:  float = 0.0
     page_number:     int   = 1
- 
- 
+
+
 @dataclass
 class GradingResult:
-    """Aggregate result for a full paper."""
     questions:     list[QuestionResult] = field(default_factory=list)
     total_items:   int   = 0
     answered:      int   = 0
@@ -48,102 +41,69 @@ class GradingResult:
     score_percent: float = 0.0
     success:       bool  = True
     reason:        str   = ""
- 
-    # Convenience
+
     @property
     def total_score(self) -> int:
         return self.correct
- 
- 
-# ---------------------------------------------------------------------------
-# Core grading function
-# ---------------------------------------------------------------------------
- 
-def grade_pages(
-    page_results: list[OCRPageResult],
-    answer_key_map: dict[int, str],          # {question_number: correct_letter}
-    confidence_map: Optional[dict[int, float]] = None,  # {question_number: conf}
+
+
+def _norm(ans: str) -> str:
+    a = (ans or "").strip().upper()
+    if a in ("TRUE",):
+        return "T"
+    if a in ("FALSE",):
+        return "F"
+    return a
+
+
+def grade_detected(
+    detected: dict[int, tuple[str, float, int]],   # {q: (letter, conf, page_number)}
+    answer_key_map: dict[int, str],                # {q: correct}
 ) -> GradingResult:
-    """
-    Compare OCR-detected answers against the answer key.
- 
-    Parameters
-    ----------
-    page_results    : list of OCRPageResult (one per uploaded page)
-    answer_key_map  : {question_number: 'A'|'B'|'C'|'D'}
-    confidence_map  : optional override for per-question confidence
- 
-    Returns
-    -------
-    GradingResult with per-question breakdown and summary stats.
-    """
     if not answer_key_map:
         return GradingResult(success=False, reason="No answer key found for this exam.")
- 
-    # Flatten all detected answers across pages into {question_number: (letter, conf, page)}
-    detected: dict[int, tuple[str, float, int]] = {}
-    question_offset = 0
- 
-    for page_result in page_results:
-        if page_result.error:
-            # Skip pages that failed preprocessing but continue with others
-            continue
- 
-        for idx, answer in enumerate(page_result.answers, start=1):
-            q_num = question_offset + idx
-            detected[q_num] = (answer.letter, answer.confidence, page_result.image_path)
- 
-        question_offset += len(page_result.answers)
- 
-    if not detected:
+    if not any(_norm(v[0]) for v in detected.values()):
         return GradingResult(
-            success = False,
-            reason  = (
-                "Could not detect any encircled answers from the uploaded images. "
-                "Please ensure the images are clear, well-lit, and that answers "
-                "are clearly circled."
-            ),
+            success=False,
+            reason=("Could not read any answers from the uploaded paper. Make sure the photo is clear, "
+                    "well-lit, and shows the whole page."),
         )
- 
-    # Build per-question results
+
     questions: list[QuestionResult] = []
-    correct_count = 0
-    answered_count = 0
- 
-    for q_num in sorted(answer_key_map.keys()):
-        correct_ans = answer_key_map[q_num].upper()
- 
-        if q_num in detected:
-            student_ans, conf, _ = detected[q_num]
-            answered_count += 1
-        else:
-            student_ans = "—"
-            conf = 0.0
- 
-        # Override confidence if provided
-        if confidence_map and q_num in confidence_map:
-            conf = confidence_map[q_num]
- 
-        is_correct = student_ans == correct_ans and student_ans not in ("", "—")
-        if is_correct:
-            correct_count += 1
- 
+    correct = answered = 0
+    for q in sorted(answer_key_map):
+        key = _norm(answer_key_map[q])
+        letter, conf, page_no = detected.get(q, ("", 0.0, 1))
+        student = _norm(letter)
+        if student:
+            answered += 1
+        ok = bool(student) and student == key
+        correct += ok
         questions.append(QuestionResult(
-            question_number = q_num,
-            student_answer  = student_ans,
-            correct_answer  = correct_ans,
-            is_correct      = is_correct,
-            ocr_confidence  = conf,
+            question_number=q, student_answer=student or BLANK, correct_answer=key,
+            is_correct=ok, ocr_confidence=conf if student else 0.0, page_number=page_no,
         ))
- 
-    total_items   = len(answer_key_map)
-    score_percent = round(correct_count / total_items * 100, 1) if total_items else 0.0
- 
+
+    total = len(answer_key_map)
     return GradingResult(
-        questions     = questions,
-        total_items   = total_items,
-        answered      = answered_count,
-        correct       = correct_count,
-        score_percent = score_percent,
-        success       = True,
+        questions=questions, total_items=total, answered=answered, correct=correct,
+        score_percent=round(correct / total * 100, 1) if total else 0.0, success=True,
     )
+
+
+def grade_pages(
+    page_results: list[OCRPageResult],
+    answer_key_map: dict[int, str],
+    confidence_map: Optional[dict[int, float]] = None,
+) -> GradingResult:
+    """Old API: answers of all pages numbered in order 1..N."""
+    detected: dict[int, tuple[str, float, int]] = {}
+    q = 0
+    for page_no, pr in enumerate(page_results, start=1):
+        if pr.error:
+            continue
+        for a in pr.answers:
+            q += 1
+            conf = confidence_map.get(q, a.confidence) if confidence_map else a.confidence
+            detected[q] = (a.letter, conf, page_no)
+    return grade_detected(detected, answer_key_map)
