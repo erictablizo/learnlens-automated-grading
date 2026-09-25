@@ -49,7 +49,8 @@ from app.ml.ocr_shared import (
 )
  
 Circle = tuple[int, int, int]   # (cx, cy, r)
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Circle detection
 # ---------------------------------------------------------------------------
@@ -195,25 +196,65 @@ _LETTER_MAP = {"A": "A", "B": "B", "C": "C", "D": "D",
                "8": "B", "0": "D", "O": "D", "G": "C", "(": "C", "4": "A"}
  
  
+ 
+def _cd_shape(mask: "np.ndarray") -> str:
+    """Tell C from D by shape. D is closed on the right in its middle band and
+    has a straight stem on the left; C is open on the right.
+    `mask` is the letter's ink (True = ink). Returns "C", "D" or ""."""
+    ys, xs = np.where(mask)
+    if len(xs) < 10:
+        return ""
+    y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max()
+    g = mask[y0:y1 + 1, x0:x1 + 1]
+    h, w = g.shape
+    if h < 6 or w < 4:
+        return ""
+    mid = g[int(0.35 * h):max(int(0.65 * h), int(0.35 * h) + 1), :]
+    right = mid[:, int(0.72 * w):]
+    right_fill = float(right.mean()) if right.size else 0.0
+    left = g[:, :max(1, int(0.22 * w))]
+    left_rows = float((left.sum(axis=1) > 0).mean())      # D: stem fills nearly every row
+    if right_fill >= 0.30 and left_rows >= 0.80:
+        return "D"
+    if right_fill <= 0.12:
+        return "C"
+    return ""
+ 
+ 
 def read_circle_letter(gray: "np.ndarray", cx: int, cy: int, radius: int) -> tuple[str, float]:
     """Try a few crop sizes (hand circles are not perfect) and keep the most
-    confident A-D reading. Returns (letter, confidence 0-1)."""
-    best = ("", 0.0)
-    for f in (0.72, 0.6, 0.85):
-        res = _read_letter_at(gray, cx, cy, radius, f)
-        if res[1] > best[1]:
-            best = res
-        if best[1] >= 0.8:
-            break
-    return best
+    confident A-D reading. Returns (letter, confidence 0-1).
+ 
+    FIX 2026-09-25: all crop sizes are now tried (no early break). A tight crop
+    can cut the right bowl off a "D", which Tesseract then reads as "C", and
+    that wrong reading used to win because it looked confident. When the
+    readings disagree between C and D, the letter's own shape decides, measured
+    on the widest crop (the only one that always contains the whole letter).
+    """
+    results = []
+    for f in (0.85, 0.72, 0.6):
+        letter, conf = _read_letter_at(gray, cx, cy, radius, f)
+        if letter:
+            results.append((letter, conf, f))
+    if not results:
+        return "", 0.0
+ 
+    letter, conf, _f = max(results, key=lambda r: r[1])
+    letters = {r[0] for r in results}
+    if letters & {"C", "D"} and (len(letters) > 1 or letter in ("C", "D")):
+        mask = _clean_letter_mask(gray, cx, cy, radius, 0.85)
+        if mask is not None:
+            shape = _cd_shape(mask < 128)
+            if shape and shape != letter:
+                same = [r[1] for r in results if r[0] == shape]
+                letter, conf = shape, max(same + [0.6])
+    return letter, round(conf, 2)
  
  
-def _read_letter_at(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: float) -> tuple[str, float]:
-    """Crop the inside of the circle (ring removed), OCR a single A-D letter.
-    Returns (letter, confidence 0-1)."""
+def _clean_letter_mask(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: float):
+    """Crop the inside of the circle, remove the drawn ring, and return a
+    black-letter-on-white image (or None when the crop is empty)."""
     import cv2
-    import pytesseract
-    from pytesseract import Output
  
     H, W = gray.shape
     inner = max(4, int(radius * factor))        # stay inside the drawn ring
@@ -221,14 +262,14 @@ def _read_letter_at(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: f
     y1, y2 = max(cy - inner, 0), min(cy + inner, H)
     crop = gray[y1:y2, x1:x2]
     if crop.size == 0:
-        return "", 0.0
+        return None
  
     mask = np.zeros(crop.shape, np.uint8)
     cv2.circle(mask, (cx - x1, cy - y1), inner, 255, -1)
     crop = np.where(mask == 255, crop, 255).astype(np.uint8)
  
     _, th = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)   # black text on white
-    # Keep only the biggest central ink blob group (removes ring fragments)
+    # Keep only the central ink blob group (removes ring fragments)
     inv = 255 - th
     n, lbl, stats, cents = cv2.connectedComponentsWithStats(inv, 8)
     if n > 1:
@@ -241,6 +282,18 @@ def _read_letter_at(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: f
                 keep[lbl == i] = 255
         if cv2.countNonZero(keep) > 0:
             th = 255 - keep
+    return th
+ 
+ 
+def _read_letter_at(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: float) -> tuple[str, float]:
+    """OCR a single A-D letter from one crop size. Returns (letter, confidence 0-1)."""
+    import cv2
+    import pytesseract
+    from pytesseract import Output
+ 
+    th = _clean_letter_mask(gray, cx, cy, radius, factor)
+    if th is None:
+        return "", 0.0
  
     big = cv2.resize(th, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     big = cv2.copyMakeBorder(big, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
