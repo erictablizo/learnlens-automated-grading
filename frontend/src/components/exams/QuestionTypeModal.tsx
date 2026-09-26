@@ -46,7 +46,7 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
           Select Question Type{pageNumber ? ` — Page ${pageNumber}` : ""}
         </h2>
         <p style={{ color: "var(--text-muted)", marginBottom: "1rem", fontSize: "0.9rem" }}>
-          What type of questions does this page contain?
+          What type of questions does this page contain? Choose Mixed if one page has both a Multiple Choice part and a True/False part.
         </p>
 
         <label htmlFor="qt-items" style={{ display: "block", fontSize: "0.85rem", fontWeight: 600,
@@ -72,6 +72,12 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
           <button type="button" onClick={() => choose("encircled")} disabled={loading}
             style={btn("var(--primary-bg)", "var(--primary)", "var(--primary)")}>
             {loading ? "Generating…" : "Multiple Choice (Circled)"}
+          </button>
+          {/* NEW 2026-09-26: one page that has BOTH parts, e.g.
+          Part I Multiple Choice (1-5) + Part II True/False (6-10). */}
+          <button type="button" onClick={() => choose("mixed")} disabled={loading}
+            style={btn("var(--orange-light, #fdf1e3)", "var(--orange)", "var(--orange)")}>
+            {loading ? "Generating…" : "Mixed — both on one page"}
           </button>
           <button type="button" onClick={onClose} disabled={loading}
             style={{ ...btn("transparent", "var(--text-muted)", "var(--border)"), fontWeight: 500 }}>

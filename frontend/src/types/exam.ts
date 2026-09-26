@@ -34,7 +34,7 @@ export interface ExamUpdatePayload {
   description?: string;
 }
 
-export type QuestionType = "true_false" | "encircled";
+export type QuestionType = "true_false" | "encircled" | "mixed";
 
 // NEW 2026-09-22
 export interface GenerateAnswerKeyResult {
