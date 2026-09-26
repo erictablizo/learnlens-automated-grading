@@ -1,7 +1,7 @@
 """
 app/ml/ocr_true_false.py — True/False (written) OCR
 ====================================================
- 
+
 FIX 2026-09-22 — "Answer key shows 107 answers but the sheet only has 20"
 -------------------------------------------------------------------------
 Old pipeline: every contour 15-200 px wide was OCR'd with `--psm 6` and
@@ -9,7 +9,7 @@ accepted if the text merely *started with* "T" or "F". Printed words such as
 "The", "To", "This", "For", "From", "Filipino"... all passed, so the whole
 question text became answers (107). Hard-coded pixel sizes also broke on
 different photo resolutions.
- 
+
 New pipeline — one answer per item, never one per word:
   A. BLANK MODE (normal sheets: "____T____ 1. The sun rises in the east")
      1. Find the answer blanks: short horizontal lines (underscores) using a
@@ -28,13 +28,13 @@ New pipeline — one answer per item, never one per word:
   both agree confidence is high; if Tesseract is unsure the shape wins.
   Optional `expected_items` keeps the N most confident answers.
 """
- 
+
 from __future__ import annotations
- 
+
 from typing import Optional
- 
+
 import numpy as np
- 
+
 from app.ml.ocr_shared import (
     DetectedAnswer,
     OCRPageResult,
@@ -45,13 +45,14 @@ from app.ml.ocr_shared import (
     sort_column_aware,
     limit_to_expected,
 )
- 
+
 Box = tuple[int, int, int, int]   # x, y, w, h
+
 
 # ---------------------------------------------------------------------------
 # T / F classification of one handwritten crop
 # ---------------------------------------------------------------------------
- 
+
 def _first_glyph(bin_crop: "np.ndarray", text_h: float) -> Optional["np.ndarray"]:
     """From a white-on-black crop return the left-most glyph (first letter),
     so "True"/"False" written in full is classified by its first letter.
@@ -90,8 +91,8 @@ def _first_glyph(bin_crop: "np.ndarray", text_h: float) -> Optional["np.ndarray"
     glyph = np.isin(lbl, list(group)).astype(np.uint8) * 255
     ys, xs = np.where(glyph > 0)
     return glyph[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
- 
- 
+
+
 def _shape_tf(glyph: "np.ndarray") -> tuple[str, float]:
     """Stroke-geometry classifier.
     T: top bar spans the width, stem roughly centred, nothing at mid-left right side.
@@ -110,7 +111,7 @@ def _shape_tf(glyph: "np.ndarray") -> tuple[str, float]:
     mid = g[int(h * 0.35):int(h * 0.65), :]
     right_of_stem = mid[:, int(min(w - 1, stem_x * w + w * 0.2)):]
     mid_bar = right_of_stem.mean() if right_of_stem.size else 0.0
- 
+
     if stem_x <= 0.35 and mid_bar > 0.05:
         return "F", 0.75
     if 0.3 <= stem_x <= 0.72 and mid_bar < 0.12:
@@ -118,11 +119,11 @@ def _shape_tf(glyph: "np.ndarray") -> tuple[str, float]:
     if stem_x < 0.3:
         return "F", 0.55
     return "T", 0.55
- 
- 
+
+
 _TF_MAP = {"T": "T", "7": "T", "+": "T", "I": "", "F": "F", "E": "F", "P": "F"}
- 
- 
+
+
 def _tess_tf(glyph_white_on_black: "np.ndarray") -> tuple[str, float]:
     import cv2
     import pytesseract
@@ -147,8 +148,8 @@ def _tess_tf(glyph_white_on_black: "np.ndarray") -> tuple[str, float]:
         if t and c >= 0 and _TF_MAP.get(t[0]) and c / 100.0 > conf:
             best, conf = _TF_MAP[t[0]], c / 100.0
     return best, conf
- 
- 
+
+
 def _word_text(bin_crop: "np.ndarray") -> str:
     """Unrestricted OCR of the whole written word (to recognise TRUE/FALSE)."""
     import cv2
@@ -162,8 +163,8 @@ def _word_text(bin_crop: "np.ndarray") -> str:
         return pytesseract.image_to_string(img, config="--psm 7").strip().upper()
     except Exception:
         return ""
- 
- 
+
+
 def _word_vote(bin_crop: "np.ndarray") -> tuple[str, float]:
     """Handwritten TRUE / FALSE written in full: read the word a few ways
     (plain, whitelisted, psm 7 / 8) and score each reading against the two
@@ -201,8 +202,8 @@ def _word_vote(bin_crop: "np.ndarray") -> tuple[str, float]:
     win = "T" if votes["T"] > votes["F"] else "F"
     margin = abs(votes["T"] - votes["F"]) / total        # 0 (split) ... 1 (unanimous)
     return win, round(0.5 + 0.45 * margin, 2)
- 
- 
+
+
 def classify_tf(bin_crop: "np.ndarray", text_h: float) -> tuple[str, float, str]:
     """Return (letter 'T'/'F'/'' , confidence 0-1, raw word text)."""
     glyph = _first_glyph(bin_crop, text_h)
@@ -214,14 +215,14 @@ def classify_tf(bin_crop: "np.ndarray", text_h: float) -> tuple[str, float, str]
         return "T", 0.95, word
     if clean.startswith("FAL") or clean.startswith("FALS"):
         return "F", 0.95, word
- 
+
     t_letter, t_conf = _tess_tf(glyph)
     s_letter, s_conf = _shape_tf(glyph)
     # Whole-word vote only makes sense when a word (not one letter) is written
     w_letter, w_conf = ("", 0.0)
     if bin_crop.shape[1] > 1.8 * text_h:
         w_letter, w_conf = _word_vote(bin_crop)
- 
+
     score = {"T": 0.0, "F": 0.0}
     if t_letter:
         score[t_letter] += t_conf
@@ -235,12 +236,12 @@ def classify_tf(bin_crop: "np.ndarray", text_h: float) -> tuple[str, float, str]
     agree = sum(1 for l in (t_letter, s_letter, w_letter) if l == win)
     conf = min(0.99, 0.45 + 0.17 * agree + 0.1 * (score[win] - score["TF".replace(win, "")]))
     return win, round(max(0.3, conf), 2), word
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # A. Blank mode
 # ---------------------------------------------------------------------------
- 
+
 def _find_blanks(ink: "np.ndarray", text_h: float) -> list[Box]:
     import cv2
     H, W = ink.shape
@@ -257,13 +258,13 @@ def _find_blanks(ink: "np.ndarray", text_h: float) -> list[Box]:
             continue
         blanks.append((x, y, w, h))
     return blanks
- 
- 
+
+
 def _crop_above_blank(ink: "np.ndarray", b: Box, text_h: float,
                       top_limit: Optional[int] = None) -> "np.ndarray":
     """Handwriting on/above one blank, with only THAT underline erased
     (erasing lines page-wide also erased long T/F bars).
- 
+
     FIX (real photo test): the crop reached 4 text-heights up, which on a
     normally spaced sheet includes the PREVIOUS item's underline. That line
     was merged into the first letter and turned FALSE->T / TRUE->F. The crop
@@ -281,9 +282,32 @@ def _crop_above_blank(ink: "np.ndarray", b: Box, text_h: float,
     crop = ink[y1:y2, x1:x2].copy()
     ly1, ly2 = max(0, y - 2 - y1), min(crop.shape[0], y + h + 2 - y1)
     crop[ly1:ly2, :] = 0
-    return _clean_crop(crop, text_h)
- 
- 
+    crop = _clean_crop(crop, text_h)
+    return _lowest_text_row(crop, text_h)
+
+
+def _lowest_text_row(crop: "np.ndarray", text_h: float) -> "np.ndarray":
+    """FIX 2026-09-26: keep only the ink on the line directly above the blank.
+
+    When a statement wraps onto a second line (e.g. "... from different
+    cultures."), that printed line sits between the previous blank and this one
+    and ended up inside the crop. Its first letter was then classified instead
+    of the handwritten answer, so the last item of a page could come out wrong.
+    Components are grouped into text rows and only the bottom row is kept."""
+    import cv2
+    if crop.size == 0:
+        return crop
+    n, lbl, stats, _ = cv2.connectedComponentsWithStats(crop, 8)
+    comps = [i for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= max(6, 0.15 * text_h * text_h)]
+    if len(comps) < 2:
+        return crop
+    rows = group_rows(comps, key_y=lambda i: stats[i, cv2.CC_STAT_TOP] + stats[i, cv2.CC_STAT_HEIGHT] / 2.0,
+                      tol=0.9 * text_h)
+    keep = rows[-1]
+    out = np.isin(lbl, keep).astype(np.uint8) * 255
+    return out if cv2.countNonZero(out) else crop
+
+
 def _clean_crop(crop: "np.ndarray", text_h: float) -> "np.ndarray":
     """Remove underline fragments and small specks (e.g. the '.' after the
     item number or the tail of the next word) from a handwriting crop."""
@@ -302,21 +326,21 @@ def _clean_crop(crop: "np.ndarray", text_h: float) -> "np.ndarray":
         if line_like or touches_top or touches_side or speck:
             out[lbl == i] = 0
     return out
- 
- 
+
+
 def _tight(bin_crop: "np.ndarray") -> Optional["np.ndarray"]:
     ys, xs = np.where(bin_crop > 0)
     if len(xs) == 0:
         return None
     return bin_crop[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
- 
- 
+
+
 def _blank_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
     import cv2
     blanks = _find_blanks(ink, text_h)
     if len(blanks) < 2:
         return []
- 
+
     # Dominant column = the x position shared by the most blanks
     xs = np.array([b[0] for b in blanks])
     counts = [int(np.sum(np.abs(xs - x0) <= 3 * text_h)) for x0 in xs]
@@ -329,7 +353,7 @@ def _blank_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
     widths = np.array([b[2] for b in keep])
     med_w = float(np.median(widths))
     keep = [b for b in keep if 0.5 * med_w <= b[2] <= 2.0 * med_w]
- 
+
     # Bottom edge of the nearest blank directly above each blank (same column)
     def _top_limit(b: Box) -> Optional[int]:
         above = [o for o in blanks if o is not b and o[1] < b[1] - 0.5 * text_h
@@ -338,7 +362,7 @@ def _blank_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
             return None
         o = max(above, key=lambda o: o[1])
         return o[1] + o[3] + 2
- 
+
     answers: list[DetectedAnswer] = []
     for b in keep:
         crop = _crop_above_blank(ink, b, text_h, _top_limit(b))
@@ -350,12 +374,12 @@ def _blank_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
         letter, conf, _ = classify_tf(tight, text_h)
         answers.append(DetectedAnswer(y=b[1], x=b[0], letter=letter, confidence=conf, size=int(text_h)))
     return answers
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # B. Row mode (no printed blanks)
 # ---------------------------------------------------------------------------
- 
+
 def _row_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
     import cv2
     H, W = ink.shape
@@ -371,7 +395,7 @@ def _row_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
         comps.append((x, y, w, h, i))
     if not comps:
         return []
- 
+
     rows = group_rows(comps, key_y=lambda c: c[1] + c[3] / 2.0, tol=0.6 * text_h)
     firsts: list[tuple[Box, list[int]]] = []
     for r in rows:
@@ -385,12 +409,12 @@ def _row_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
             else:
                 break
         firsts.append(((wx, wy, wr - wx, wb - wy), members))
- 
+
     # Short words only: a single letter or TRUE/FALSE — not "Directions:"
     firsts = [f for f in firsts if 0.35 * text_h <= f[0][2] <= 5.0 * text_h]
     if not firsts:
         return []
- 
+
     # Dominant answer column (x-left within +-2 text heights)
     xs = np.array([f[0][0] for f in firsts])
     best_c, best_n = None, 0
@@ -399,7 +423,7 @@ def _row_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
         if cnt > best_n:
             best_c, best_n = x0, cnt
     col = [f for f in firsts if abs(f[0][0] - best_c) <= 2 * text_h]
- 
+
     answers: list[DetectedAnswer] = []
     for (x, y, w, h), members in col:
         crop = ink[y:y + h, x:x + w] * (np.isin(lbl[y:y + h, x:x + w], members))
@@ -412,23 +436,23 @@ def _row_mode(ink: "np.ndarray", text_h: float) -> list[DetectedAnswer]:
         if letter:
             answers.append(DetectedAnswer(y=y, x=x, letter=letter, confidence=conf, size=int(text_h)))
     return answers
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Kept for backwards compatibility (old signature returned (y, x, letter))
 # ---------------------------------------------------------------------------
- 
+
 def detect_true_false(gray: "np.ndarray") -> list[tuple[int, int, str]]:
     ink = ink_mask(gray)
     th = estimate_text_height(ink)
     ans = _blank_mode(ink, th) or _row_mode(ink, th)
     return [(a.y, a.x, a.letter) for a in ans if a.letter]
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Page pipeline
 # ---------------------------------------------------------------------------
- 
+
 def ocr_page_true_false(image_path: str, expected_items: Optional[int] = None,
                         keep_blanks: bool = False) -> OCRPageResult:
     """keep_blanks=True (student papers) keeps unanswered blanks as '' so the
@@ -438,7 +462,7 @@ def ocr_page_true_false(image_path: str, expected_items: Optional[int] = None,
         ink = ink_mask(gray)
         text_h = estimate_text_height(ink)
         print(f"DEBUG[true_false]: {image_path} text_h={text_h:.1f}px")
- 
+
         answers = _blank_mode(ink, text_h)
         mode = "blank"
         if not any(a.letter for a in answers):
@@ -446,19 +470,19 @@ def ocr_page_true_false(image_path: str, expected_items: Optional[int] = None,
             mode = "row"
         if not keep_blanks:
             answers = [a for a in answers if a.letter]
- 
+
         if not answers:
             return OCRPageResult(
                 image_path=image_path, answers=[], mean_conf=0.0,
                 error="No True/False answers detected. Ensure T or F is clearly written on each blank.",
             )
- 
+
         answers = sort_column_aware(answers, gray.shape[1])
         answers, warn = limit_to_expected(answers, expected_items)
         answered = [a for a in answers if a.letter]
         mean_conf = round(sum(a.confidence for a in answered) / len(answered), 2) if answered else 0.0
         print(f"DEBUG[true_false]: mode={mode}, {len(answers)} answers -> {[a.letter or '_' for a in answers]}")
         return OCRPageResult(image_path=image_path, answers=answers, mean_conf=mean_conf, warning=warn)
- 
+
     except Exception as exc:
         return OCRPageResult(image_path=image_path, answers=[], mean_conf=0.0, error=str(exc))
