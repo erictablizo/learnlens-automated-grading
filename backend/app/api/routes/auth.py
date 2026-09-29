@@ -77,10 +77,28 @@ async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depend
         sent = await send_password_reset_email(user.email, reset_url)
     except EmailSendError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+    # NEW 2026-09-29: hand the link back so the "Check your email!" screen can
+    # show it, instead of asking you to copy it from the uvicorn terminal.
+    #
+    # `sent` is False only when SMTP is not configured — the SMTP failure paths
+    # raise above — so this is exactly DEV MODE. It is still a one-use
+    # password-reset token travelling in an HTTP response, so it is gated on
+    # SHOW_DEV_RESET_LINK as well (see the warning in core/config.py). With
+    # SMTP configured, `sent` is True and the link is never returned.
+    dev_url = None if sent else (reset_url if settings.SHOW_DEV_RESET_LINK else None)
+
+    if sent:
+        message = "A password reset link has been sent to your email."
+    elif dev_url:
+        message = "DEV MODE: email is not configured — use the reset link shown on screen."
+    else:
+        message = "DEV MODE: email is not configured — the reset link was printed in the backend terminal."
+
     return ForgotPasswordResponse(
-        message="A password reset link has been sent to your email." if sent
-        else "DEV MODE: email is not configured — the reset link was printed in the backend terminal.",
+        message=message,
         email_sent=sent,
+        dev_reset_url=dev_url,
     )
 
 #  Added on 2026-09-22: 

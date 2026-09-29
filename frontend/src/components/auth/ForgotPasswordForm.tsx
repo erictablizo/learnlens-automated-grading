@@ -13,6 +13,9 @@ export default function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [view, setView] = useState<View>("loading");
   const [devMode, setDevMode] = useState(false);
+  // Added on 2026-09-29: in DEV MODE the backend returns the reset link itself,
+  // so the Check Email screen can show it instead of the uvicorn terminal.
+  const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
   const [token, setToken] = useState("");
 
   // Added on 2026-09-22: Opened from the email link? → show the reset form
@@ -40,6 +43,7 @@ export default function ForgotPasswordForm() {
     // }
     if (res) {
       setDevMode(!res.email_sent);
+      setDevResetUrl(res.dev_reset_url ?? null);   // Added on 2026-09-29
       setView("sent");                       // same page, no navigation → no 404
     }
   };
@@ -51,6 +55,7 @@ export default function ForgotPasswordForm() {
       <CheckEmailDialogBox
         email={email.trim()}
         devMode={devMode}
+        devResetUrl={devResetUrl}
         onChangeEmail={() => { setView("form"); setError(null); }}
       />
     );

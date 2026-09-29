@@ -5,6 +5,12 @@
  * so it no longer needs its own /check_email route (that route gave 404).
  * If it is still rendered from an old check_email/page.tsx, it falls back to
  * reading ?email=…&dev=1 from the URL.
+ *
+ * ENHANCEMENT 2026-09-29: in DEV MODE the reset link is shown right here —
+ * click "Open reset link" (or copy it) instead of digging it out of the
+ * uvicorn terminal. Resending replaces the link, because only the newest
+ * token works. `devResetUrl` comes from the backend and is only ever filled
+ * in when SMTP is not configured.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -15,12 +21,17 @@ const RESEND_WAIT = 30; // seconds between resends
 interface Props {
   email?: string;
   devMode?: boolean;
+  devResetUrl?: string | null;      // NEW 2026-09-29
   onChangeEmail?: () => void;
 }
 
-export default function CheckEmailDialogBox({ email: emailProp, devMode: devProp, onChangeEmail }: Props) {
+export default function CheckEmailDialogBox({
+  email: emailProp, devMode: devProp, devResetUrl: devUrlProp, onChangeEmail,
+}: Props) {
   const [email, setEmail] = useState(emailProp ?? "");
   const [devMode, setDevMode] = useState(!!devProp);
+  const [devUrl, setDevUrl] = useState<string | null>(devUrlProp ?? null);   // NEW
+  const [copied, setCopied] = useState(false);                              // NEW
   const [resent, setResent] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,16 +54,29 @@ export default function CheckEmailDialogBox({ email: emailProp, devMode: devProp
 
   const handleResend = async () => {
     if (!email || loading || wait > 0) return;
-    setLoading(true); setResent(false); setResendError(null);
+    setLoading(true); setResent(false); setResendError(null); setCopied(false);
     try {
       const res = await authService.forgotPassword({ email });
       setDevMode(!res.email_sent);
+      setDevUrl(res.dev_reset_url ?? null);     // NEW: the old link is dead now
       setResent(true);
       setWait(RESEND_WAIT);
     } catch (e: unknown) {
       setResendError(e instanceof Error ? e.message : "Could not resend the email.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // NEW 2026-09-29
+  const handleCopy = async () => {
+    if (!devUrl) return;
+    try {
+      await navigator.clipboard.writeText(devUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setCopied(false);      // clipboard blocked — the link is selectable anyway
     }
   };
 
@@ -80,7 +104,37 @@ export default function CheckEmailDialogBox({ email: emailProp, devMode: devProp
         {devMode && (
           <div role="status" className="alert alert-error" style={{ marginBottom: "1rem", textAlign: "left" }}>
             DEV MODE: no email was sent because SMTP is not set up in <code>backend/.env</code>.
-            Copy the reset link from the backend (uvicorn) terminal and open it in the browser.
+            {devUrl ? (
+              <>
+                {" "}Use this reset link instead:
+                <a
+                  href={devUrl}
+                  style={{
+                    display: "block", margin: "0.6rem 0", padding: "0.5rem 0.6rem",
+                    background: "#fff", border: "1px solid var(--border)", borderRadius: "6px",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                    fontSize: "0.72rem", lineHeight: 1.45, color: "var(--navy)",
+                    wordBreak: "break-all", textDecoration: "none",
+                  }}
+                >
+                  {devUrl}
+                </a>
+                <span style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <a href={devUrl} className="btn-secondary"
+                    style={{ fontSize: "0.78rem", padding: "0.35rem 0.9rem", textDecoration: "none" }}>
+                    Open reset link
+                  </a>
+                  <button type="button" className="btn-secondary" onClick={handleCopy}
+                    style={{ fontSize: "0.78rem", padding: "0.35rem 0.9rem", cursor: "pointer" }}>
+                    {copied ? "Copied!" : "Copy link"}
+                  </button>
+                </span>
+              </>
+            ) : (
+              <>
+                {" "}Copy the reset link from the backend (uvicorn) terminal and open it in the browser.
+              </>
+            )}
           </div>
         )}
         {resent && !resendError && (

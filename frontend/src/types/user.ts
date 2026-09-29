@@ -28,7 +28,11 @@ export interface ForgotPasswordPayload {
 // NEW 2026-09-22
 export interface ForgotPasswordResponse {
   message: string;
-  email_sent: boolean;   // false = backend DEV MODE (link printed in the terminal)
+  email_sent: boolean;   // false = backend DEV MODE (SMTP not configured)
+  // Added on 2026-09-29: the reset link itself, DEV MODE only, so "Check your
+  // email!" can show it instead of telling you to copy it from the uvicorn
+  // terminal. null/absent whenever the email really was sent.
+  dev_reset_url?: string | null;
 }
  
 export interface ResetPasswordPayload {

@@ -34,7 +34,12 @@ class ForgotPasswordRequest(BaseModel):
 #  Recently added on 2026-09-22:
 class ForgotPasswordResponse(BaseModel):          # NEW 2026-09-22
     message: str
-    email_sent: bool                              # False = DEV MODE (link printed in terminal)
+    email_sent: bool                              # False = DEV MODE (SMTP not configured)
+    # Added on 2026-09-29: in DEV MODE only, the reset link itself, so the
+    # "Check your email!" screen can show it instead of telling you to copy it
+    # out of the uvicorn terminal. None whenever the email really was sent, and
+    # whenever SHOW_DEV_RESET_LINK is False. See the warning in core/config.py.
+    dev_reset_url: Optional[str] = None
  
 class ResetPasswordRequest(BaseModel):
     token: str
