@@ -45,3 +45,11 @@ export interface GenerateAnswerKeyResult {
   message: string;
   warning: string | null;
 }
+
+// NEW 2026-09-29 — PUT /exams/{examId}/pages/{pageId}
+export interface SetPageNumberResult {
+  success: boolean;
+  changed: boolean;      // false when the page already had that number
+  reset: number;         // checked papers that were reset by the move
+  message: string;
+}

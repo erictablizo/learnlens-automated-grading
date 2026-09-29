@@ -90,6 +90,56 @@ async def add_exam_page(db: AsyncSession, exam_id: int, page_number: int, image_
     return page
 
 
+async def set_page_number(db: AsyncSession, exam_id: int, page_id: int, new_number: int) -> dict:
+    """
+    NEW 2026-09-29 (Edit Exam enhancement): change which page number an already
+    uploaded image belongs to, without re-uploading it.
+
+    Page numbers stay 1..N with no gaps, so this is a SWAP: moving page 3 to
+    page 1 gives the old page 1 the number 3. The (exam_id, page_number) unique
+    key would collide half-way through, so the other page is parked on a
+    temporary number first.
+
+    Afterwards the answer key is renumbered (it is ordered by page) and every
+    checked paper is reset, because question 1 may now be a different question.
+    """
+    pages = list((await db.execute(
+        select(ExamPage).where(ExamPage.exam_id == exam_id).order_by(ExamPage.page_number)
+    )).scalars().all())
+    page = next((p for p in pages if p.page_id == page_id), None)
+    if not page:
+        return {"success": False, "reason": "Page not found."}
+    if not 1 <= new_number <= len(pages):
+        return {"success": False,
+                "reason": f"Page number must be between 1 and {len(pages)}."}
+    if page.page_number == new_number:
+        return {"success": True, "changed": False, "reset": 0,
+                "message": f"Page {new_number} is unchanged."}
+
+    old_number = page.page_number
+    other = next((p for p in pages if p.page_number == new_number), None)
+
+    park = max(p.page_number for p in pages) + 1000
+    if other:
+        other.page_number = park
+        await db.flush()
+    page.page_number = new_number
+    await db.flush()
+    if other:
+        other.page_number = old_number
+    await db.commit()
+
+    await renumber_answer_keys(db, exam_id)
+    reset = await reset_exam_paper_scores(db, exam_id)
+
+    msg = (f"Page {old_number} is now page {new_number}."
+           if not other else
+           f"Pages {old_number} and {new_number} were swapped.")
+    if reset:
+        msg += f" {reset} checked paper(s) were reset and must be checked again."
+    return {"success": True, "changed": True, "reset": reset, "message": msg}
+
+
 async def has_checked_papers(db: AsyncSession, exam_id: int) -> bool:
     result = await db.execute(
         select(TestPaper.paper_id).where(TestPaper.exam_id == exam_id, TestPaper.checked == True).limit(1)  # noqa: E712

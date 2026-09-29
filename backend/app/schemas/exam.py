@@ -11,6 +11,27 @@ class ExamPageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ExamPageNumberUpdate(BaseModel):          # NEW 2026-09-29
+    """Body of PUT /exams/{exam_id}/pages/{page_id} — move a page to another number."""
+    page_number: int
+
+    @field_validator("page_number")
+    @classmethod
+    def _page_number(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("Page number must be 1 or higher.")
+        if v > 50:
+            raise ValueError("Page number must be at most 50.")
+        return v
+
+
+class ExamPageNumberResponse(BaseModel):        # NEW 2026-09-29
+    success: bool
+    changed: bool
+    reset: int
+    message: str
+
+
 class AnswerKeyResponse(BaseModel):
     answer_key_id: int
     page_id: Optional[int] = None          # NEW: lets the viewer group answers by page

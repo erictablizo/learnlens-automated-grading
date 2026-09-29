@@ -1,5 +1,8 @@
 import { api } from "@/lib/api";
-import { Exam, ExamCreatePayload, ExamUpdatePayload, GenerateAnswerKeyResult, QuestionType } from "@/types/exam";
+import {
+  Exam, ExamCreatePayload, ExamUpdatePayload, GenerateAnswerKeyResult,
+  QuestionType, SetPageNumberResult,
+} from "@/types/exam";
 
 export const examService = {
   list: (token: string) => api.get<Exam[]>("/exams", token),
@@ -19,6 +22,14 @@ export const examService = {
 
   deletePage: (examId: number, pageId: number, token: string) =>
     api.delete<void>(`/exams/${examId}/pages/${pageId}`, token),
+
+  /**
+   * NEW 2026-09-29: move an already-uploaded page to a different page number
+   * (Edit Exam). Page numbers stay 1..N, so the backend swaps this page with
+   * the one that currently holds `pageNumber`.
+   */
+  updatePageNumber: (examId: number, pageId: number, pageNumber: number, token: string) =>
+    api.put<SetPageNumberResult>(`/exams/${examId}/pages/${pageId}`, { page_number: pageNumber }, token),
 
   /**
    * FIX 2026-09-22: new optional `expectedItems` ("Number of items on this page").

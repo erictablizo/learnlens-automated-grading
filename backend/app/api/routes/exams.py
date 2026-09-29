@@ -7,7 +7,10 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.config import settings
-from app.schemas.exam import ExamCreate, ExamUpdate, ExamResponse, ExamListResponse, GenerateAnswerKeyResponse
+from app.schemas.exam import (
+    ExamCreate, ExamUpdate, ExamResponse, ExamListResponse, GenerateAnswerKeyResponse,
+    ExamPageNumberUpdate, ExamPageNumberResponse,          # NEW 2026-09-29
+)
 from app.services import exam_service
 from app.services.auth_service import get_current_user
 from app.models.models import ExamPage
@@ -107,6 +110,26 @@ async def upload_exam_page(
     page = await exam_service.add_exam_page(db, exam_id, page_number, file_path)
     await exam_service.reset_exam_paper_scores(db, exam_id)
     return {"page_id": page.page_id, "page_number": page.page_number, "image_path": file_path}
+
+
+# NEW 2026-09-29 (Edit Exam enhancement): change a page's NUMBER without
+# re-uploading its image. Numbers stay 1..N, so this swaps with the page that
+# currently holds the target number. Needs set_page_number() in exam_service.py
+# and ExamPageNumberUpdate / ExamPageNumberResponse in schemas/exam.py.
+@router.put("/{exam_id}/pages/{page_id}", response_model=ExamPageNumberResponse)
+async def set_exam_page_number(
+    exam_id: int,
+    page_id: int,
+    data: ExamPageNumberUpdate,
+    uid: int = Depends(current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    if not await exam_service.get_exam(db, exam_id, uid):
+        raise HTTPException(status_code=404, detail="Exam not found")
+    result = await exam_service.set_page_number(db, exam_id, page_id, data.page_number)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("reason", "Could not move this page."))
+    return result
 
 
 @router.delete("/{exam_id}/pages/{page_id}", status_code=204)
