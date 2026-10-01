@@ -21,7 +21,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/ui/Navbar";
+import Navbar, { PROFILE_UPDATED_EVENT } from "@/components/ui/Navbar";
 import { profileService } from "@/services/profileService";
 import { COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College, UserProfile } from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
@@ -149,6 +149,8 @@ export default function EditProfilePage() {
       setAvatarFile(null);
       setAvatarPreview(null);
       setSaved(true);
+      // tell the sidebar to reload, so the new name / photo show immediately
+      window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not save your profile. Please try again.");
     } finally {
