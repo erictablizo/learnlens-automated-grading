@@ -13,11 +13,15 @@
  * Validation matches /setup — first name, last name, college and course are
  * all required, so saving here can never leave the profile incomplete.
  *
- * Lives at, beside the exams folder so it gets the same layout and sidebar:
+ * Save as, beside the exams folder:
  *     frontend/src/app/(dashboard)/profile/page.tsx     ->  /profile
+ *
+ * Same shell as the Manage Exams page (dashboard-layout + <Navbar /> +
+ * main-content), because the sidebar is rendered per page, not by a layout.
  */
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Navbar from "@/components/ui/Navbar";
 import { profileService } from "@/services/profileService";
 import { COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College, UserProfile } from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
@@ -38,6 +42,7 @@ export default function EditProfilePage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const loaded  = useRef(false);     // so loading a profile does not wipe its course
 
+  const [mounted,   setMounted]   = useState(false);
   const [profile,   setProfile]   = useState<UserProfile | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -51,11 +56,12 @@ export default function EditProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
 
-  const [saving,  setSaving]  = useState(false);
-  const [saved,   setSaved]   = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved,  setSaved]  = useState(false);
+  const [error,  setError]  = useState<string | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     if (!isAuthenticated()) { router.replace("/login"); return; }
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
@@ -85,9 +91,9 @@ export default function EditProfilePage() {
   const courseOptions = (() => {
     if (!college) return [];
     const list = COURSES_BY_COLLEGE[college];
-    const saved0 = profile?.course ?? "";
-    return saved0 && profile?.college === college && !list.includes(saved0)
-      ? [saved0, ...list]
+    const savedCourse = profile?.course ?? "";
+    return savedCourse && profile?.college === college && !list.includes(savedCourse)
+      ? [savedCourse, ...list]
       : list;
   })();
 
@@ -150,147 +156,153 @@ export default function EditProfilePage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "2rem" }}>
-        <span className="spinner spinner-dark" />
-        <span style={{ color: "var(--text-muted)" }}>Loading your profile…</span>
-      </div>
-    );
-  }
-  if (loadError) {
-    return (
-      <div style={{ padding: "2rem" }}>
-        <div className="alert alert-error" role="alert">{loadError}</div>
-        <button type="button" className="btn-secondary" onClick={() => router.push("/exams")}>
-          ← Back to Exams
-        </button>
-      </div>
-    );
-  }
+  if (!mounted) return null;
 
-  const label = { marginBottom: "0.35rem" } as const;
+  const labelGap = { marginBottom: "0.35rem" } as const;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <h1 className="page-title" style={{ marginBottom: "1.5rem" }}>Edit Profile</h1>
+    <div className="dashboard-layout">
+      <Navbar />
+      <main className="main-content" aria-label="Edit Profile">
+        <h1 className="page-title">Edit Profile</h1>
 
-      <div className="create-exam-form">
+        {loading && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+            <span className="spinner spinner-dark" aria-hidden="true" />
+            Loading your profile…
+          </div>
+        )}
 
-        {/* ── Photo ── */}
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            aria-label="Change profile photo"
-            title="Click to change your photo"
-            disabled={saving}
-            style={{
-              width: 84, height: 84, borderRadius: "50%", flexShrink: 0, padding: 0,
-              overflow: "hidden", cursor: saving ? "not-allowed" : "pointer",
-              border: avatarFile ? "2.5px solid var(--orange)" : "2px solid var(--border)",
-              background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center",
-            }}
-          >
-            {currentAvatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={currentAvatar} alt="Profile photo"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            ) : (
-              <span style={{ fontSize: "1.7rem", fontWeight: 700, color: "var(--text-muted)",
-                fontFamily: "var(--font-heading)" }}>{initials}</span>
-            )}
-          </button>
+        {!loading && loadError && (
+          <>
+            <div className="alert alert-error" role="alert" style={{ marginBottom: "1rem" }}>{loadError}</div>
+            <button type="button" className="btn-secondary" onClick={() => router.push("/exams")}>
+              ← Back to Exams
+            </button>
+          </>
+        )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button type="button" className="btn-secondary" disabled={saving}
-                onClick={() => fileRef.current?.click()}
-                style={{ fontSize: "0.8rem", padding: "0.4rem 0.9rem" }}>
-                {currentAvatar ? "Change photo" : "Upload photo"}
-              </button>
-              {avatarFile && (
-                <button type="button" className="btn-secondary" disabled={saving} onClick={undoAvatar}
-                  style={{ fontSize: "0.8rem", padding: "0.4rem 0.9rem" }}>
-                  Undo
+        {!loading && !loadError && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div className="create-exam-form">
+
+              {/* ── Photo ── */}
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  aria-label="Change profile photo"
+                  title="Click to change your photo"
+                  disabled={saving}
+                  style={{
+                    width: 84, height: 84, borderRadius: "50%", flexShrink: 0, padding: 0,
+                    overflow: "hidden", cursor: saving ? "not-allowed" : "pointer",
+                    border: avatarFile ? "2.5px solid var(--orange)" : "2px solid var(--border)",
+                    background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  {currentAvatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={currentAvatar} alt="Profile photo"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <span style={{ fontSize: "1.7rem", fontWeight: 700, color: "var(--text-muted)",
+                      fontFamily: "var(--font-heading)" }}>{initials}</span>
+                  )}
                 </button>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <button type="button" className="btn-secondary" disabled={saving}
+                      onClick={() => fileRef.current?.click()}
+                      style={{ fontSize: "0.8rem", padding: "0.4rem 0.9rem" }}>
+                      {currentAvatar ? "Change photo" : "Upload photo"}
+                    </button>
+                    {avatarFile && (
+                      <button type="button" className="btn-secondary" disabled={saving} onClick={undoAvatar}
+                        style={{ fontSize: "0.8rem", padding: "0.4rem 0.9rem" }}>
+                        Undo
+                      </button>
+                    )}
+                  </div>
+                  <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
+                    {avatarFile
+                      ? `${avatarFile.name.slice(0, 28)}${avatarFile.name.length > 28 ? "…" : ""} — saved when you press Save`
+                      : "JPEG, PNG or WebP, up to 5 MB."}
+                  </span>
+                </div>
+                <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
+                  style={{ display: "none" }} onChange={handleAvatarChange} disabled={saving} />
+              </div>
+
+              {/* ── Name ── */}
+              <label className="form-label" htmlFor="first-name" style={labelGap}>
+                First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+              </label>
+              <input id="first-name" className="form-input" value={firstName} disabled={saving}
+                onChange={e => { setFirstName(e.target.value); setError(null); setSaved(false); }}
+                aria-required="true" autoComplete="given-name" />
+
+              <label className="form-label" htmlFor="last-name" style={labelGap}>
+                Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+              </label>
+              <input id="last-name" className="form-input" value={lastName} disabled={saving}
+                onChange={e => { setLastName(e.target.value); setError(null); setSaved(false); }}
+                aria-required="true" autoComplete="family-name" />
+
+              {/* ── College / course ── */}
+              <label className="form-label" htmlFor="college" style={labelGap}>
+                College <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+              </label>
+              <select id="college" className="form-input" value={college} disabled={saving}
+                onChange={e => { setCollege(e.target.value as College | ""); setError(null); setSaved(false); }}
+                aria-required="true">
+                <option value="">Select your college…</option>
+                {COLLEGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+
+              <label className="form-label" htmlFor="course" style={labelGap}>
+                Course / Program <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+              </label>
+              <select id="course" className="form-input" value={course} disabled={saving || !college}
+                onChange={e => { setCourse(e.target.value); setError(null); setSaved(false); }}
+                aria-required="true">
+                <option value="">{college ? "Select your course…" : "Select a college first"}</option>
+                {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+
+              <label className="form-label" htmlFor="position" style={labelGap}>Position</label>
+              <input id="position" className="form-input" value={position} disabled={saving}
+                placeholder="Teacher"
+                onChange={e => { setPosition(e.target.value); setError(null); setSaved(false); }} />
+              <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
+                Shown in the sidebar after your course. Leave blank to use &ldquo;Teacher&rdquo;.
+              </p>
+
+              {error && (
+                <div role="alert" aria-live="assertive" className="alert alert-error" style={{ marginBottom: "1rem" }}>
+                  {error}
+                </div>
               )}
+              {saved && !error && (
+                <div role="status" aria-live="polite" className="alert alert-success" style={{ marginBottom: "1rem" }}>
+                  Profile saved.
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
+                <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}
+                  aria-busy={saving} style={{ width: "auto", padding: "0.65rem 1.75rem" }}>
+                  {saving ? <><span className="spinner" aria-hidden="true" /> Saving…</> : "Save"}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => router.push("/exams")} disabled={saving}>
+                  Cancel
+                </button>
+              </div>
             </div>
-            <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
-              {avatarFile
-                ? `${avatarFile.name.slice(0, 28)}${avatarFile.name.length > 28 ? "…" : ""} — saved when you press Save`
-                : "JPEG, PNG or WebP, up to 5 MB."}
-            </span>
-          </div>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
-            style={{ display: "none" }} onChange={handleAvatarChange} disabled={saving} />
-        </div>
-
-        {/* ── Name ── */}
-        <label className="form-label" htmlFor="first-name" style={label}>
-          First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
-        </label>
-        <input id="first-name" className="form-input" value={firstName} disabled={saving}
-          onChange={e => { setFirstName(e.target.value); setError(null); setSaved(false); }}
-          aria-required="true" autoComplete="given-name" />
-
-        <label className="form-label" htmlFor="last-name" style={label}>
-          Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
-        </label>
-        <input id="last-name" className="form-input" value={lastName} disabled={saving}
-          onChange={e => { setLastName(e.target.value); setError(null); setSaved(false); }}
-          aria-required="true" autoComplete="family-name" />
-
-        {/* ── College / course ── */}
-        <label className="form-label" htmlFor="college" style={label}>
-          College <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
-        </label>
-        <select id="college" className="form-input" value={college} disabled={saving}
-          onChange={e => { setCollege(e.target.value as College | ""); setError(null); setSaved(false); }}
-          aria-required="true">
-          <option value="">Select your college…</option>
-          {COLLEGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-
-        <label className="form-label" htmlFor="course" style={label}>
-          Course / Program <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
-        </label>
-        <select id="course" className="form-input" value={course} disabled={saving || !college}
-          onChange={e => { setCourse(e.target.value); setError(null); setSaved(false); }}
-          aria-required="true">
-          <option value="">{college ? "Select your course…" : "Select a college first"}</option>
-          {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-
-        <label className="form-label" htmlFor="position" style={label}>Position</label>
-        <input id="position" className="form-input" value={position} disabled={saving}
-          placeholder="Teacher"
-          onChange={e => { setPosition(e.target.value); setError(null); setSaved(false); }} />
-        <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
-          Shown in the sidebar after your course. Leave blank to use &ldquo;Teacher&rdquo;.
-        </p>
-
-        {error && (
-          <div role="alert" aria-live="assertive" className="alert alert-error" style={{ marginBottom: "1rem" }}>
-            {error}
           </div>
         )}
-        {saved && !error && (
-          <div role="status" aria-live="polite" className="alert alert-success" style={{ marginBottom: "1rem" }}>
-            Profile saved.
-          </div>
-        )}
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
-          <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}
-            aria-busy={saving} style={{ width: "auto", padding: "0.65rem 1.75rem" }}>
-            {saving ? <><span className="spinner" aria-hidden="true" /> Saving…</> : "Save"}
-          </button>
-          <button type="button" className="btn-secondary" onClick={() => router.push("/exams")} disabled={saving}>
-            Cancel
-          </button>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }
