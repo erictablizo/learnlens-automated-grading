@@ -19,10 +19,9 @@ import { clearAuth, getToken } from "@/lib/auth";
 import { clearActiveCollege, getActiveCollege, COLLEGE_COLORS } from "@/lib/college";
 import { College, UserProfile } from "@/types/profile";
 import { profileService } from "@/services/profileService";
+// NEW 2026-10-01: shared with the Edit Profile page and the college picker
+import { avatarUrl, buildDisplayName, initialsOf } from "@/lib/profileDisplay";
  
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-const STATIC_BASE = API_BASE.replace("/api", "");
-
 /** Fired by the Edit Profile page after a successful save. */
 export const PROFILE_UPDATED_EVENT = "learnlens:profile-updated";
  
@@ -47,29 +46,6 @@ const IconPencil = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
   </svg>
 );
- 
-/** Build the avatar URL from the stored path.
- *  NEW 2026-10-01: `v` (the profile's updated_at) busts the browser cache,
- *  because the uploaded file always has the same name. */
-function avatarUrl(path: string | null, v?: string | null): string | null {
-  if (!path) return null;
-  // path is like "uploads/avatars/user_1.jpg" — prepend the backend base
-  const url = `${STATIC_BASE}/${path.replace(/\\/g, "/").replace(/^\//, "")}`;
-  return v ? `${url}?v=${encodeURIComponent(v)}` : url;
-}
- 
-/** Build "Maria Santos, Computer Science Teacher" */
-function buildDisplayName(profile: UserProfile): string {
-  const first    = (profile.first_name ?? "").trim();
-  const last     = (profile.last_name  ?? "").trim();
-  const fullName = [first, last].filter(Boolean).join(" ");
-  const course   = (profile.course    ?? "").trim();
-  const position = (profile.position  ?? "").trim() || "Teacher";
- 
-  if (fullName && course) return `${fullName}, ${course} ${position}`;
-  if (fullName)           return `${fullName} ${position}`;
-  return position;
-}
  
 export default function Navbar() {
   const pathname = usePathname();
@@ -112,10 +88,7 @@ export default function Navbar() {
   const onProfile   = pathname.startsWith("/profile");
  
   // Initials fallback
-  const initials = profile
-    ? [(profile.first_name ?? "")[0], (profile.last_name ?? "")[0]]
-        .filter(Boolean).join("").toUpperCase() || "?"
-    : col?.initials ?? "?";
+  const initials = profile ? initialsOf(profile) : col?.initials ?? "?";
  
   return (
     <nav className="sidebar" aria-label="Main navigation">

@@ -25,17 +25,8 @@ import Navbar, { PROFILE_UPDATED_EVENT } from "@/components/ui/Navbar";
 import { profileService } from "@/services/profileService";
 import { COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College, UserProfile } from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-const STATIC_BASE = API_BASE.replace("/api", "");
-
-/** Same as the sidebar: "uploads/avatars/user_1.jpg" → full URL.
- *  `v` busts the browser cache, because the file name never changes. */
-function avatarUrl(path: string | null | undefined, v?: string | null): string | null {
-  if (!path) return null;
-  const url = `${STATIC_BASE}/${path.replace(/\\/g, "/").replace(/^\//, "")}`;
-  return v ? `${url}?v=${encodeURIComponent(v)}` : url;
-}
+// NEW 2026-10-01: shared with the sidebar and the college picker
+import { avatarUrl } from "@/lib/profileDisplay";
 
 export default function EditProfilePage() {
   const router  = useRouter();

@@ -13,6 +13,11 @@
  *           Psychology teacher taking a Computer Science subject. That last one
  *           is pre-filled from the saved profile and can be changed.
  *
+ * Both steps show the signed-in teacher's profile label — the same photo and
+ * "Name, Course Position" line as the sidebar — so it is obvious whose session
+ * this is before any college is picked. It comes from lib/profileDisplay.ts,
+ * which the sidebar and the Edit Profile page use too.
+ *
  * The year levels come from MAX_YEAR_BY_COLLEGE in types/profile.ts — CVMAS
  * reaches 6th year, the others reach 3rd. The pick is kept in sessionStorage
  * next to the active college (lib/college.ts), so Sign out and Switch clear it
@@ -31,6 +36,8 @@ import {
 } from "@/lib/college";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { profileService } from "@/services/profileService";
+import { UserProfile } from "@/types/profile";
+import { avatarUrl, buildDisplayName, initialsOf } from "@/lib/profileDisplay";
  
 export default function CollegePickerPage() {
   const router   = useRouter();
@@ -46,8 +53,10 @@ export default function CollegePickerPage() {
   const [error,   setError]   = useState<string | null>(null);
   const [going,   setGoing]   = useState(false);
 
-  // The teacher's own course is on their profile, so offer it as the default
-  const [profileCourse, setProfileCourse] = useState("");
+  // The teacher's profile — shown as the label on both steps, and its course
+  // is offered as the default for "what course did you originate from"
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const profileCourse = isKnownCourse(profile?.course) ? profile.course : "";
  
   useEffect(() => {
     setMounted(true);
@@ -55,8 +64,8 @@ export default function CollegePickerPage() {
     const token = getToken();
     if (!token) return;
     profileService.get(token)
-      .then(p => { if (isKnownCourse(p.course)) setProfileCourse(p.course); })
-      .catch(() => {});        // no profile course is fine — the teacher picks one
+      .then(setProfile)
+      .catch(() => {});        // no profile yet is fine — the teacher picks one
   }, [router]);
  
   if (!mounted) return null;
@@ -112,6 +121,42 @@ export default function CollegePickerPage() {
   return (
     <div className="auth-bg" style={{ flexDirection: "column", gap: "1.75rem" }}>
  
+      {/* Added on 2026-10-01 — who is signed in, same label as the sidebar */}
+      {profile && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem" }}>
+          <div
+            style={{
+              width: 52, height: 52, borderRadius: "50%", overflow: "hidden",
+              border: "2px solid var(--border)", flexShrink: 0, background: "var(--bg)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+            aria-hidden="true"
+          >
+            {avatarUrl(profile.avatar_path, profile.updated_at) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl(profile.avatar_path, profile.updated_at) as string}
+                alt="Profile"
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <span style={{
+                fontSize: "1rem", fontWeight: 700, color: "var(--text-muted)",
+                fontFamily: "var(--font-heading, sans-serif)",
+              }}>
+                {initialsOf(profile)}
+              </span>
+            )}
+          </div>
+          <span style={{
+            fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center",
+            lineHeight: 1.45, maxWidth: 320,
+          }}>
+            {buildDisplayName(profile)}
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ textAlign: "center" }}>
         <h1 className="auth-title" style={{ fontSize: "1.6rem", marginBottom: "0.3rem" }}>
