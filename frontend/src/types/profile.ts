@@ -47,4 +47,7 @@ export interface UserProfile {
   avatar_path:      string | null;
   profile_complete: boolean;
   created_at:       string;
+  // Added on 2026-10-01 (Edit Profile): used to cache-bust the avatar image,
+  // which is always stored under the same file name.
+  updated_at?:      string | null;
 }

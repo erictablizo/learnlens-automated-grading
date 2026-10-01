@@ -30,5 +30,10 @@ class ProfileResponse(BaseModel):
     avatar_path:      Optional[str] = None
     profile_complete: bool
     created_at:       datetime
+    # Added on 2026-10-01 (Edit Profile): the avatar file is always saved under
+    # the SAME name (user_<id>.jpg), so after changing the photo the browser
+    # would keep showing the cached old one. The frontend appends this as a
+    # cache-busting query (?v=…), which changes whenever the profile is saved.
+    updated_at:       Optional[datetime] = None
  
     model_config = {"from_attributes": True}
