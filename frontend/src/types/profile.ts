@@ -81,39 +81,12 @@ export function isValidCourse(college: College | null | undefined, course: unkno
   return COURSES_BY_COLLEGE[college].includes(course);
 }
 
-/** Every course of every college, grouped — for the "originated from"
- *  dropdown. A teacher's own course can belong to a different college than the
- *  class they are teaching (a Psychology teacher taking a Computer Science
- *  subject), so this list is NOT filtered by the active college. */
-export const COURSE_GROUPS: { college: College; label: string; courses: string[] }[] =
-  COLLEGE_OPTIONS.map(o => ({ college: o.value, label: o.label, courses: COURSES_BY_COLLEGE[o.value] }));
-
-/** True when the course exists in ANY college. */
-export function isKnownCourse(course: unknown): course is string {
-  return typeof course === "string"
-    && COLLEGE_OPTIONS.some(o => COURSES_BY_COLLEGE[o.value].includes(course));
-}
-
-export const SUBJECT_MAX_LENGTH = 100;
-
-/** The subject is typed by hand (there is no master list), so it is only
- *  checked for being present and a sensible length. */
-export function isValidSubject(subject: unknown): boolean {
-  if (typeof subject !== "string") return false;
-  const s = subject.trim();
-  return s.length >= 2 && s.length <= SUBJECT_MAX_LENGTH;
-}
-
-/** What the teacher picked on /college — "today I am teaching …". */
+/** What the teacher picked on /college — "today I am teaching …".
+ *  The course is always one of the SELECTED COLLEGE's courses. */
 export interface TeachingContext {
-  college:      College;
-  /** The course of the STUDENTS being taught. */
-  course:       string;
-  year:         YearLevel;
-  /** The subject being taught, e.g. "World Literature". */
-  subject:      string;
-  /** The teacher's OWN course — may be from another college entirely. */
-  originCourse: string;
+  college: College;
+  course:  string;
+  year:    YearLevel;
 }
  
 export interface UserProfile {

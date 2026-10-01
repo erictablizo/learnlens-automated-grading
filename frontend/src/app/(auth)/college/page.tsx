@@ -7,11 +7,9 @@
  * LEVEL they are teaching today, then Continue goes to /exams.
  *
  *   Step 1  Who is teaching today?   → the same 2×2 college grid
- *   Step 2  What are you teaching?   → the students' course (filtered by the
- *           college), the year level, the subject, and the course the TEACHER
- *           originated from — which may be in another college entirely, e.g. a
- *           Psychology teacher taking a Computer Science subject. That last one
- *           is pre-filled from the saved profile and can be changed.
+ *   Step 2  What are you teaching?   → the students' course and the year level.
+ *           The course list is always the SELECTED COLLEGE's own courses —
+ *           pick CAST and you only see CAST's courses, and so on.
  *
  * Both steps show the signed-in teacher's profile label — the same photo and
  * "Name, Course Position" line as the sidebar — so it is obvious whose session
@@ -28,7 +26,6 @@ import { useRouter } from "next/navigation";
 import {
   College, COLLEGE_OPTIONS, COURSES_BY_COLLEGE,
   YearLevel, YEAR_LABELS, yearLevelsFor,
-  COURSE_GROUPS, SUBJECT_MAX_LENGTH, isValidSubject, isKnownCourse,
 } from "@/types/profile";
 import {
   setActiveCollege, setTeachingSelection, getTeachingContext,
@@ -48,15 +45,12 @@ export default function CollegePickerPage() {
   const [step,    setStep]    = useState<"college" | "details">("college");
   const [course,  setCourse]  = useState("");
   const [year,    setYear]    = useState<YearLevel | "">("");
-  const [subject, setSubject] = useState("");
-  const [origin,  setOrigin]  = useState("");          // the teacher's own course
   const [error,   setError]   = useState<string | null>(null);
   const [going,   setGoing]   = useState(false);
 
-  // The teacher's profile — shown as the label on both steps, and its course
-  // is offered as the default for "what course did you originate from"
+  // The teacher's profile — shown as the label on both steps
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const profileCourse = isKnownCourse(profile?.course) ? profile.course : "";
+  const [profileError, setProfileError] = useState(false);
  
   useEffect(() => {
     setMounted(true);
@@ -65,7 +59,12 @@ export default function CollegePickerPage() {
     if (!token) return;
     profileService.get(token)
       .then(setProfile)
-      .catch(() => {});        // no profile yet is fine — the teacher picks one
+      .catch(err => {
+        // Not fatal — the teacher can still pick a college — but never fail
+        // silently, or the label just disappears with no way to tell why.
+        setProfileError(true);
+        console.warn("[LearnLens] /college could not load the profile label:", err);
+      });
   }, [router]);
  
   if (!mounted) return null;
@@ -78,8 +77,6 @@ export default function CollegePickerPage() {
     const previous = getTeachingContext();
     setCourse(previous?.course ?? "");
     setYear(previous?.year ?? "");
-    setSubject(previous?.subject ?? "");
-    setOrigin(previous?.originCourse ?? profileCourse);
     setError(null);
     // Small visual delay so the selection highlight is visible before step 2
     setTimeout(() => setStep("details"), 220);
@@ -93,17 +90,10 @@ export default function CollegePickerPage() {
 
   const handleContinue = () => {
     if (!picking) { handleBack(); return; }
-    if (!course)  { setError("Please select the course you are teaching."); return; }
-    if (!year)    { setError("Please select the year level you are teaching."); return; }
-    if (!isValidSubject(subject)) {
-      setError(subject.trim()
-        ? `The subject must be between 2 and ${SUBJECT_MAX_LENGTH} characters.`
-        : "Please enter the subject you are teaching.");
-      return;
-    }
-    if (!origin)  { setError("Please select the course you originated from."); return; }
+    if (!course) { setError("Please select the course you are teaching."); return; }
+    if (!year)   { setError("Please select the year level you are teaching."); return; }
     setGoing(true);
-    setTeachingSelection(course, year, subject, origin);
+    setTeachingSelection(course, year);
     router.replace("/exams");
   };
 
@@ -122,6 +112,11 @@ export default function CollegePickerPage() {
     <div className="auth-bg" style={{ flexDirection: "column", gap: "1.75rem" }}>
  
       {/* Added on 2026-10-01 — who is signed in, same label as the sidebar */}
+      {profileError && (
+        <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: 0 }}>
+          Could not load your profile — see the browser console.
+        </p>
+      )}
       {profile && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem" }}>
           <div
@@ -253,47 +248,6 @@ export default function CollegePickerPage() {
           <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.5rem", marginBottom: "1.1rem" }}>
             {COLLEGE_FULL_NAMES[picking]} students go up to{" "}
             {YEAR_LABELS[yearLevelsFor(picking)[yearLevelsFor(picking).length - 1]]}.
-          </p>
-
-          {/* Added on 2026-10-01 — the subject being taught */}
-          <label className="form-label" htmlFor="teaching-subject" style={{ marginBottom: "0.2rem" }}>
-            Subject <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
-          </label>
-          <input
-            id="teaching-subject"
-            type="text"
-            value={subject}
-            onChange={e => { setSubject(e.target.value); setError(null); }}
-            placeholder="e.g. World Literature"
-            maxLength={SUBJECT_MAX_LENGTH}
-            disabled={going}
-            aria-required="true"
-            style={{ ...selectStyle, color: "var(--text)" }}
-          />
-
-          {/* Added on 2026-10-01 — the teacher's OWN course, any college */}
-          <label className="form-label" htmlFor="origin-course" style={{ marginBottom: "0.2rem" }}>
-            What course did you originate from? <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
-          </label>
-          <select
-            id="origin-course"
-            value={origin}
-            onChange={e => { setOrigin(e.target.value); setError(null); }}
-            disabled={going}
-            aria-required="true"
-            style={{ ...selectStyle, color: origin ? "var(--text)" : "var(--text-muted)" }}
-          >
-            <option value="">Select your own course</option>
-            {COURSE_GROUPS.map(g => (
-              <optgroup key={g.college} label={g.label}>
-                {g.courses.map(c => <option key={`${g.college}:${c}`} value={c}>{c}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.5rem", marginBottom: "1.1rem" }}>
-            {origin && origin !== course
-              ? "You are teaching a course other than your own — that is fine, both are recorded."
-              : "Your own course, which can be from a different college than the class."}
           </p>
 
           <button

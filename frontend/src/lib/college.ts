@@ -1,7 +1,6 @@
 import {
   College, TeachingContext, YearLevel,
   isValidCourse, isValidYear,          // Added on 2026-10-01
-  isKnownCourse, isValidSubject,       // Added on 2026-10-01 (subject + origin)
 } from "@/types/profile";
  
 const SESSION_KEY = "ll_active_college";
@@ -10,8 +9,6 @@ const SESSION_KEY = "ll_active_college";
 // college (sessionStorage), so Sign out and a new tab both start clean.
 const COURSE_KEY  = "ll_active_course";
 const YEAR_KEY    = "ll_active_year";
-const SUBJECT_KEY = "ll_active_subject";
-const ORIGIN_KEY  = "ll_origin_course";
  
 export function setActiveCollege(college: College): void {
   if (typeof window === "undefined") return;
@@ -38,24 +35,17 @@ export function hasActiveCollege(): boolean {
 
 // ── Course + year level (Added on 2026-10-01) ────────────────────────────────
 
-/** Save everything picked on /college: the students' course and year level,
- *  the subject being taught, and the teacher's own (originating) course. */
-export function setTeachingSelection(
-  course: string, year: YearLevel, subject: string, originCourse: string,
-): void {
+/** Save the course and year level picked on /college. */
+export function setTeachingSelection(course: string, year: YearLevel): void {
   if (typeof window === "undefined") return;
-  sessionStorage.setItem(COURSE_KEY,  course);
-  sessionStorage.setItem(YEAR_KEY,    String(year));
-  sessionStorage.setItem(SUBJECT_KEY, subject.trim());
-  sessionStorage.setItem(ORIGIN_KEY,  originCourse);
+  sessionStorage.setItem(COURSE_KEY, course);
+  sessionStorage.setItem(YEAR_KEY,   String(year));
 }
 
 export function clearTeachingSelection(): void {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem(COURSE_KEY);
   sessionStorage.removeItem(YEAR_KEY);
-  sessionStorage.removeItem(SUBJECT_KEY);
-  sessionStorage.removeItem(ORIGIN_KEY);
 }
 
 /**
@@ -68,25 +58,20 @@ export function getTeachingContext(): TeachingContext | null {
   if (typeof window === "undefined") return null;
   const college = getActiveCollege();
   if (!college) return null;
-  const course  = sessionStorage.getItem(COURSE_KEY);
-  const year    = Number(sessionStorage.getItem(YEAR_KEY));
-  const subject = sessionStorage.getItem(SUBJECT_KEY);
-  const origin  = sessionStorage.getItem(ORIGIN_KEY);
+  const course = sessionStorage.getItem(COURSE_KEY);
+  const year   = Number(sessionStorage.getItem(YEAR_KEY));
+  // The course must be one this college actually offers.
   if (!isValidCourse(college, course) || !isValidYear(college, year)) return null;
-  // The teacher's own course may belong to any college, so it is checked
-  // against every course, not just this college's.
-  if (typeof subject !== "string" || !isValidSubject(subject)) return null;
-  if (!isKnownCourse(origin)) return null;
-  return { college, course, year, subject: subject.trim(), originCourse: origin };
+  return { college, course, year };
 }
 
 export function hasTeachingContext(): boolean {
   return getTeachingContext() !== null;
 }
 
-/** "World Literature · BS Computer Science 2nd Year" — for the sidebar. */
+/** "BS Computer Science · 2nd Year" — for the sidebar. */
 export function teachingLabel(ctx: TeachingContext | null, yearLabel: string): string | null {
-  return ctx ? `${ctx.subject} · ${ctx.course} ${yearLabel}` : null;
+  return ctx ? `${ctx.course} · ${yearLabel}` : null;
 }
  
 export const COLLEGE_COLORS: Record<College, { bg: string; color: string; initials: string }> = {
