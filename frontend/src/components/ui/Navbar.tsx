@@ -8,6 +8,8 @@
  *    photo as user_<id>.jpg, so without this the browser keeps showing the
  *    OLD photo from cache after a change. Needs `updated_at` on the profile
  *    response (backend/app/schemas/profile.py) and in types/profile.ts.
+ *  - The college badge is seeded from the profile when nothing was picked this
+ *    session, because signing in no longer goes through /college (2026-10-04).
  *  - The sidebar refreshes on the "learnlens:profile-updated" window event,
  *    which the Edit Profile page fires after saving, so the new name and
  *    photo appear straight away instead of only after navigating.
@@ -16,7 +18,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { clearAuth, getToken } from "@/lib/auth";
-import { clearActiveCollege, getActiveCollege, COLLEGE_COLORS } from "@/lib/college";
+import { clearActiveCollege, getActiveCollege, ensureActiveCollege, COLLEGE_COLORS } from "@/lib/college";
 import { College, UserProfile } from "@/types/profile";
 import { profileService } from "@/services/profileService";
 // NEW 2026-10-01: shared with the Edit Profile page and the college picker
@@ -59,7 +61,13 @@ export default function Navbar() {
     const token = getToken();
     if (!token) return;
     profileService.get(token)
-      .then(p => { setProfile(p); setImgError(false); })
+      .then(p => {
+        setProfile(p);
+        setImgError(false);
+        // CHANGED 2026-10-04: signing in no longer passes through /college, so
+        // seed the college / course / year from the profile the first time.
+        if (ensureActiveCollege(p)) setCollege(getActiveCollege());
+      })
       .catch(() => {});
   }, []);
  

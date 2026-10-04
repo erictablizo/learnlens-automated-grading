@@ -1,5 +1,5 @@
 import {
-  College, TeachingContext, YearLevel,
+  College, TeachingContext, YearLevel, UserProfile,
   isValidCourse, isValidYear,          // Added on 2026-10-01
 } from "@/types/profile";
  
@@ -67,6 +67,29 @@ export function getTeachingContext(): TeachingContext | null {
 
 export function hasTeachingContext(): boolean {
   return getTeachingContext() !== null;
+}
+
+/**
+ * CHANGED 2026-10-04: the college / course / year screens are no longer part
+ * of signing in — they only appear after clicking "Switch". So when nothing has
+ * been picked this session, seed it from the saved profile instead, which is
+ * where the teacher entered their college, course and year level during setup.
+ *
+ * Does nothing once a selection exists, so a teacher who DID use Switch keeps
+ * what they chose for the rest of the session. Returns true when it seeded.
+ */
+export function ensureActiveCollege(profile: UserProfile | null | undefined): boolean {
+  if (typeof window === "undefined" || !profile) return false;
+  if (getActiveCollege()) return false;                 // already set this session
+
+  const college = profile.college;
+  if (!college) return false;                           // profile has no college yet
+  sessionStorage.setItem(SESSION_KEY, college);         // not setActiveCollege: that clears
+
+  if (isValidCourse(college, profile.course) && isValidYear(college, profile.year_level)) {
+    setTeachingSelection(profile.course as string, profile.year_level as YearLevel);
+  }
+  return true;
 }
 
 /** "BS Computer Science · 2nd Year" — for the sidebar. */
