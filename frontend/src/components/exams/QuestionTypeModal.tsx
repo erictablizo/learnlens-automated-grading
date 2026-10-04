@@ -71,7 +71,7 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
           </button>
           <button type="button" onClick={() => choose("encircled")} disabled={loading}
             style={btn("var(--primary-bg)", "var(--primary)", "var(--primary)")}>
-            {loading ? "Generating…" : "Multiple Choice (Circled)"}
+            {loading ? "Generating…" : "Multiple Choice (Encircled)"}
           </button>
           {/* NEW 2026-09-26: one page that has BOTH parts, e.g.
           Part I Multiple Choice (1-5) + Part II True/False (6-10). */}
