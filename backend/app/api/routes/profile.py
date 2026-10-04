@@ -39,6 +39,7 @@ async def save_profile(
         college    = data.college,
         course     = data.course,
         position   = data.position,
+        year_level = data.year_level,      # Added on 2026-10-04
     )
  
  

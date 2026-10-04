@@ -98,6 +98,10 @@ export interface UserProfile {
   course:           string | null;   // ← new: program/course within the college
   position:         string | null;
   avatar_path:      string | null;
+  // Added on 2026-10-04: year level the teacher usually teaches (1-6).
+  // Pre-selects the year on /college. Needs the user_profiles.year_level
+  // column — see backend/migrations/2026-10-04_year_level.sql.
+  year_level:       number | null;
   profile_complete: boolean;
   created_at:       string;
   // Added on 2026-10-01 (Edit Profile): used to cache-bust the avatar image,

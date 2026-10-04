@@ -27,6 +27,7 @@ async def update_profile(
     college:    Optional[str],
     course:     Optional[str],
     position:   Optional[str],
+    year_level: Optional[int] = None,     # Added on 2026-10-04
 ) -> UserProfile:
     profile = await get_or_create_profile(db, user_id)
  
@@ -35,8 +36,11 @@ async def update_profile(
     if college    is not None: profile.college    = college
     if course     is not None: profile.course     = course.strip()     or None
     if position   is not None: profile.position   = position.strip()   or None
+    if year_level is not None: profile.year_level = year_level
  
-    # Profile is complete when name, college AND course are all provided
+    # Profile is complete when name, college AND course are all provided.
+    # The year level is a convenience default, so it is NOT required here —
+    # the teacher still confirms it on /college every session.
     profile.profile_complete = bool(
         profile.first_name and profile.last_name
         and profile.college and profile.course

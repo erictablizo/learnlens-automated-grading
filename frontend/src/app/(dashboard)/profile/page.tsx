@@ -23,7 +23,10 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Navbar, { PROFILE_UPDATED_EVENT } from "@/components/ui/Navbar";
 import { profileService } from "@/services/profileService";
-import { COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College, UserProfile } from "@/types/profile";
+import {
+  COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College, UserProfile,
+  YearLevel, YEAR_LABELS, yearLevelsFor, isValidYear,   // Added on 2026-10-04
+} from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
 // NEW 2026-10-01: shared with the sidebar and the college picker
 import { avatarUrl } from "@/lib/profileDisplay";
@@ -43,6 +46,7 @@ export default function EditProfilePage() {
   const [college,   setCollege]   = useState<College | "">("");
   const [course,    setCourse]    = useState("");
   const [position,  setPosition]  = useState("");
+  const [year,      setYear]      = useState<YearLevel | "">("");   // Added on 2026-10-04
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
@@ -65,6 +69,7 @@ export default function EditProfilePage() {
         setCollege((p.college as College) ?? "");
         setCourse(p.course ?? "");
         setPosition(p.position ?? "");
+        setYear(isValidYear(p.college as College, p.year_level) ? (p.year_level as YearLevel) : "");
         loaded.current = true;
       })
       .catch(() => setLoadError("Could not load your profile."))
@@ -76,6 +81,7 @@ export default function EditProfilePage() {
   useEffect(() => {
     if (!loaded.current) return;
     setCourse(c => (college && COURSES_BY_COLLEGE[college].includes(c) ? c : ""));
+    setYear(y => (isValidYear(college || null, y) ? y : ""));   // Added on 2026-10-04
   }, [college]);
 
   // Keep a course that is not in the list (entered before the list changed)
@@ -135,6 +141,7 @@ export default function EditProfilePage() {
         college:    college as College,
         course,
         position:   position.trim() || undefined,
+        year_level: year === "" ? undefined : year,     // Added on 2026-10-04
       }, token);
       setProfile(updated);
       setAvatarFile(null);
@@ -263,6 +270,24 @@ export default function EditProfilePage() {
                 <option value="">{college ? "Select your course…" : "Select a college first"}</option>
                 {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+
+              {/* Added on 2026-10-04 — the year level this teacher usually teaches */}
+              <label className="form-label" htmlFor="year-level" style={labelGap}>Year Level you usually teach</label>
+              <select id="year-level" className="form-input" value={year === "" ? "" : String(year)}
+                disabled={saving || !college}
+                onChange={e => {
+                  const v = e.target.value;
+                  setYear(v === "" ? "" : (Number(v) as YearLevel));
+                  setError(null); setSaved(false);
+                }}>
+                <option value="">{college ? "No default" : "Select a college first"}</option>
+                {yearLevelsFor(college || null).map(y => (
+                  <option key={y} value={y}>{YEAR_LABELS[y]}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
+                Pre-selects the year on the &ldquo;What are you teaching?&rdquo; screen. You can still change it there.
+              </p>
 
               <label className="form-label" htmlFor="position" style={labelGap}>Position</label>
               <input id="position" className="form-input" value={position} disabled={saving}

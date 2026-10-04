@@ -9,7 +9,9 @@
  *   Step 1  Who is teaching today?   → the same 2×2 college grid
  *   Step 2  What are you teaching?   → the students' course and the year level.
  *           The course list is always the SELECTED COLLEGE's own courses —
- *           pick CAST and you only see CAST's courses, and so on.
+ *           pick CAST and you only see CAST's courses, and so on. The year is
+ *           pre-selected from the teacher's profile when that college reaches
+ *           it, so most sessions are two clicks.
  *
  * Both steps show the signed-in teacher's profile label — the same photo and
  * "Name, Course Position" line as the sidebar — so it is obvious whose session
@@ -25,7 +27,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   College, COLLEGE_OPTIONS, COURSES_BY_COLLEGE,
-  YearLevel, YEAR_LABELS, yearLevelsFor,
+  YearLevel, YEAR_LABELS, yearLevelsFor, isValidYear,
 } from "@/types/profile";
 import {
   setActiveCollege, setTeachingSelection, getTeachingContext,
@@ -76,7 +78,10 @@ export default function CollegePickerPage() {
     // if they are re-picking the same college, bring their last choice back
     const previous = getTeachingContext();
     setCourse(previous?.course ?? "");
-    setYear(previous?.year ?? "");
+    // Added on 2026-10-04: fall back to the year level saved on the profile,
+    // but only when this college actually reaches it.
+    const fromProfile = isValidYear(college, profile?.year_level) ? profile!.year_level! : "";
+    setYear(previous?.year ?? (fromProfile as YearLevel | ""));
     setError(null);
     // Small visual delay so the selection highlight is visible before step 2
     setTimeout(() => setStep("details"), 220);

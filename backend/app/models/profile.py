@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, func
+from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, ForeignKey, func
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -15,6 +15,9 @@ class UserProfile(Base):
     college          = Column(String(20))      # CVMAS | CBMA | CoEd | CAST
     course           = Column(String(255))     # Program within the college
     position         = Column(String(255))
+    # Added on 2026-10-04: year level the teacher usually teaches (1-6).
+    # Needs migrations/2026-10-04_year_level.sql to have been run.
+    year_level       = Column(SmallInteger)
     avatar_path      = Column(String(500))
     profile_complete = Column(Boolean, default=False, nullable=False)
     created_at       = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
