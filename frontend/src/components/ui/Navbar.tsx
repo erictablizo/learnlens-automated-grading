@@ -2,14 +2,17 @@
 /**
  * ENHANCEMENT 2026-10-01 — the profile block is now a link to /profile.
  *
+ * CHANGED 2026-10-04 — the /college screens are gone, so the "Switch" button
+ * is gone with them. The college badge now comes straight from the saved
+ * profile; it is changed on the Edit Profile page like every other profile
+ * field.
+ *
  *  - Clicking the photo / badge / name opens Edit Profile, and a small
  *    "Edit" button sits next to "Switch" for a visible affordance.
  *  - The avatar URL carries ?v=<updated_at>. The backend always saves the
  *    photo as user_<id>.jpg, so without this the browser keeps showing the
  *    OLD photo from cache after a change. Needs `updated_at` on the profile
  *    response (backend/app/schemas/profile.py) and in types/profile.ts.
- *  - The college badge is seeded from the profile when nothing was picked this
- *    session, because signing in no longer goes through /college (2026-10-04).
  *  - The sidebar refreshes on the "learnlens:profile-updated" window event,
  *    which the Edit Profile page fires after saving, so the new name and
  *    photo appear straight away instead of only after navigating.
@@ -18,7 +21,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { clearAuth, getToken } from "@/lib/auth";
-import { clearActiveCollege, getActiveCollege, ensureActiveCollege, COLLEGE_COLORS } from "@/lib/college";
+import { clearActiveCollege, COLLEGE_COLORS } from "@/lib/college";
 import { College, UserProfile } from "@/types/profile";
 import { profileService } from "@/services/profileService";
 // NEW 2026-10-01: shared with the Edit Profile page and the college picker
@@ -37,11 +40,6 @@ const IconLogout = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
   </svg>
 );
-const IconSwitch = () => (
-  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-  </svg>
-);
 // NEW 2026-10-01
 const IconPencil = () => (
   <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -53,7 +51,6 @@ export default function Navbar() {
   const pathname = usePathname();
   const router   = useRouter();
  
-  const [college,     setCollege]     = useState<College | null>(null);
   const [profile,     setProfile]     = useState<UserProfile | null>(null);
   const [imgError,    setImgError]    = useState(false);
 
@@ -61,25 +58,18 @@ export default function Navbar() {
     const token = getToken();
     if (!token) return;
     profileService.get(token)
-      .then(p => {
-        setProfile(p);
-        setImgError(false);
-        // CHANGED 2026-10-04: signing in no longer passes through /college, so
-        // seed the college / course / year from the profile the first time.
-        if (ensureActiveCollege(p)) setCollege(getActiveCollege());
-      })
+      .then(p => { setProfile(p); setImgError(false); })
       .catch(() => {});
   }, []);
  
   useEffect(() => {
-    setCollege(getActiveCollege());
     setImgError(false);
     loadProfile();
   }, [pathname, loadProfile]);
 
   // NEW 2026-10-01: refresh as soon as Edit Profile saves, without navigating
   useEffect(() => {
-    const onUpdated = () => { setCollege(getActiveCollege()); loadProfile(); };
+    const onUpdated = () => { loadProfile(); };
     window.addEventListener(PROFILE_UPDATED_EVENT, onUpdated);
     return () => window.removeEventListener(PROFILE_UPDATED_EVENT, onUpdated);
   }, [loadProfile]);
@@ -90,6 +80,8 @@ export default function Navbar() {
     router.replace("/login");
   };
  
+  // CHANGED 2026-10-04: the badge is the profile's college, full stop.
+  const college     = (profile?.college as College | null) ?? null;
   const col         = college ? COLLEGE_COLORS[college] : null;
   const displayName = profile ? buildDisplayName(profile) : null;
   const avatarSrc   = profile ? avatarUrl(profile.avatar_path, profile.updated_at) : null;
@@ -200,41 +192,23 @@ export default function Navbar() {
           )}
         </Link>
  
-        {/* Edit profile + Switch college */}
-        <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap", justifyContent: "center" }}>
-          {/* NEW 2026-10-01 */}
-          <Link
-            href="/profile"
-            className={`sidebar-item${onProfile ? " active" : ""}`}
-            style={{
-              fontSize:  "0.7rem",
-              padding:   "0.2rem 0.55rem",
-              color:     onProfile ? undefined : "var(--text-muted)",
-              gap:       "0.3rem",
-              marginTop: "0.1rem",
-              width:     "auto",
-            }}
-            aria-label="Edit profile"
-          >
-            <IconPencil /> Edit
-          </Link>
-
-          <button
-            className="sidebar-item"
-            onClick={() => router.push("/college")}
-            style={{
-              fontSize:  "0.7rem",
-              padding:   "0.2rem 0.55rem",
-              color:     "var(--text-muted)",
-              gap:       "0.3rem",
-              marginTop: "0.1rem",
-              width:     "auto",
-            }}
-            aria-label="Switch college"
-          >
-            <IconSwitch /> Switch
-          </button>
-        </div>
+        {/* Edit profile — "Switch" was removed on 2026-10-04 with the
+            /college screens; the college is changed on Edit Profile now. */}
+        <Link
+          href="/profile"
+          className={`sidebar-item${onProfile ? " active" : ""}`}
+          style={{
+            fontSize:  "0.7rem",
+            padding:   "0.2rem 0.55rem",
+            color:     onProfile ? undefined : "var(--text-muted)",
+            gap:       "0.3rem",
+            marginTop: "0.1rem",
+            width:     "auto",
+          }}
+          aria-label="Edit profile"
+        >
+          <IconPencil /> Edit
+        </Link>
       </div>
  
       {/* ── Nav links ── */}
