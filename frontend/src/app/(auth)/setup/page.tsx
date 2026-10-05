@@ -1,8 +1,20 @@
 "use client";
+/**
+ * CHANGED 2026-10-05:
+ *  - Continue / Skip now go to /exams. The /college screens were removed, so
+ *    sending a new teacher there was a 404.
+ *  - "STEP 1 OF 2" is now just "PROFILE" with one dot — there is no step 2.
+ *  - Year Level added. It saves to user_profiles.year_level (migration
+ *    2026-10-04_year_level.sql) and is the teacher's default year, editable
+ *    later on the Edit Profile page.
+ */
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { profileService } from "@/services/profileService";
-import { COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College } from "@/types/profile";
+import {
+  COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College,
+  YearLevel, YEAR_LABELS, yearLevelsFor,          // Added on 2026-10-05
+} from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
  
 export default function ProfileSetupPage() {
@@ -13,6 +25,7 @@ export default function ProfileSetupPage() {
   const [lastName,      setLastName]      = useState("");
   const [college,       setCollege]       = useState<College | "">("");
   const [course,        setCourse]        = useState("");
+  const [year,          setYear]          = useState<YearLevel | "">("");   // Added 2026-10-05
   const [position,      setPosition]      = useState("");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
@@ -23,10 +36,12 @@ export default function ProfileSetupPage() {
     if (!isAuthenticated()) router.replace("/login");
   }, [router]);
  
-  // Reset course when college changes
-  useEffect(() => { setCourse(""); }, [college]);
+  // Reset course and year when college changes (a CAST course and a 6th year
+  // make no sense once the college is something else)
+  useEffect(() => { setCourse(""); setYear(""); }, [college]);
  
   const courseOptions = college ? COURSES_BY_COLLEGE[college] : [];
+  const yearOptions   = yearLevelsFor(college || null);          // Added 2026-10-05
  
   // Live initials from typed name
   const initials = [firstName[0], lastName[0]]
@@ -51,6 +66,7 @@ export default function ProfileSetupPage() {
     if (!lastName.trim())  { setError("Last name is required.");  return; }
     if (!college)          { setError("Please select your college."); return; }
     if (!course)           { setError("Please select your course / program."); return; }
+    // Year level is optional — it is a default, not part of a complete profile.
  
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
@@ -67,32 +83,40 @@ export default function ProfileSetupPage() {
         college:    college as College,
         course,
         position:   position.trim() || undefined,
+        year_level: year === "" ? undefined : year,     // Added 2026-10-05
       }, token);
-      // After setup → college picker
-      router.replace("/college");
+      // CHANGED 2026-10-05: straight to Manage Exams — /college no longer exists
+      router.replace("/exams");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not save profile. Please try again.");
     } finally { setSaving(false); }
   };
  
-  const handleSkip = () => router.replace("/college");
+  const handleSkip = () => router.replace("/exams");   // CHANGED 2026-10-05
+ 
+  const selectStyle = (filled: boolean) => ({
+    width:        "100%",
+    border:       "none",
+    borderBottom: "1.5px solid var(--border)",
+    background:   "transparent",
+    padding:      "0.7rem 0.2rem",
+    fontSize:     "0.95rem",
+    color:        filled ? "var(--text)" : "var(--text-muted)",
+    outline:      "none",
+    marginBottom: "1rem",
+  } as const);
  
   return (
     <div className="auth-bg">
       <div className="auth-card" style={{ maxWidth: 440 }}>
  
-        {/* Progress dots */}
+        {/* Progress dot — CHANGED 2026-10-05: setup is the only step now */}
         <div style={{ display: "flex", gap: 5, justifyContent: "center", marginBottom: "1rem" }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{
-              width: 7, height: 7, borderRadius: "50%",
-              background: i === 0 ? "var(--orange)" : "var(--border)",
-            }} />
-          ))}
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--orange)" }} />
         </div>
  
         <p style={{ textAlign: "center", fontSize: "0.72rem", color: "var(--text-muted)", letterSpacing: "0.05em", marginBottom: "0.2rem" }}>
-          STEP 1 OF 2 — PROFILE
+          PROFILE
         </p>
         <h1 className="auth-title" style={{ marginBottom: "0.3rem" }}>Set up your profile</h1>
         <p className="auth-subtitle">
@@ -131,6 +155,7 @@ export default function ProfileSetupPage() {
             }}
           >
             {avatarPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={avatarPreview}
                 alt="Avatar preview"
@@ -232,17 +257,7 @@ export default function ProfileSetupPage() {
             onChange={e => setCollege(e.target.value as College)}
             aria-label="College"
             aria-required="true"
-            style={{
-              width:        "100%",
-              border:       "none",
-              borderBottom: "1.5px solid var(--border)",
-              background:   "transparent",
-              padding:      "0.7rem 0.2rem",
-              fontSize:     "0.95rem",
-              color:        college ? "var(--text)" : "var(--text-muted)",
-              outline:      "none",
-              marginBottom: "1rem",
-            }}
+            style={selectStyle(!!college)}
             disabled={saving}
           >
             <option value="" disabled>Select your college</option>
@@ -260,22 +275,33 @@ export default function ProfileSetupPage() {
               onChange={e => setCourse(e.target.value)}
               aria-label="Course or program"
               aria-required="true"
-              style={{
-                width:        "100%",
-                border:       "none",
-                borderBottom: "1.5px solid var(--border)",
-                background:   "transparent",
-                padding:      "0.7rem 0.2rem",
-                fontSize:     "0.95rem",
-                color:        course ? "var(--text)" : "var(--text-muted)",
-                outline:      "none",
-                marginBottom: "1rem",
-              }}
+              style={selectStyle(!!course)}
               disabled={saving}
             >
               <option value="" disabled>Select your course / program</option>
               {courseOptions.map(c => (
                 <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        )}
+ 
+        {/* ── Year level — Added 2026-10-05, optional, filtered by college ── */}
+        {college && (
+          <div className="field">
+            <select
+              value={year === "" ? "" : String(year)}
+              onChange={e => {
+                const v = e.target.value;
+                setYear(v === "" ? "" : (Number(v) as YearLevel));
+              }}
+              aria-label="Year level you usually teach"
+              style={selectStyle(year !== "")}
+              disabled={saving}
+            >
+              <option value="">Year level you usually teach (optional)</option>
+              {yearOptions.map(y => (
+                <option key={y} value={y}>{YEAR_LABELS[y]}</option>
               ))}
             </select>
           </div>
