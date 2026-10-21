@@ -14,26 +14,44 @@ interface QuestionTypeModalProps {
 export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading = false, pageNumber }: QuestionTypeModalProps) {
   const [items, setItems] = useState("");
   const [itemsError, setItemsError] = useState<string | null>(null);
+  // FIX 2026-10-21: which button was clicked. Without this every button read
+  // the same `loading` prop, so all three said "Generating…" at once.
+  const [pending, setPending] = useState<QuestionType | null>(null);
 
-  useEffect(() => { if (isOpen) { setItems(""); setItemsError(null); } }, [isOpen]);
+  useEffect(() => { if (isOpen) { setItems(""); setItemsError(null); setPending(null); } }, [isOpen]);
+  // The parent clears `loading` when generation finishes OR fails — either way
+  // the button must stop saying "Generating…".
+  useEffect(() => { if (!loading) setPending(null); }, [loading]);
   if (!isOpen) return null;
 
   const choose = (type: QuestionType) => {
     const v = items.trim();
-    if (v === "") { onSelect(type, null); return; }
+    if (v === "") { setPending(type); onSelect(type, null); return; }
     const n = Number(v);
     if (!Number.isInteger(n) || n < 1 || n > 200) {
       setItemsError("Enter a whole number from 1 to 200, or leave it blank.");
-      return;
+      return;                      // nothing goes pending — the input is wrong
     }
+    setPending(type);
     onSelect(type, n);
   };
 
-  const btn = (bg: string, fg: string, border: string): React.CSSProperties => ({
+  // FIX 2026-10-21: `type` lets each button know whether IT is the one
+  // generating, so the other two only dim instead of changing their label.
+  const btn = (bg: string, fg: string, border: string, type?: QuestionType): React.CSSProperties => ({
     padding: "0.75rem 1rem", background: bg, color: fg, border: `1px solid ${border}`,
     borderRadius: "var(--radius-sm)", fontWeight: 600,
-    cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1,
+    display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+    cursor: loading ? "not-allowed" : "pointer",
+    opacity: loading ? (type && pending === type ? 1 : 0.45) : 1,
+    transition: "opacity .15s",
   });
+
+  // "Generating…" on the clicked button only; the rest keep their own label.
+  const label = (type: QuestionType, text: string) =>
+    loading && pending === type
+      ? <><span className="spinner" aria-hidden="true" /> Generating…</>
+      : text;
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="qt-title"
@@ -66,18 +84,24 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
 
         <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
           <button type="button" onClick={() => choose("true_false")} disabled={loading}
-            style={btn("var(--success-bg)", "var(--success)", "var(--success)")}>
-            {loading ? "Generating…" : "True/False (Written)"}
+            aria-busy={loading && pending === "true_false"}
+            style={btn("var(--success-bg)", "var(--success)", "var(--success)", "true_false")}>
+            {label("true_false", "True/False (Written)")}
           </button>
+          {/* FIX 2026-10-21: --primary-bg / --primary are not defined in
+          globals.css, which is why this button had no box — only bold text.
+          Literal fallbacks, the way the Mixed button already had one. */}
           <button type="button" onClick={() => choose("encircled")} disabled={loading}
-            style={btn("var(--primary-bg)", "var(--primary)", "var(--primary)")}>
-            {loading ? "Generating…" : "Multiple Choice (Encircled)"}
+            aria-busy={loading && pending === "encircled"}
+            style={btn("var(--primary-bg, #eaf2f8)", "var(--primary, #1a2e44)", "var(--primary, #1a2e44)", "encircled")}>
+            {label("encircled", "Multiple Choice (Encircled)")}
           </button>
           {/* NEW 2026-09-26: one page that has BOTH parts, e.g.
           Part I Multiple Choice (1-5) + Part II True/False (6-10). */}
           <button type="button" onClick={() => choose("mixed")} disabled={loading}
-            style={btn("var(--orange-light, #fdf1e3)", "var(--orange)", "var(--orange)")}>
-            {loading ? "Generating…" : "Mixed — both on one page"}
+            aria-busy={loading && pending === "mixed"}
+            style={btn("var(--orange-light, #fdf1e3)", "var(--orange)", "var(--orange)", "mixed")}>
+            {label("mixed", "Mixed — both on one page")}
           </button>
           <button type="button" onClick={onClose} disabled={loading}
             style={{ ...btn("transparent", "var(--text-muted)", "var(--border)"), fontWeight: 500 }}>
