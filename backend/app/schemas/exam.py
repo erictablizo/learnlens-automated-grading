@@ -2,6 +2,10 @@ from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Optional, List
 
+# NEW 2026-10-22 (Doc Rubrica): the character rules live in one module so
+# exam.py, paper.py and frontend/src/lib/textField.ts cannot drift apart.
+from app.schemas._text import check_exam_name, check_description
+
 
 class ExamPageResponse(BaseModel):
     page_id: int
@@ -43,22 +47,23 @@ class AnswerKeyResponse(BaseModel):
 
 
 def _check_name(v: str) -> str:
-    v = (v or "").strip()
-    if not v:
-        raise ValueError("Exam name is required.")
-    if len(v) < 7:
-        raise ValueError("Exam name must be at least 7 characters.")
-    if len(v) > 255:
-        raise ValueError("Exam name must be at most 255 characters.")
-    return v
+    # CHANGED 2026-10-22: the required / length checks moved into
+    # schemas/_text.py together with the character classes, so this file, the
+    # paper schema and the browser all say the same words in the same order.
+    #
+    # Two behaviour changes, both deliberate:
+    #  - the message now reads "at least 7 characters LONG", matching what the
+    #    teacher already sees on screen (EditExamForm has said "long" since
+    #    September; this file said "characters." - the same rule, two wordings);
+    #  - runs of whitespace are collapsed, not just trimmed, so "Midterm   Exam"
+    #    is stored the way it looks.
+    return check_exam_name(v)
 
 
 def _check_description(v: str) -> str:
     # FIX 2026-09-22 (thesis p.5 observation): a blank description was accepted.
-    v = (v or "").strip()
-    if not v:
-        raise ValueError("Description is required.")
-    return v
+    # CHANGED 2026-10-22: plus the character classes - see schemas/_text.py.
+    return check_description(v)
 
 
 class ExamCreate(BaseModel):

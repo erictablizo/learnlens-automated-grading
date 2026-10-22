@@ -5,7 +5,8 @@ import Button from "@/components/ui/Button";
 import { Paper } from "@/types/paper";
 import { paperService } from "@/services/paperService";
 import { getToken } from "@/lib/auth";
- 
+import { checkStudentName, tidyText } from "@/lib/textField";
+
 interface ExistingPage {
   paper_page_id: number;
   page_number:   number;
@@ -13,14 +14,14 @@ interface ExistingPage {
   file:          File | null;   // null = keep existing
   removed:       boolean;       // true = user removed it
 }
- 
+
 interface Props {
   paper:     Paper;
   examId:    number;
   onClose:   () => void;
   onSuccess: (msg: string) => void;
 }
- 
+
 // ── Confirmation dialog for already-checked papers ────────────────────────────
 function ConfirmDialog({
   onYes, onNo,
@@ -60,18 +61,18 @@ function ConfirmDialog({
     </div>
   );
 }
- 
+
 // ── Main EditPaperModal ───────────────────────────────────────────────────────
 export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Props) {
   const [step, setStep] = useState<"confirm" | "form">(
     paper.checked ? "confirm" : "form"
   );
- 
+
   const [studentName, setStudentName] = useState(paper.student_name);
   const [pages,       setPages]       = useState<ExistingPage[]>([]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
- 
+
   // Initialise page list from existing paper pages
   useEffect(() => {
     const existing: ExistingPage[] = (paper.paper_pages ?? []).map(pp => ({
@@ -83,10 +84,10 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
     }));
     setPages(existing);
   }, [paper]);
- 
+
   // Page count dropdown — can add pages
   const pageCount = pages.filter(p => !p.removed).length;
- 
+
   const handlePageCountChange = (n: number) => {
     const current = pages.filter(p => !p.removed);
     if (n > current.length) {
@@ -111,37 +112,43 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
       ));
     }
   };
- 
+
   const handleRemovePage = (id: number) => {
     setPages(prev => prev.map(p =>
       p.paper_page_id === id ? { ...p, removed: true, file: null } : p
     ));
   };
- 
+
   const handleFileSelect = (id: number, file: File) => {
     setPages(prev => prev.map(p =>
       p.paper_page_id === id ? { ...p, file } : p
     ));
   };
- 
+
   const handleSave = async () => {
     setError(null);
-    if (!studentName.trim()) { setError("Student name is required."); return; }
- 
+    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
+    // characters. Same rule, same words and same order as
+    // check_student_name() in backend/app/schemas/_text.py.
+    const nameMsg = checkStudentName(studentName);
+    if (nameMsg) { setError(nameMsg); return; }
+
     const token = getToken();
     if (!token) return;
     setSaving(true);
- 
+
     try {
       // 1. Update student name
-      await paperService.updateName(examId, paper.paper_id, studentName.trim(), token);
- 
+      // FIX 2026-10-22: tidyText, not trim - the server collapses runs of
+      // whitespace, so send what it would have stored anyway.
+      await paperService.updateName(examId, paper.paper_id, tidyText(studentName), token);
+
       // 2. Delete removed pages
       const removed = pages.filter(p => p.removed && p.paper_page_id > 0);
       for (const pg of removed) {
         await paperService.deletePage(examId, paper.paper_id, pg.paper_page_id, token);
       }
- 
+
       // 3. Upload new/replacement pages
       const active = pages.filter(p => !p.removed);
       for (const pg of active) {
@@ -149,12 +156,12 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           await paperService.uploadPage(examId, paper.paper_id, pg.page_number, pg.file, token);
         }
       }
- 
+
       // 4. If paper was already checked, reset score
       if (paper.checked) {
         await paperService.resetScore(examId, paper.paper_id, token);
       }
- 
+
       onSuccess("Paper updated successfully.");
       onClose();
     } catch (e: unknown) {
@@ -163,7 +170,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
       setSaving(false);
     }
   };
- 
+
   // ── Confirmation step (already-checked papers) ──────────────────────────────
   if (step === "confirm") {
     return (
@@ -173,10 +180,10 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
       />
     );
   }
- 
+
   // ── Edit form ────────────────────────────────────────────────────────────────
   const activePages = pages.filter(p => !p.removed);
- 
+
   return (
     <Modal title="Edit Paper" onClose={onClose}>
       {error && (
@@ -184,18 +191,18 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           {error}
         </div>
       )}
- 
+
       {/* Name */}
       <label className="form-label" htmlFor="edit-name">Name</label>
       <input
         id="edit-name"
         className="form-input"
         value={studentName}
-        onChange={e => setStudentName(e.target.value)}
+        onChange={e => { setStudentName(e.target.value); setError(null); }}
         aria-required="true"
         disabled={saving}
       />
- 
+
       {/* Page count */}
       <div style={{ marginBottom: "1rem" }}>
         <label className="form-label" htmlFor="edit-page-count">Pages</label>
@@ -212,7 +219,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           ))}
         </select>
       </div>
- 
+
       {/* Pages table */}
       <div className="table-wrapper" style={{ marginBottom: "1.25rem" }}>
         <table>
@@ -231,7 +238,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
                 : hasExisting
                 ? pg.image_path.split(/[/\\]/).pop() ?? ""
                 : "";
- 
+
               return (
                 <tr key={pg.paper_page_id}>
                   <td>{pg.page_number}</td>
@@ -291,7 +298,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           </tbody>
         </table>
       </div>
- 
+
       {/* Actions */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
         <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>

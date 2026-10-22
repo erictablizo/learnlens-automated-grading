@@ -57,8 +57,8 @@ def _validate_password(v: str) -> str:
     # The three character classes. These run AFTER the structural limits above,
     # so a teacher is told "too long" before being told "needs a capital".
     # .islower() / .isupper() / .isalnum() are Unicode-aware, so a password in
-    # Filipino or with accents is judged the same way: "N~" is an uppercase
-    # letter, "n~" a lowercase one. Whitespace is NOT a special character - a
+    # Filipino or with accents is judged the same way: "Ñ" is an uppercase
+    # letter, "ñ" a lowercase one. Whitespace is NOT a special character - a
     # space is invisible to the person typing it.
     #
     # frontend/src/lib/password.ts carries the same rules in the same order and

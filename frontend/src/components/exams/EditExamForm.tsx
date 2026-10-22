@@ -26,6 +26,8 @@ import Button from "@/components/ui/Button";
 import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
 import { Exam, ExamPage } from "@/types/exam";
+import { checkExamName, checkDescription, tidyText, tidyMultiline }
+  from "@/lib/textField";
 
 interface PageRow {
   pageNumber: number;
@@ -166,14 +168,16 @@ export default function EditExamForm({ examId }: Props) {
     setDescError(null);
     setFormError(null);
 
-    if (!examName.trim() || examName.trim().length < 7) {
-      setNameError("Exam name must be at least 7 characters long.");
-      ok = false;
-    }
-    if (!description.trim()) {
-      setDescError("Description is required.");
-      ok = false;
-    }
+    // CHANGED 2026-10-22 (Doc Rubrica): the required / length checks moved into
+    // lib/textField.ts together with the character rules, so this form, Create
+    // Exam and backend/app/schemas/_text.py all say the same words in the same
+    // order. The existing wording is unchanged - "Exam name must be at least 7
+    // characters long." and "Description is required."
+    const nameMsg = checkExamName(examName);
+    if (nameMsg) { setNameError(nameMsg); ok = false; }
+
+    const descMsg = checkDescription(description);
+    if (descMsg) { setDescError(descMsg); ok = false; }
 
     // NEW 2026-09-29: a page with no image can no longer be saved (p.5)
     const pErr: Record<number, string> = {};
@@ -227,7 +231,13 @@ export default function EditExamForm({ examId }: Props) {
     if (!token) { setSaving(false); return; }
 
     try {
-      await examService.update(examId, { exam_name: examName.trim(), description: description.trim() }, token);
+      // FIX 2026-10-22: tidy, not trim - the server collapses runs of
+      // whitespace, so send what it would have stored anyway.
+      await examService.update(
+        examId,
+        { exam_name: tidyText(examName), description: tidyMultiline(description) },
+        token,
+      );
 
       // 1. move pages to their new numbers first, so the uploads below land on
       //    the right page and the answer key is renumbered by the new order

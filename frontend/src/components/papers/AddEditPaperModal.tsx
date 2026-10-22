@@ -15,6 +15,7 @@ import Button from "@/components/ui/Button";
 import { paperService } from "@/services/paperService";
 import { getToken } from "@/lib/auth";
 import { PageUploadState } from "@/types/paper";
+import { checkStudentName, tidyText } from "@/lib/textField";
 
 interface Props {
   examId:    number;
@@ -54,7 +55,12 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     let ok = true;
     setGlobalError(null);
     setNameError(null);
-    if (!studentName.trim()) { setNameError("Student name is required."); ok = false; }
+    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
+    // characters. Same rule, same words and same order as
+    // check_student_name() in backend/app/schemas/_text.py. The blank case
+    // still says "Student name is required." exactly as before.
+    const nameMsg = checkStudentName(studentName);
+    if (nameMsg) { setNameError(nameMsg); ok = false; }
     const checked = pages.map(p => ({
       ...p,
       error: !p.file ? `Please upload an image for Page ${p.pageNumber}.`
@@ -79,7 +85,9 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setStep("uploading");
     let paperId: number | null = null;
     try {
-      const paper = await paperService.create(examId, studentName.trim(), token);
+      // FIX 2026-10-22: tidyText, not trim - the server collapses runs of
+      // whitespace, so send what it would have stored anyway.
+      const paper = await paperService.create(examId, tidyText(studentName), token);
       paperId = paper.paper_id;
 
       for (let i = 0; i < pages.length; i++) {

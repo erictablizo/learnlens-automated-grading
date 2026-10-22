@@ -52,13 +52,27 @@ MAX_NAME_LENGTH = 100
 MAX_POSITION_LENGTH = 255
 
 # str.isalpha() is True for letters in ANY alphabet - "N", "Ñ", "e", "é" -
-# and False for "1" and "@". A NAME may also hold the four marks that appear in
-# real names: O'Brien, Dela Cruz-Santos, Ben R., "Tablizo, Eric". Digits are
-# NOT allowed in a name. A POSITION may also hold digits, because Philippine
-# academic ranks are written both ways ("Instructor II", "Teacher 1"), plus
-# & / ( ) for "Dean & Professor" and "Professor (Part-time)".
-_NAME_MARKS = " '’.,-"
-_POSITION_MARKS = " '’.,&/()-"
+# and False for "1" and "@", so "Niño" and "José" still pass: an accented
+# letter is a letter, not a special character. Digits are not allowed in a
+# NAME at all. A POSITION may hold digits, because Philippine academic ranks
+# are written both ways ("Instructor II", "Teacher 1").
+# Doc Rubrica, 2026-10-22: "it should not accept special characters and
+# combination of special characters and Letter". STRICT = letters and the
+# space between words; a Position may also hold numbers, because Philippine
+# ranks are written both ways ("Instructor II", "Teacher 1").
+#
+# MEASURED COST against learnlens_schema.sql: first_name 3 of 6 rows refused
+# ("Eric Bernard R." - the period), last_name 0 of 6, position 0 of 6.
+# A refused value is UN-EDITABLE, so rename those rows before you demo.
+#
+# Keep in step with STRICT_PERSON_NAME in frontend/src/lib/personName.ts.
+STRICT_PERSON_NAME = True
+
+_STRICT_MARKS = " "
+_RELAXED_NAME_MARKS = " '\u2019.,-"
+_RELAXED_POSITION_MARKS = " '\u2019.,&/()-"
+_NAME_MARKS = _STRICT_MARKS if STRICT_PERSON_NAME else _RELAXED_NAME_MARKS
+_POSITION_MARKS = _STRICT_MARKS if STRICT_PERSON_NAME else _RELAXED_POSITION_MARKS
 
 
 def _tidy(v: str) -> str:
@@ -85,8 +99,12 @@ def _check_chars(v: str, label: str, marks: str, digits_ok: bool, cap: int) -> O
     ok = (lambda c: c.isalnum()) if digits_ok else (lambda c: c.isalpha())
     bad = sorted({c for c in v if not ok(c) and c not in marks})
     if bad:
-        allowed = ("letters, numbers, spaces, and ' - . , & / ( ) only."
-                   if digits_ok else "letters, spaces, and ' - . , only.")
+        if STRICT_PERSON_NAME:
+            allowed = ("letters, numbers and spaces only." if digits_ok
+                       else "letters and spaces only.")
+        else:
+            allowed = ("letters, numbers, spaces, and ' - . , & / ( ) only."
+                       if digits_ok else "letters, spaces, and ' - . , only.")
         shown = ", ".join(f'"{c}"' for c in bad)
         raise ValueError(f"{label} cannot contain {shown}. Use {allowed}")
     return v

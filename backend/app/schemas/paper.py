@@ -2,6 +2,10 @@ from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Optional, List
 
+# NEW 2026-10-22 (Doc Rubrica): the character rules live in one module so
+# exam.py, paper.py and frontend/src/lib/textField.ts cannot drift apart.
+from app.schemas._text import check_student_name
+
 
 class PaperPageResponse(BaseModel):
     paper_page_id: int
@@ -23,12 +27,10 @@ class PaperScoreResponse(BaseModel):
 
 def _check_student_name(v: str) -> str:
     # FIX 2026-09-22: a blank / spaces-only name was accepted
-    v = (v or "").strip()
-    if not v:
-        raise ValueError("Student name is required.")
-    if len(v) > 255:
-        raise ValueError("Student name must be at most 255 characters.")
-    return v
+    # CHANGED 2026-10-22: plus the character classes, and runs of whitespace
+    # are collapsed rather than only trimmed - see schemas/_text.py.
+    # The 255 cap is unchanged; it mirrors test_papers.student_name.
+    return check_student_name(v)
 
 
 class PaperCreate(BaseModel):
