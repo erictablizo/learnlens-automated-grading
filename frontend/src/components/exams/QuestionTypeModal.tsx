@@ -1,4 +1,21 @@
 "use client";
+/**
+ * CHANGED 2026-10-22 — Doc Rubrica, third comment: "Third Button remains ...
+ * but the first 2 buttons should be removed."
+ *
+ * The "True/False (Written)" and "Multiple Choice (Encircled)" buttons are
+ * gone; "Mixed — both on one page" stays, with its label unchanged, and so
+ * does Cancel. Every page is now generated as `mixed`.
+ *
+ * The onSelect(type, expectedItems) contract is UNCHANGED — it simply only
+ * ever receives "mixed" now — so the parent page needs no edit, and the
+ * backend still accepts all three values. That matters: exams whose keys were
+ * generated earlier as true_false or encircled must keep loading.
+ *
+ * With the choice gone, this dialog's only input is the item count, so the
+ * title and the lead paragraph were reworded to match. The ORIGINAL wording is
+ * kept in a comment beside each one if you want it back.
+ */
 import { useEffect, useState } from "react";
 import type { QuestionType } from "@/types/exam";
 
@@ -16,6 +33,10 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
   const [itemsError, setItemsError] = useState<string | null>(null);
   // FIX 2026-10-21: which button was clicked. Without this every button read
   // the same `loading` prop, so all three said "Generating…" at once.
+  // CHANGED 2026-10-22: there is one action button left, so this now only
+  // separates "this button is generating" from "idle" — and it still dims
+  // Cancel, which passes no type. Kept rather than unpicked, so the behaviour
+  // the 2026-10-21 fix established does not change.
   const [pending, setPending] = useState<QuestionType | null>(null);
 
   useEffect(() => { if (isOpen) { setItems(""); setItemsError(null); setPending(null); } }, [isOpen]);
@@ -36,8 +57,8 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
     onSelect(type, n);
   };
 
-  // FIX 2026-10-21: `type` lets each button know whether IT is the one
-  // generating, so the other two only dim instead of changing their label.
+  // FIX 2026-10-21: `type` lets a button know whether IT is the one
+  // generating, so anything else only dims instead of changing its label.
   const btn = (bg: string, fg: string, border: string, type?: QuestionType): React.CSSProperties => ({
     padding: "0.75rem 1rem", background: bg, color: fg, border: `1px solid ${border}`,
     borderRadius: "var(--radius-sm)", fontWeight: 600,
@@ -47,7 +68,7 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
     transition: "opacity .15s",
   });
 
-  // "Generating…" on the clicked button only; the rest keep their own label.
+  // "Generating…" on the clicked button only.
   const label = (type: QuestionType, text: string) =>
     loading && pending === type
       ? <><span className="spinner" aria-hidden="true" /> Generating…</>
@@ -60,11 +81,18 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
       onClick={loading ? undefined : onClose}>
       <div style={{ background: "white", borderRadius: "var(--radius-md)", padding: "2rem", maxWidth: 420,
         width: "calc(100% - 32px)", boxShadow: "var(--shadow-lg)" }} onClick={e => e.stopPropagation()}>
+        {/* COPY 2026-10-22: was "Select Question Type" — there is no type to
+            select any more, so the heading names what the dialog does. */}
         <h2 id="qt-title" style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "1rem", color: "var(--navy)" }}>
-          Select Question Type{pageNumber ? ` — Page ${pageNumber}` : ""}
+          Generate Answer Key{pageNumber ? ` — Page ${pageNumber}` : ""}
         </h2>
+        {/* COPY 2026-10-22: was "What type of questions does this page contain?
+            Choose Mixed if one page has both a Multiple Choice part and a
+            True/False part." — that asked a question the teacher can no longer
+            answer. It now explains what will happen and points at the one
+            field that is left. */}
         <p style={{ color: "var(--text-muted)", marginBottom: "1rem", fontSize: "0.9rem" }}>
-          What type of questions does this page contain? Choose Mixed if one page has both a Multiple Choice part and a True/False part.
+          This page is read for both encircled Multiple Choice answers and written True/False answers. Enter how many items the page has so stray marks are not mistaken for answers.
         </p>
 
         <label htmlFor="qt-items" style={{ display: "block", fontSize: "0.85rem", fontWeight: 600,
@@ -83,19 +111,12 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, loading =
         </p>
 
         <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
-          <button type="button" onClick={() => choose("true_false")} disabled={loading}
-            aria-busy={loading && pending === "true_false"}
-            style={btn("var(--success-bg)", "var(--success)", "var(--success)", "true_false")}>
-            {label("true_false", "True/False (Written)")}
-          </button>
-          {/* FIX 2026-10-21: --primary-bg / --primary are not defined in
-          globals.css, which is why this button had no box — only bold text.
-          Literal fallbacks, the way the Mixed button already had one. */}
-          <button type="button" onClick={() => choose("encircled")} disabled={loading}
-            aria-busy={loading && pending === "encircled"}
-            style={btn("var(--primary-bg, #eaf2f8)", "var(--primary, #1a2e44)", "var(--primary, #1a2e44)", "encircled")}>
-            {label("encircled", "Multiple Choice (Encircled)")}
-          </button>
+          {/* REMOVED 2026-10-22 (Doc Rubrica): the "True/False (Written)" and
+              "Multiple Choice (Encircled)" buttons. The values "true_false"
+              and "encircled" are still valid in types/exam.ts and still
+              accepted by the backend, so answer keys generated with them
+              before today keep working — they simply cannot be chosen here. */}
+
           {/* NEW 2026-09-26: one page that has BOTH parts, e.g.
           Part I Multiple Choice (1-5) + Part II True/False (6-10). */}
           <button type="button" onClick={() => choose("mixed")} disabled={loading}
