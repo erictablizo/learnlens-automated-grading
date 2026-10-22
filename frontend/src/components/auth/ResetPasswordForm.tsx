@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { authService } from "@/services/authService";
+import { checkPassword, passwordRules } from "@/lib/password";
 
 export default function ResetPasswordForm({ token: tokenProp }: { token?: string }) {
   const router = useRouter();
@@ -41,7 +42,11 @@ export default function ResetPasswordForm({ token: tokenProp }: { token?: string
     e.preventDefault();
     setError(null);
     if (!password) { setError("Please enter a new password."); return; }
-    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and a special
+    // character. One shared rule, same order and same words as
+    // _validate_password() in schemas/user.py.
+    const pwError = checkPassword(password);
+    if (pwError) { setError(pwError); return; }
     if (password !== confirm) { setError("Passwords do not match."); return; }
     if (await resetPassword(token, password)) {
       setDone(true);
@@ -79,10 +84,30 @@ export default function ResetPasswordForm({ token: tokenProp }: { token?: string
             {error && <div role="alert" aria-live="assertive" className="alert alert-error">{error}</div>}
             <form onSubmit={handleSubmit} noValidate>
               <div className="field">
-                <input type="password" placeholder="New password (min. 8 characters)" value={password}
+                {/* CHANGED 2026-10-22: the placeholder used to read
+                    "New password (min. 8 characters)". Since today there are
+                    three more rules, that sentence was no longer true - it
+                    named one requirement out of four. The list below says all
+                    of them. */}
+                <input type="password" placeholder="New password" value={password}
                   onChange={e => setPassword(e.target.value)} autoComplete="new-password"
                   aria-label="New password" disabled={isLoading} />
               </div>
+
+              {/* NEW 2026-10-22: shown once the teacher starts typing. */}
+              {password && (
+                <ul aria-live="polite" style={{
+                  listStyle: "none", padding: 0, margin: "-0.6rem 0 1rem",
+                  fontSize: "0.74rem", lineHeight: 1.7, textAlign: "left",
+                }}>
+                  {passwordRules(password).map(r => (
+                    <li key={r.id} style={{ color: r.ok ? "var(--success, #2e7d32)" : "var(--text-muted)" }}>
+                      <span aria-hidden="true">{r.ok ? "✓" : "○"}</span> {r.label}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
               <div className="field">
                 <input type="password" placeholder="Confirm new password" value={confirm}
                   onChange={e => setConfirm(e.target.value)} autoComplete="new-password"
@@ -96,7 +121,7 @@ export default function ResetPasswordForm({ token: tokenProp }: { token?: string
         )}
 
         <p className="auth-footer" style={{ marginTop: "1rem" }}>
-          <Link href="/login" className="link-orange">Back to Login</Link>
+          <Link href="/login" className="link-orange">Back to login</Link>
         </p>
       </div>
     </div>

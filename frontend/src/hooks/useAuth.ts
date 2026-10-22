@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { authService } from "@/services/authService";
 import { setAuth, clearAuth, getToken, getUser } from "@/lib/auth";
 import { clearActiveCollege } from "@/lib/college";
+import { checkPassword } from "@/lib/password";
 import { ForgotPasswordResponse } from "@/types/user";
 
 export function useAuth() {
@@ -13,6 +14,10 @@ export function useAuth() {
 
   const login = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("Email and password are required."); return; }
+    // NOTE 2026-10-22: there is deliberately NO password rule here. The
+    // character classes govern CHOOSING a password, never checking one, so
+    // every existing account keeps working. Same decision as the 72-byte
+    // bcrypt cap on 2 Oct, for the same reason.
     setIsLoading(true); setError(null);
     try {
       const data = await authService.login({ email, password });
@@ -30,7 +35,13 @@ export function useAuth() {
 
   const register = useCallback(async (email: string, password: string) => {
     if (!email || !password) { setError("All fields are required."); return; }
-    if (password.length < 8)  { setError("Password must be at least 8 characters."); return; }
+    // FIX 2026-10-22: this was the THIRD independent copy of the 8-character
+    // rule — RegisterForm and ResetPasswordForm had the other two, and
+    // schemas/user.py had the real one. On 1 Oct the API and this file had
+    // already drifted apart once (Register accepted a 2-character password).
+    // One shared rule now, same order and same words as the server.
+    const pwError = checkPassword(password);
+    if (pwError) { setError(pwError); return; }
     setIsLoading(true); setError(null);
     try {
       const data = await authService.register({ email, password });
@@ -56,6 +67,11 @@ export function useAuth() {
 
   // NEW 2026-09-22
   const resetPassword = useCallback(async (token: string, newPassword: string): Promise<boolean> => {
+    // FIX 2026-10-22: ResetPasswordForm checks before calling this, but this
+    // hook is callable on its own, so it checks too. Cheap, and it means the
+    // rule cannot be bypassed by a future caller that forgets.
+    const pwError = checkPassword(newPassword);
+    if (pwError) { setError(pwError); return false; }
     setIsLoading(true); setError(null);
     try {
       await authService.resetPassword(token, newPassword);

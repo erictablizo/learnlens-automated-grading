@@ -167,7 +167,7 @@ export default function CheckEmailDialogBox({
             <Link href="/login/forgot_password" className="link-orange">Use a different email</Link>
           )}
           {" · "}
-          <Link href="/login" className="link-orange">Back to Login</Link>
+          <Link href="/login" className="link-orange">Back to login</Link>
         </p>
       </div>
     </div>

@@ -57,7 +57,10 @@ export default function CreateExamForm() {
     const desc = description.trim();
     setNameError(null); setDescError(null); setSubmitError(null);
 
-    if (!name) { setNameError("Exam Name is required."); ok = false; }
+    // CHANGED 2026-10-22: was "Exam Name is required." - the line below spells
+    // the same field "Exam name", so the teacher saw it both ways one message
+    // apart. The label stays "Exam Name"; messages are sentence case.
+    if (!name) { setNameError("Exam name is required."); ok = false; }
     else if (name.length < 7) { setNameError("Exam name must be at least 7 characters long."); ok = false; }
 
     if (!desc) { setDescError("Description is required."); ok = false; }

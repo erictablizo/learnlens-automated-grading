@@ -21,7 +21,9 @@ function LoginFormInner() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!email.trim()) { setError("Please enter your email."); return; }
+    // CHANGED 2026-10-22: was "Please enter your email." Forgot Password says
+    // "...your email address." for the same condition, two screens away.
+    if (!email.trim()) { setError("Please enter your email address."); return; }
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
     if (!password) { setError("Please enter your password."); return; }

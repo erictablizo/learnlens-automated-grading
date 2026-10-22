@@ -16,11 +16,13 @@ import {
   YearLevel, YEAR_LABELS, yearLevelsFor,          // Added on 2026-10-05
 } from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
- 
+import { checkPersonName, checkPosition, looksMiscased, tidyName }
+  from "@/lib/personName";
+
 export default function ProfileSetupPage() {
   const router  = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
- 
+
   const [firstName,     setFirstName]     = useState("");
   const [lastName,      setLastName]      = useState("");
   const [college,       setCollege]       = useState<College | "">("");
@@ -31,22 +33,27 @@ export default function ProfileSetupPage() {
   const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
   const [saving,        setSaving]        = useState(false);
   const [error,         setError]         = useState<string | null>(null);
- 
+
   useEffect(() => {
     if (!isAuthenticated()) router.replace("/login");
   }, [router]);
- 
+
   // Reset course and year when college changes (a CAST course and a 6th year
   // make no sense once the college is something else)
   useEffect(() => { setCourse(""); setYear(""); }, [college]);
- 
+
   const courseOptions = college ? COURSES_BY_COLLEGE[college] : [];
   const yearOptions   = yearLevelsFor(college || null);          // Added 2026-10-05
- 
+
   // Live initials from typed name
   const initials = [firstName[0], lastName[0]]
     .filter(Boolean).join("").toUpperCase() || "?";
- 
+
+  // FIX 2026-10-22: a HINT, never an error. LearnLens keeps the case the
+  // teacher types, because auto-capitalising turns "de la Cruz" into
+  // "De La Cruz" and "O'Brien" into "O'brien". See lib/personName.ts.
+  const caseHint = looksMiscased(`${firstName} ${lastName}`);
+
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -58,7 +65,7 @@ export default function ProfileSetupPage() {
     setAvatarPreview(URL.createObjectURL(file));
     setError(null);
   };
- 
+
   const handleSave = async () => {
     setError(null);
     // Client-side validation before any API call (HCI: error prevention)
@@ -66,11 +73,18 @@ export default function ProfileSetupPage() {
     if (!lastName.trim())  { setError("Last name is required.");  return; }
     if (!college)          { setError("Please select your college."); return; }
     if (!course)           { setError("Please select your course / program."); return; }
+    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
+    // characters. Same rules, same order and same words as
+    // _check_person_name() / _check_position() in schemas/profile.py.
+    const charError = checkPersonName(firstName, "First name")
+                   ?? checkPersonName(lastName, "Last name")
+                   ?? checkPosition(position);
+    if (charError) { setError(charError); return; }
     // Year level is optional — it is a default, not part of a complete profile.
- 
+
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
- 
+
     setSaving(true);
     try {
       // Upload avatar first (if provided) so it's stored before profile save
@@ -78,11 +92,13 @@ export default function ProfileSetupPage() {
         await profileService.uploadAvatar(avatarFile, token);
       }
       await profileService.save({
-        first_name: firstName.trim(),
-        last_name:  lastName.trim(),
+        // FIX 2026-10-22: tidyName, not trim - the server collapses runs of
+        // whitespace, so send what it would have stored anyway.
+        first_name: tidyName(firstName),
+        last_name:  tidyName(lastName),
         college:    college as College,
         course,
-        position:   position.trim() || undefined,
+        position:   tidyName(position) || undefined,
         year_level: year === "" ? undefined : year,     // Added 2026-10-05
       }, token);
       // CHANGED 2026-10-05: straight to Manage Exams — /college no longer exists
@@ -91,9 +107,9 @@ export default function ProfileSetupPage() {
       setError(e instanceof Error ? e.message : "Could not save profile. Please try again.");
     } finally { setSaving(false); }
   };
- 
+
   const handleSkip = () => router.replace("/exams");   // CHANGED 2026-10-05
- 
+
   const selectStyle = (filled: boolean) => ({
     width:        "100%",
     border:       "none",
@@ -105,16 +121,16 @@ export default function ProfileSetupPage() {
     outline:      "none",
     marginBottom: "1rem",
   } as const);
- 
+
   return (
     <div className="auth-bg">
       <div className="auth-card" style={{ maxWidth: 440 }}>
- 
+
         {/* Progress dot — CHANGED 2026-10-05: setup is the only step now */}
         <div style={{ display: "flex", gap: 5, justifyContent: "center", marginBottom: "1rem" }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--orange)" }} />
         </div>
- 
+
         <p style={{ textAlign: "center", fontSize: "0.72rem", color: "var(--text-muted)", letterSpacing: "0.05em", marginBottom: "0.2rem" }}>
           PROFILE
         </p>
@@ -122,13 +138,13 @@ export default function ProfileSetupPage() {
         <p className="auth-subtitle">
           This helps LearnLens personalise your experience.<br />You only need to do this once.
         </p>
- 
+
         {error && (
           <div role="alert" aria-live="assertive" className="alert alert-error">
             {error}
           </div>
         )}
- 
+
         {/* ── Avatar upload ── */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem", marginBottom: "1.5rem" }}>
           <button
@@ -172,7 +188,7 @@ export default function ProfileSetupPage() {
                 {initials}
               </span>
             )}
- 
+
             {/* Camera overlay hint */}
             {!avatarPreview && (
               <span style={{
@@ -192,7 +208,7 @@ export default function ProfileSetupPage() {
               </span>
             )}
           </button>
- 
+
           <input
             ref={fileRef}
             type="file"
@@ -201,11 +217,11 @@ export default function ProfileSetupPage() {
             onChange={handleAvatarChange}
             aria-hidden="true"
           />
- 
+
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
             {avatarPreview ? "✓ Photo selected" : "Profile photo (optional)"}
           </span>
- 
+
           {avatarPreview && (
             <button
               type="button"
@@ -223,7 +239,7 @@ export default function ProfileSetupPage() {
             </button>
           )}
         </div>
- 
+
         {/* ── Name row ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <div className="field">
@@ -249,7 +265,7 @@ export default function ProfileSetupPage() {
             />
           </div>
         </div>
- 
+
         {/* ── College dropdown ── */}
         <div className="field">
           <select
@@ -266,7 +282,7 @@ export default function ProfileSetupPage() {
             ))}
           </select>
         </div>
- 
+
         {/* ── Course — filtered by selected college ── */}
         {college && (
           <div className="field">
@@ -285,7 +301,7 @@ export default function ProfileSetupPage() {
             </select>
           </div>
         )}
- 
+
         {/* ── Year level — Added 2026-10-05, optional, filtered by college ── */}
         {college && (
           <div className="field">
@@ -306,7 +322,7 @@ export default function ProfileSetupPage() {
             </select>
           </div>
         )}
- 
+
         {/* ── Position ── */}
         <div className="field">
           <input
@@ -318,7 +334,7 @@ export default function ProfileSetupPage() {
             disabled={saving}
           />
         </div>
- 
+
         {/* Preview of sidebar display name */}
         {firstName && lastName && course && (
           <div style={{
@@ -336,12 +352,18 @@ export default function ProfileSetupPage() {
             <span>
               Sidebar will show:{" "}
               <strong style={{ color: "var(--navy)" }}>
-                {firstName} {lastName}, {course} {position.trim() || "Teacher"}
+                {tidyName(firstName)} {tidyName(lastName)}, {course} {tidyName(position) || "Teacher"}
               </strong>
+              {caseHint && (
+                <>
+                  <br />
+                  <span style={{ color: "var(--text-muted)" }}>{caseHint}</span>
+                </>
+              )}
             </span>
           </div>
         )}
- 
+
         <button
           className="btn-primary"
           onClick={handleSave}
@@ -352,7 +374,7 @@ export default function ProfileSetupPage() {
             ? <><span className="spinner" aria-hidden="true" /> Saving…</>
             : "Continue →"}
         </button>
- 
+
         <button
           type="button"
           onClick={handleSkip}

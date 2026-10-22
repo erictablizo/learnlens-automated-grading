@@ -94,7 +94,7 @@ export default function ForgotPasswordForm() {
         </form>
  
         <p className="auth-footer" style={{ marginTop: "1rem" }}>
-          <Link href="/login" className="link-orange">Back to Login</Link>
+          <Link href="/login" className="link-orange">Back to login</Link>
         </p>
       </div>
     </div>

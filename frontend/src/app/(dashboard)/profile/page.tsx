@@ -28,6 +28,8 @@ import {
   YearLevel, YEAR_LABELS, yearLevelsFor, isValidYear,   // Added on 2026-10-04
 } from "@/types/profile";
 import { getToken, isAuthenticated } from "@/lib/auth";
+import { checkPersonName, checkPosition, tidyName }
+  from "@/lib/personName";
 // NEW 2026-10-01: shared with the sidebar and the college picker
 import { avatarUrl } from "@/lib/profileDisplay";
 
@@ -127,6 +129,13 @@ export default function EditProfilePage() {
     if (!lastName.trim())  { setError("Last name is required.");  return; }
     if (!college)          { setError("Please select your college."); return; }
     if (!course)           { setError("Please select your course / program."); return; }
+    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
+    // characters. Same rules, same order and same words as
+    // _check_person_name() / _check_position() in schemas/profile.py.
+    const charError = checkPersonName(firstName, "First name")
+                   ?? checkPersonName(lastName, "Last name")
+                   ?? checkPosition(position);
+    if (charError) { setError(charError); return; }
 
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
@@ -136,11 +145,13 @@ export default function EditProfilePage() {
       // Upload the photo first (if changed) so the saved profile already has it
       if (avatarFile) await profileService.uploadAvatar(avatarFile, token);
       const updated = await profileService.save({
-        first_name: firstName.trim(),
-        last_name:  lastName.trim(),
+        // FIX 2026-10-22: tidyName, not trim - the server collapses runs of
+        // whitespace, so send what it would have stored anyway.
+        first_name: tidyName(firstName),
+        last_name:  tidyName(lastName),
         college:    college as College,
         course,
-        position:   position.trim() || undefined,
+        position:   tidyName(position) || undefined,
         year_level: year === "" ? undefined : year,     // Added on 2026-10-04
       }, token);
       setProfile(updated);
@@ -272,7 +283,9 @@ export default function EditProfilePage() {
               </select>
 
               {/* Added on 2026-10-04 — the year level this teacher usually teaches */}
-              <label className="form-label" htmlFor="year-level" style={labelGap}>Year Level you usually teach</label>
+              {/* FIX 2026-10-22: every other label on this form is a short
+                  noun phrase - First Name, Last Name, College, Position. */}
+              <label className="form-label" htmlFor="year-level" style={labelGap}>Year Level</label>
               <select id="year-level" className="form-input" value={year === "" ? "" : String(year)}
                 disabled={saving || !college}
                 onChange={e => {
@@ -286,7 +299,9 @@ export default function EditProfilePage() {
                 ))}
               </select>
               <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
-                Pre-selects the year on the &ldquo;What are you teaching?&rdquo; screen. You can still change it there.
+                {/* FIX 2026-10-22: the screen this sentence described was
+                    deleted together with /college on 5 Oct. */}
+                The year level you usually teach. Saved to your profile.
               </p>
 
               <label className="form-label" htmlFor="position" style={labelGap}>Position</label>
