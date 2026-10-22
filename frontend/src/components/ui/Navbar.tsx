@@ -16,6 +16,16 @@
  *  - The sidebar refreshes on the "learnlens:profile-updated" window event,
  *    which the Edit Profile page fires after saving, so the new name and
  *    photo appear straight away instead of only after navigating.
+ *
+ * CHANGED 2026-10-22 — Doc Rubrica, second comment: the course belongs UNDER
+ * the name. The block used to render ONE string from buildDisplayName(),
+ *
+ *     "Eric Bernard R Tablizo, Bachelor of Science in Computer Science Professor"
+ *
+ * which this narrow column wrapped wherever it ran out of room, putting a
+ * comma at the end of the name and breaking the course mid-phrase. It now
+ * renders the three lines profileLines() returns as three separate elements,
+ * so the course can never run on from the name.
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -25,11 +35,13 @@ import { clearActiveCollege, COLLEGE_COLORS } from "@/lib/college";
 import { College, UserProfile } from "@/types/profile";
 import { profileService } from "@/services/profileService";
 // NEW 2026-10-01: shared with the Edit Profile page and the college picker
-import { avatarUrl, buildDisplayName, initialsOf } from "@/lib/profileDisplay";
- 
+// CHANGED 2026-10-22: profileLines replaces buildDisplayName here. The export
+// itself is KEPT in lib/profileDisplay.ts because the college picker uses it.
+import { avatarUrl, initialsOf, profileLines } from "@/lib/profileDisplay";
+
 /** Fired by the Edit Profile page after a successful save. */
 export const PROFILE_UPDATED_EVENT = "learnlens:profile-updated";
- 
+
 const IconList = () => (
   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -46,11 +58,11 @@ const IconPencil = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
   </svg>
 );
- 
+
 export default function Navbar() {
   const pathname = usePathname();
   const router   = useRouter();
- 
+
   const [profile,     setProfile]     = useState<UserProfile | null>(null);
   const [imgError,    setImgError]    = useState(false);
 
@@ -61,7 +73,7 @@ export default function Navbar() {
       .then(p => { setProfile(p); setImgError(false); })
       .catch(() => {});
   }, []);
- 
+
   useEffect(() => {
     setImgError(false);
     loadProfile();
@@ -73,26 +85,36 @@ export default function Navbar() {
     window.addEventListener(PROFILE_UPDATED_EVENT, onUpdated);
     return () => window.removeEventListener(PROFILE_UPDATED_EVENT, onUpdated);
   }, [loadProfile]);
- 
+
   const handleSignOut = () => {
     clearAuth();
     clearActiveCollege();
     router.replace("/login");
   };
- 
+
   // CHANGED 2026-10-04: the badge is the profile's college, full stop.
   const college     = (profile?.college as College | null) ?? null;
   const col         = college ? COLLEGE_COLORS[college] : null;
-  const displayName = profile ? buildDisplayName(profile) : null;
+  // CHANGED 2026-10-22: three lines instead of one string. Still only drawn
+  // when `profile` has arrived, so nothing flashes while it loads.
+  const lines       = profileLines(profile);
   const avatarSrc   = profile ? avatarUrl(profile.avatar_path, profile.updated_at) : null;
   const onProfile   = pathname.startsWith("/profile");
- 
+
   // Initials fallback
   const initials = profile ? initialsOf(profile) : col?.initials ?? "?";
- 
+
+  // CHANGED 2026-10-22: shared by the three profile lines, so they stay a set.
+  const lineBase = {
+    display:      "block",
+    textAlign:    "center" as const,
+    maxWidth:     "100%",
+    overflowWrap: "anywhere" as const,
+  };
+
   return (
     <nav className="sidebar" aria-label="Main navigation">
- 
+
       {/* ── Profile section ── */}
       <div
         style={{
@@ -161,7 +183,7 @@ export default function Navbar() {
               </span>
             )}
           </div>
- 
+
           {/* College abbreviation badge */}
           {college && col && (
             <span style={{
@@ -176,22 +198,52 @@ export default function Navbar() {
               {college}
             </span>
           )}
- 
-          {/* "Maria Santos, Computer Science Teacher" */}
-          {displayName && (
-            <span style={{
-              fontSize:   "0.68rem",
-              color:      "var(--text-muted)",
-              textAlign:  "center",
-              lineHeight: 1.45,
-              wordBreak:  "break-word",
-              maxWidth:   "100%",
-            }}>
-              {displayName}
+
+          {/* CHANGED 2026-10-22 (Doc Rubrica): three lines, not one string —
+                  Eric Bernard R Tablizo
+                  Bachelor of Science in Computer Science
+                  Professor
+              Each is its own element, so the course sits under the name and
+              cannot run on from it however narrow the sidebar gets. */}
+          {profile && (
+            <span style={{ ...lineBase, marginTop: "0.1rem" }}>
+              {lines.name && (
+                <span style={{
+                  ...lineBase,
+                  fontSize:   "0.72rem",
+                  fontWeight: 600,
+                  color:      "var(--navy)",
+                  lineHeight: 1.35,
+                }}>
+                  {lines.name}
+                </span>
+              )}
+
+              {lines.course && (
+                <span style={{
+                  ...lineBase,
+                  fontSize:   "0.68rem",
+                  color:      "var(--text-muted)",
+                  lineHeight: 1.4,
+                  marginTop:  "0.12rem",
+                }}>
+                  {lines.course}
+                </span>
+              )}
+
+              <span style={{
+                ...lineBase,
+                fontSize:   "0.68rem",
+                color:      "var(--text-muted)",
+                lineHeight: 1.4,
+                marginTop:  "0.12rem",
+              }}>
+                {lines.position}
+              </span>
             </span>
           )}
         </Link>
- 
+
         {/* Edit profile — "Switch" was removed on 2026-10-04 with the
             /college screens; the college is changed on Edit Profile now. */}
         <Link
@@ -210,7 +262,7 @@ export default function Navbar() {
           <IconPencil /> Edit
         </Link>
       </div>
- 
+
       {/* ── Nav links ── */}
       <Link
         href="/exams"
@@ -220,7 +272,7 @@ export default function Navbar() {
         <IconList />
         Manage Exams
       </Link>
- 
+
       <button
         className="sidebar-item signout"
         onClick={handleSignOut}
