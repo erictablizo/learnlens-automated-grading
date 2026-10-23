@@ -199,14 +199,24 @@ export default function Navbar() {
             </span>
           )}
 
-          {/* CHANGED 2026-10-22 (Doc Rubrica): three lines, not one string —
-                  Eric Bernard R Tablizo
-                  Bachelor of Science in Computer Science
-                  Professor
-              Each is its own element, so the course sits under the name and
-              cannot run on from it however narrow the sidebar gets. */}
+          {/* CHANGED 2026-10-22 (Doc Rubrica): three lines, not one string, so
+              the course cannot run on from the name however narrow the
+              sidebar gets.
+
+              ORDER FIXED 2026-10-23 (Doc Rubrica, by diagram):
+
+                  Name of the Teacher
+                  Position
+                  Bachelor of Science in What
+
+              i.e. NAME, then POSITION, then COURSE. It used to be name,
+              course, position. The order is the requirement here - do not
+              reorder these three without checking with her, and if you do,
+              fix the Position help text on the Edit Profile page, which
+              describes where this lands. */}
           {profile && (
             <span style={{ ...lineBase, marginTop: "0.1rem" }}>
+              {/* 1. Name */}
               {lines.name && (
                 <span style={{
                   ...lineBase,
@@ -219,6 +229,19 @@ export default function Navbar() {
                 </span>
               )}
 
+              {/* 2. Position - always drawn; falls back to "Teacher". */}
+              <span style={{
+                ...lineBase,
+                fontSize:   "0.68rem",
+                color:      "var(--text-muted)",
+                lineHeight: 1.4,
+                marginTop:  "0.12rem",
+              }}>
+                {lines.position}
+              </span>
+
+              {/* 3. Course - omitted entirely when none is saved, rather than
+                  leaving an empty line between Position and the Edit link. */}
               {lines.course && (
                 <span style={{
                   ...lineBase,
@@ -230,16 +253,6 @@ export default function Navbar() {
                   {lines.course}
                 </span>
               )}
-
-              <span style={{
-                ...lineBase,
-                fontSize:   "0.68rem",
-                color:      "var(--text-muted)",
-                lineHeight: 1.4,
-                marginTop:  "0.12rem",
-              }}>
-                {lines.position}
-              </span>
             </span>
           )}
         </Link>

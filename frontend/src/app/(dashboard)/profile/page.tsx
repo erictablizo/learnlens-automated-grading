@@ -309,7 +309,7 @@ export default function EditProfilePage() {
                 placeholder="Teacher"
                 onChange={e => { setPosition(e.target.value); setError(null); setSaved(false); }} />
               <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
-                Shown in the sidebar after your course. Leave blank to use &ldquo;Teacher&rdquo;.
+                Shown in the sidebar under your name, above your course. Leave blank to use &ldquo;Teacher&rdquo;.
               </p>
 
               {error && (
