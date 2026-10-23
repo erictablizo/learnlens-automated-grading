@@ -6,7 +6,9 @@ import { Paper } from "@/types/paper";
 import { paperService } from "@/services/paperService";
 import { getToken } from "@/lib/auth";
 import { checkStudentName, tidyText } from "@/lib/textField";
-
+// NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
+import { planPageFiles } from "@/lib/pageFiles";
+ 
 interface ExistingPage {
   paper_page_id: number;
   page_number:   number;
@@ -14,6 +16,10 @@ interface ExistingPage {
   file:          File | null;   // null = keep existing
   removed:       boolean;       // true = user removed it
 }
+ 
+// CHANGED 2026-10-23: the cap was a literal 10 inside the Pages dropdown.
+// Named here so the dropdown and the multi-file picker use the same number.
+const MAX_PAGES = 10;
 
 interface Props {
   paper:     Paper;
@@ -21,7 +27,7 @@ interface Props {
   onClose:   () => void;
   onSuccess: (msg: string) => void;
 }
-
+ 
 // ── Confirmation dialog for already-checked papers ────────────────────────────
 function ConfirmDialog({
   onYes, onNo,
@@ -61,18 +67,18 @@ function ConfirmDialog({
     </div>
   );
 }
-
+ 
 // ── Main EditPaperModal ───────────────────────────────────────────────────────
 export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Props) {
   const [step, setStep] = useState<"confirm" | "form">(
     paper.checked ? "confirm" : "form"
   );
-
+ 
   const [studentName, setStudentName] = useState(paper.student_name);
   const [pages,       setPages]       = useState<ExistingPage[]>([]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
-
+ 
   // Initialise page list from existing paper pages
   useEffect(() => {
     const existing: ExistingPage[] = (paper.paper_pages ?? []).map(pp => ({
@@ -84,10 +90,10 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
     }));
     setPages(existing);
   }, [paper]);
-
+ 
   // Page count dropdown — can add pages
   const pageCount = pages.filter(p => !p.removed).length;
-
+ 
   const handlePageCountChange = (n: number) => {
     const current = pages.filter(p => !p.removed);
     if (n > current.length) {
@@ -112,19 +118,59 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
       ));
     }
   };
-
+ 
   const handleRemovePage = (id: number) => {
     setPages(prev => prev.map(p =>
       p.paper_page_id === id ? { ...p, removed: true, file: null } : p
     ));
   };
+ 
+  /**
+   * CHANGED 2026-10-23 (Doc Rubrica, 5th comment): the picker is `multiple`,
+   * and a selection fills this page and the pages after it, adding any that do
+   * not exist. Picking ONE file behaves exactly as it did before.
+   *
+   * Positions are counted over the ACTIVE pages, because a page removed with ✕
+   * stays in `pages` with removed=true and must not consume a slot.
+   */
+  const handleFilesSelected = (id: number, list: FileList | null) => {
+    const active = pages.filter(p => !p.removed);
+    const startPos = active.findIndex(p => p.paper_page_id === id);
+    if (startPos < 0) return;
 
-  const handleFileSelect = (id: number, file: File) => {
-    setPages(prev => prev.map(p =>
-      p.paper_page_id === id ? { ...p, file } : p
-    ));
+    const plan = planPageFiles({
+      files: list, startIndex: startPos, currentRows: active.length, maxRows: MAX_PAGES,
+    });
+    if (plan.assign.length === 0) {
+      if (plan.message) setError(plan.message);
+      return;
+    }
+
+    setPages(prev => {
+      const next = [...prev];
+      let activeCount = next.filter(p => !p.removed).length;
+      let seq = 0;
+      while (activeCount < plan.totalRows) {
+        next.push({
+          paper_page_id: -(Date.now() + seq++),   // negative = new, not in the DB
+          page_number:   activeCount + 1,
+          image_path:    "",
+          file:          null,
+          removed:       false,
+        });
+        activeCount++;
+      }
+      const act = next.filter(p => !p.removed);
+      for (const { index, file } of plan.assign) {
+        const row = act[index];
+        if (!row) continue;
+        next[next.indexOf(row)] = { ...row, file };
+      }
+      return next;
+    });
+    setError(plan.message);
   };
-
+ 
   const handleSave = async () => {
     setError(null);
     // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
@@ -132,23 +178,23 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
     // check_student_name() in backend/app/schemas/_text.py.
     const nameMsg = checkStudentName(studentName);
     if (nameMsg) { setError(nameMsg); return; }
-
+ 
     const token = getToken();
     if (!token) return;
     setSaving(true);
-
+ 
     try {
       // 1. Update student name
       // FIX 2026-10-22: tidyText, not trim - the server collapses runs of
       // whitespace, so send what it would have stored anyway.
       await paperService.updateName(examId, paper.paper_id, tidyText(studentName), token);
-
+ 
       // 2. Delete removed pages
       const removed = pages.filter(p => p.removed && p.paper_page_id > 0);
       for (const pg of removed) {
         await paperService.deletePage(examId, paper.paper_id, pg.paper_page_id, token);
       }
-
+ 
       // 3. Upload new/replacement pages
       const active = pages.filter(p => !p.removed);
       for (const pg of active) {
@@ -156,12 +202,12 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           await paperService.uploadPage(examId, paper.paper_id, pg.page_number, pg.file, token);
         }
       }
-
+ 
       // 4. If paper was already checked, reset score
       if (paper.checked) {
         await paperService.resetScore(examId, paper.paper_id, token);
       }
-
+ 
       onSuccess("Paper updated successfully.");
       onClose();
     } catch (e: unknown) {
@@ -170,7 +216,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
       setSaving(false);
     }
   };
-
+ 
   // ── Confirmation step (already-checked papers) ──────────────────────────────
   if (step === "confirm") {
     return (
@@ -180,10 +226,10 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
       />
     );
   }
-
+ 
   // ── Edit form ────────────────────────────────────────────────────────────────
   const activePages = pages.filter(p => !p.removed);
-
+ 
   return (
     <Modal title="Edit Paper" onClose={onClose}>
       {error && (
@@ -191,7 +237,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           {error}
         </div>
       )}
-
+ 
       {/* Name */}
       <label className="form-label" htmlFor="edit-name">Name</label>
       <input
@@ -202,7 +248,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
         aria-required="true"
         disabled={saving}
       />
-
+ 
       {/* Page count */}
       <div style={{ marginBottom: "1rem" }}>
         <label className="form-label" htmlFor="edit-page-count">Pages</label>
@@ -214,13 +260,17 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           style={{ width: "80px" }}
           disabled={saving}
         >
-          {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+          {Array.from({ length: MAX_PAGES }, (_, i) => i + 1).map(n => (
             <option key={n} value={n}>{n}</option>
           ))}
         </select>
       </div>
-
+ 
       {/* Pages table */}
+      <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
+        You can select several images in one go — they are placed in page order by file name.
+      </p>
+
       <div className="table-wrapper" style={{ marginBottom: "1.25rem" }}>
         <table>
           <thead>
@@ -238,7 +288,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
                 : hasExisting
                 ? pg.image_path.split(/[/\\]/).pop() ?? ""
                 : "";
-
+ 
               return (
                 <tr key={pg.paper_page_id}>
                   <td>{pg.page_number}</td>
@@ -282,10 +332,11 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           style={{ display: "none" }}
                           onChange={e => {
-                            const f = e.target.files?.[0];
-                            if (f) handleFileSelect(pg.paper_page_id, f);
+                            handleFilesSelected(pg.paper_page_id, e.target.files);
+                            e.target.value = "";
                           }}
                           disabled={saving}
                         />
@@ -298,7 +349,7 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           </tbody>
         </table>
       </div>
-
+ 
       {/* Actions */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
         <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>

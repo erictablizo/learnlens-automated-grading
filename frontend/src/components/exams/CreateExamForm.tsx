@@ -20,11 +20,17 @@ import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
 import { checkExamName, checkDescription, tidyText, tidyMultiline }
   from "@/lib/textField";
+// NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
+import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
 interface PageRow { pageNumber: number; file: File | null; }
 
-const IMAGE_EXT = /\.(jpe?g|png|webp|tiff?)$/i;
-const isImage = (f: File) => f.type.startsWith("image/") || IMAGE_EXT.test(f.name);
+// NEW 2026-10-23: Create Exam had NO page cap while Edit Exam's dropdown stops
+// at 10 - an exam created with 12 pages could not be edited afterwards,
+// because the select had no option matching its own value. Both are 10 now.
+const MAX_PAGES = 10;
+// CHANGED 2026-10-23: the local IMAGE_EXT / isImage pair is gone - the same
+// check lives in lib/pageFiles.ts as isImageFile.
 
 export default function CreateExamForm() {
   const router = useRouter();
@@ -40,17 +46,40 @@ export default function CreateExamForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const addPage = () => setPages(prev => [...prev, { pageNumber: prev.length + 1, file: null }]);
+  const addPage = () => setPages(prev =>
+    prev.length >= MAX_PAGES ? prev : [...prev, { pageNumber: prev.length + 1, file: null }]);
   const removeLastPage = () => setPages(prev => (prev.length > 1 ? prev.slice(0, -1) : prev));
 
-  const setPageFile = (idx: number, file: File) => {
-    setPages(prev => prev.map((p, i) => (i === idx ? { ...p, file } : p)));
-    setPageErrors(prev => {
-      const next = { ...prev };
-      if (isImage(file)) delete next[idx];
-      else next[idx] = "Only image files (JPG, PNG) are allowed.";
+  /**
+   * CHANGED 2026-10-23 (Doc Rubrica, 5th comment): the zone accepts SEVERAL
+   * images, from the file dialog or dropped together, and they fill this page
+   * and the pages after it, adding any that do not exist yet. Picking ONE file
+   * behaves exactly as it did before.
+   */
+  const setPageFiles = (idx: number, files: File[]) => {
+    const plan = planPageFiles({
+      files, startIndex: idx, currentRows: pages.length, maxRows: MAX_PAGES,
+    });
+    if (plan.assign.length === 0) {
+      if (plan.message) setSubmitError(plan.message);
+      return;
+    }
+    setPages(prev => {
+      const next = [...prev];
+      while (next.length < plan.totalRows) {
+        next.push({ pageNumber: next.length + 1, file: null });
+      }
+      for (const { index, file } of plan.assign) {
+        next[index] = { ...next[index], file };
+      }
       return next;
     });
+    setPageErrors(prev => {
+      const next = { ...prev };
+      for (const { index } of plan.assign) delete next[index];
+      return next;
+    });
+    setSubmitError(plan.message);
   };
 
   const validate = (): boolean => {
@@ -75,7 +104,7 @@ export default function CreateExamForm() {
     const pErr: Record<number, string> = {};
     pages.forEach((p, i) => {
       if (!p.file) pErr[i] = `Please upload an image for Page ${p.pageNumber}.`;
-      else if (!isImage(p.file)) pErr[i] = "Only image files (JPG, PNG) are allowed.";
+      else if (!isImageFile(p.file)) pErr[i] = "Only image files (JPG, PNG) are allowed.";
     });
     setPageErrors(pErr);
     if (Object.keys(pErr).length) { ok = false; setPagesOpen(true); }
@@ -169,6 +198,11 @@ export default function CreateExamForm() {
             </svg>
           </button>
 
+          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "0.4rem 0 0" }}>
+            You can select or drag several images in one go — they are placed in
+            page order by file name.
+          </p>
+
           <div className="table-wrapper" style={{ marginTop: "0.5rem" }}>
             <table>
               <thead>
@@ -182,7 +216,8 @@ export default function CreateExamForm() {
                       {pagesOpen ? (
                         <FileUpload
                           label={p.file ? p.file.name : "Upload image…"}
-                          onFile={f => setPageFile(idx, f)}
+                          multiple
+                          onFiles={fs => setPageFiles(idx, fs)}
                         />
                       ) : (
                         <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>{p.file ? p.file.name : "—"}</span>
@@ -201,7 +236,8 @@ export default function CreateExamForm() {
 
           {pagesOpen && (
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-              <button type="button" className="btn-secondary" style={{ fontSize: "0.8rem" }} onClick={addPage} disabled={saving}>
+              <button type="button" className="btn-secondary" style={{ fontSize: "0.8rem" }}
+                onClick={addPage} disabled={saving || pages.length >= MAX_PAGES}>
                 + Add page
               </button>
               {pages.length > 1 && (

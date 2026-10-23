@@ -16,6 +16,8 @@ import { paperService } from "@/services/paperService";
 import { getToken } from "@/lib/auth";
 import { PageUploadState } from "@/types/paper";
 import { checkStudentName, tidyText } from "@/lib/textField";
+// NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
+import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
 interface Props {
   examId:    number;
@@ -25,8 +27,9 @@ interface Props {
 }
 
 const MAX_PAGES = 10;
-const IMAGE_EXT = /\.(jpe?g|png|webp|tiff?)$/i;
-const isImage = (f: File) => f.type.startsWith("image/") || IMAGE_EXT.test(f.name);
+// CHANGED 2026-10-23: the local IMAGE_EXT / isImage pair is gone - the same
+// check now lives in lib/pageFiles.ts as isImageFile, so the multi-file
+// picker and validate() cannot disagree about what counts as an image.
 
 const blankPages = (n: number): PageUploadState[] =>
   Array.from({ length: n }, (_, i) => ({ pageNumber: i + 1, file: null, uploaded: false, uploading: false, error: null }));
@@ -46,9 +49,28 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setPages(prev => blankPages(n).map((p, i) => prev[i] ?? p));   // keep files already chosen
   };
 
-  const handleFileSelect = (idx: number, file: File) => {
-    setPages(prev => prev.map((p, i) =>
-      i === idx ? { ...p, file, error: isImage(file) ? null : "Only image files (JPG, PNG) are allowed." } : p));
+  // CHANGED 2026-10-23 (Doc Rubrica, 5th comment): "why add a page at a time
+  // when I can select them all at once?" The input is now `multiple`, and the
+  // files fill this row and the rows after it, creating any that are missing.
+  // Picking ONE file behaves exactly as it did before.
+  const handleFilesSelected = (idx: number, list: FileList | null) => {
+    const plan = planPageFiles({
+      files: list, startIndex: idx, currentRows: pages.length, maxRows: MAX_PAGES,
+    });
+    if (plan.assign.length === 0) {
+      if (plan.message) setGlobalError(plan.message);
+      return;
+    }
+    setPages(prev => {
+      // grow to the length the plan needs, keeping page numbers 1..N
+      const next = [...prev, ...blankPages(plan.totalRows).slice(prev.length)];
+      for (const { index, file } of plan.assign) {
+        next[index] = { ...next[index], file, error: null };
+      }
+      return next;
+    });
+    setPageCount(plan.totalRows);          // the dropdown follows the selection
+    setGlobalError(plan.message);          // null when everything fitted
   };
 
   const validate = (): boolean => {
@@ -64,7 +86,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     const checked = pages.map(p => ({
       ...p,
       error: !p.file ? `Please upload an image for Page ${p.pageNumber}.`
-           : !isImage(p.file) ? "Only image files (JPG, PNG) are allowed." : null,
+           : !isImageFile(p.file) ? "Only image files (JPG, PNG) are allowed." : null,
     }));
     setPages(checked);
     if (checked.some(p => p.error)) ok = false;
@@ -155,6 +177,10 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
             )}
           </div>
 
+          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
+            You can select several images in one go — they are placed in page order by file name.
+          </p>
+
           <div className="table-wrapper" style={{ marginBottom: "1.25rem" }}>
             <table>
               <thead><tr><th style={{ width: "60px" }}>Page</th><th>Image <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></th></tr></thead>
@@ -170,8 +196,8 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
                         borderRadius: "6px", padding: "0.35rem 0.8rem", fontSize: "0.82rem", fontWeight: 600,
                       }}>
                         {p.file ? `✓ ${p.file.name.slice(0, 20)}${p.file.name.length > 20 ? "…" : ""}` : `Upload Page ${p.pageNumber}`}
-                        <input type="file" accept="image/*" style={{ display: "none" }}
-                          onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(idx, f); }} />
+                        <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                          onChange={e => { handleFilesSelected(idx, e.target.files); e.target.value = ""; }} />
                       </label>
                       {p.error && (
                         <p role="alert" style={{ color: "var(--error)", fontSize: "0.75rem", margin: "0.3rem 0 0" }}>{p.error}</p>

@@ -28,6 +28,8 @@ import { examService } from "@/services/examService";
 import { Exam, ExamPage } from "@/types/exam";
 import { checkExamName, checkDescription, tidyText, tidyMultiline }
   from "@/lib/textField";
+// NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
+import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
 interface PageRow {
   pageNumber: number;
@@ -42,8 +44,8 @@ interface Props {
 }
 
 const MAX_PAGES = 10;
-const IMAGE_EXT = /\.(jpe?g|png|webp|tiff?)$/i;
-const isImage = (f: File) => f.type.startsWith("image/") || IMAGE_EXT.test(f.name);
+// CHANGED 2026-10-23: the local IMAGE_EXT / isImage pair is gone - the same
+// check lives in lib/pageFiles.ts as isImageFile.
 const byNumber = (a: PageRow, b: PageRow) => a.pageNumber - b.pageNumber;
 
 export default function EditExamForm({ examId }: Props) {
@@ -102,14 +104,52 @@ export default function EditExamForm({ examId }: Props) {
   }, [examId, router]);
 
   // ── Images ─────────────────────────────────────────────────────────────────
-  const setPageFile = (idx: number, file: File) => {
-    setPages(prev => prev.map((p, i) => (i === idx ? { ...p, file } : p)));
-    setPageErrors(prev => {
-      const next = { ...prev };
-      if (isImage(file)) delete next[idx];
-      else next[idx] = "Only image files (JPG, PNG) are allowed.";
+  /**
+   * CHANGED 2026-10-23 (Doc Rubrica, 5th comment): the pickers are `multiple`,
+   * and a selection fills this page and the pages after it, adding any that do
+   * not exist yet. Picking ONE file behaves exactly as it did before.
+   *
+   * Positions are counted over the ACTIVE pages (sorted by page number), not
+   * over the raw array, because a page dropped by the Pages dropdown is kept
+   * in `pages` with removed=true and must not consume a slot. A removed row
+   * whose number is needed again is revived rather than duplicated, the same
+   * way setPageCount() already does it.
+   */
+  const setPageFiles = (realIdx: number, list: FileList | null) => {
+    const clicked = pages[realIdx];
+    if (!clicked) return;
+    const active = pages.filter(p => !p.removed).sort(byNumber);
+    const startPos = active.indexOf(clicked);
+    if (startPos < 0) return;
+
+    const plan = planPageFiles({
+      files: list, startIndex: startPos, currentRows: active.length, maxRows: MAX_PAGES,
+    });
+    if (plan.assign.length === 0) {
+      if (plan.message) setFormError(plan.message);
+      return;
+    }
+
+    setPages(prev => {
+      const next = [...prev];
+      let activeCount = next.filter(p => !p.removed).length;
+      while (activeCount < plan.totalRows) {
+        const wanted = activeCount + 1;
+        const revive = next.findIndex(p => p.removed && p.pageNumber === wanted);
+        if (revive >= 0) next[revive] = { ...next[revive], removed: false, file: null };
+        else next.push({ pageNumber: wanted, pageId: null, imagePath: null, file: null, removed: false });
+        activeCount++;
+      }
+      const act = next.filter(p => !p.removed).sort(byNumber);
+      for (const { index, file } of plan.assign) {
+        const row = act[index];
+        if (!row) continue;
+        next[next.indexOf(row)] = { ...row, file };
+      }
       return next;
     });
+    setPageErrors({});
+    setFormError(plan.message);
   };
 
   // ✕ = remove this image. The page stays, so it still needs one before saving.
@@ -183,7 +223,7 @@ export default function EditExamForm({ examId }: Props) {
     const pErr: Record<number, string> = {};
     pages.forEach((p, i) => {
       if (p.removed) return;
-      if (p.file && !isImage(p.file)) pErr[i] = "Only image files (JPG, PNG) are allowed.";
+      if (p.file && !isImageFile(p.file)) pErr[i] = "Only image files (JPG, PNG) are allowed.";
       else if (!p.file && !p.imagePath) pErr[i] = `Please upload an image for Page ${p.pageNumber}.`;
     });
     setPageErrors(pErr);
@@ -355,6 +395,10 @@ export default function EditExamForm({ examId }: Props) {
           </select>
         </div>
 
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "0 0 0.5rem" }}>
+          You can select several images in one go — they are placed in page order by file name.
+        </p>
+
         <div className="table-wrapper" style={{ marginBottom: "1.25rem" }}>
           <table>
             <thead>
@@ -429,8 +473,8 @@ export default function EditExamForm({ examId }: Props) {
                               padding: "0.4rem 0.9rem", fontSize: "0.82rem", fontWeight: 600,
                             }}>
                               Change
-                              <input type="file" accept="image/*" style={{ display: "none" }} disabled={saving}
-                                onChange={e => { const f = e.target.files?.[0]; if (f) setPageFile(realIdx, f); e.target.value = ""; }} />
+                              <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={saving}
+                                onChange={e => { setPageFiles(realIdx, e.target.files); e.target.value = ""; }} />
                             </label>
                           </>
                         ) : serverName ? (
@@ -459,8 +503,8 @@ export default function EditExamForm({ examId }: Props) {
                               padding: "0.4rem 0.9rem", fontSize: "0.82rem", fontWeight: 600,
                             }}>
                               Change
-                              <input type="file" accept="image/*" style={{ display: "none" }} disabled={saving}
-                                onChange={e => { const f = e.target.files?.[0]; if (f) setPageFile(realIdx, f); e.target.value = ""; }} />
+                              <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={saving}
+                                onChange={e => { setPageFiles(realIdx, e.target.files); e.target.value = ""; }} />
                             </label>
                           </>
                         ) : (
@@ -474,8 +518,8 @@ export default function EditExamForm({ examId }: Props) {
                               fontSize: "0.82rem", fontWeight: 600,
                             }}>
                               {`Upload Page ${p.pageNumber}`}
-                              <input type="file" accept="image/*" style={{ display: "none" }} disabled={saving}
-                                onChange={e => { const f = e.target.files?.[0]; if (f) setPageFile(realIdx, f); e.target.value = ""; }} />
+                              <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={saving}
+                                onChange={e => { setPageFiles(realIdx, e.target.files); e.target.value = ""; }} />
                             </label>
                             {p.pageId !== null && (
                               <button type="button" onClick={() => restorePageImage(realIdx)} disabled={saving}
