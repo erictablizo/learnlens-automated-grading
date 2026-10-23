@@ -65,14 +65,30 @@ MAX_POSITION_LENGTH = 255
 # ("Eric Bernard R." - the period), last_name 0 of 6, position 0 of 6.
 # A refused value is UN-EDITABLE, so rename those rows before you demo.
 #
+# CHANGED 2026-10-23 - the PERIOD is allowed in a NAME again, and only in a
+# name: "Name in Set Up and Edit Profile can accept . for the Middle Initial of
+# the Teacher". So "Eric Bernard R." is accepted, and so is "Ma. Teresa", while
+# "Eric@" and "O'Brien" stay refused. This is a deliberate, named exception to
+# the 2026-10-22 rule, not a rollback of it - every other mark is still out,
+# and POSITION is unchanged, so "Asst. Prof." is still refused there.
+#
+# MEASURED COST, re-run against learnlens_schema.sql after this change:
+# first_name 0 of 6 refused (was 3 of 6 - all three were the middle-initial
+# period), last_name 0 of 6, position 0 of 6.
+#
 # Keep in step with STRICT_PERSON_NAME in frontend/src/lib/personName.ts.
 STRICT_PERSON_NAME = True
 
-_STRICT_MARKS = " "
+# The two strict sets differ by exactly one character: a NAME may hold a
+# period for a middle initial, a POSITION may not. They used to share one
+# constant; splitting them is what lets the period in without also loosening
+# Position.
+_STRICT_NAME_MARKS = " ."
+_STRICT_POSITION_MARKS = " "
 _RELAXED_NAME_MARKS = " '\u2019.,-"
 _RELAXED_POSITION_MARKS = " '\u2019.,&/()-"
-_NAME_MARKS = _STRICT_MARKS if STRICT_PERSON_NAME else _RELAXED_NAME_MARKS
-_POSITION_MARKS = _STRICT_MARKS if STRICT_PERSON_NAME else _RELAXED_POSITION_MARKS
+_NAME_MARKS = _STRICT_NAME_MARKS if STRICT_PERSON_NAME else _RELAXED_NAME_MARKS
+_POSITION_MARKS = _STRICT_POSITION_MARKS if STRICT_PERSON_NAME else _RELAXED_POSITION_MARKS
 
 
 def _tidy(v: str) -> str:
@@ -100,8 +116,11 @@ def _check_chars(v: str, label: str, marks: str, digits_ok: bool, cap: int) -> O
     bad = sorted({c for c in v if not ok(c) and c not in marks})
     if bad:
         if STRICT_PERSON_NAME:
+            # Must match checkPersonName() / checkPosition() in personName.ts
+            # word for word - the browser and the server say the same thing.
             allowed = ("letters, numbers and spaces only." if digits_ok
-                       else "letters and spaces only.")
+                       else "letters and spaces, and a period for a middle "
+                            "initial.")
         else:
             allowed = ("letters, numbers, spaces, and ' - . , & / ( ) only."
                        if digits_ok else "letters, spaces, and ' - . , only.")

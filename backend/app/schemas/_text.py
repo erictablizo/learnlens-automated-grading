@@ -1,29 +1,49 @@
-"""Character rules for the exam and paper text fields.          NEW 2026-10-22
+"""Character rules for the exam and paper text fields.     Updated 2026-10-23
 
-Doc Rubrica, after the demo:
+Doc Rubrica, after the demo (2026-10-22):
     "case sensitive (UPPERCASE, LOWERCASE, and Special Characters like not
      letters and not numbers) ... If it's a Textfield and it's on the Set Up
      Profile and Edit Profile, it should not accept special characters AND
      COMBINATION OF SPECIAL CHARACTERS AND LETTER, same for Create Exam, Add
      Paper, Edit Exam, and Edit Paper."
 
-STRICT therefore means: letters, numbers and spaces. Nothing else. Not a
-period, not a comma, not a hyphen - and "Eric@" is refused for the same
-reason "@@@" is, which is the "combination" half of her sentence.
+The first pass read that as letters, numbers and spaces and NOTHING else. It
+refused 22 of the 102 values already in the database, including all 18 test
+papers, and a refused value is not merely un-saveable but UN-EDITABLE -
+validation runs on the whole model, so opening Edit Paper on
+"Midterm - Tablizo, Erica" and changing only the IMAGE was refused on Save.
 
-MEASURED COST, against learnlens_schema.sql exactly as it stands today:
+STRICT now means letters, numbers, spaces and a CLOSED LIST OF FIVE MARKS:
 
-    test_papers.student_name   18 of 18 rows REFUSED   <- EVERY paper
-    user_profiles.first_name    3 of  6 rows REFUSED   <- "Eric Bernard R."
-    exams.exam_name             1 of 33 rows REFUSED   <- "Midterm (True or False Only)"
-    exams.description           0 of 33
-    user_profiles.last_name     0 of  6                   "Dela Cruz" is fine
-    user_profiles.position      0 of  6                   "Instructor II" is fine
+    .  ,  -  (  )
 
-A refused value is not merely un-saveable, it is UN-EDITABLE: validation runs
-on the whole model, so opening Edit Paper on "Midterm - Tablizo, Erica" and
-changing only the IMAGE is still refused on Save. Rename those rows before you
-demo - measure/2026-10-22_strict_fields_audit.py lists them.
+chosen from the values the teacher actually types:
+
+    Midterm - Alcantara, Ben R.    hyphen, comma, period (middle initial)
+    Eric Tablizo                   nothing
+    Midterm (Set A)                parentheses
+    Prelim - Math                  hyphen
+
+This is a closed list, not "punctuation". Everything her comment was aimed at
+is still refused - @ # $ % ^ & * / \\ ' " _ + = : ; ! ? [ ] { } < > ~ | and
+the en-dash - so "Ben@", "Eric@#$" and "@@@" fail exactly as they did, which
+is the "combination of special characters and letter" half of her sentence.
+
+MEASURED, against learnlens_schema.sql exactly as it stands:
+
+    exams.exam_name             0 of 33 refused   (was 1)
+    exams.description           0 of 33 refused
+    test_papers.student_name    0 of 18 refused   (was 18)
+    user_profiles.first_name    0 of  6 refused   (was 3, in schemas/profile.py)
+    user_profiles.last_name     0 of  6 refused
+    user_profiles.position      0 of  6 refused
+                                0 of 102          (was 22)
+
+Re-check any time with measure/2026-10-22_strict_fields_audit.py.
+
+A person's NAME is stricter and lives in schemas/profile.py: letters, space
+and a period for a middle initial - no digits, no parentheses, because no
+teacher is called "Eric 2" or "Eric (Set A)".
 
 Each switch below is its own line so any ONE can be relaxed without touching
 the others, and so the decision is visible rather than buried inside a regular
@@ -49,8 +69,32 @@ STRICT_EXAM_NAME = True
 STRICT_DESCRIPTION = True
 STRICT_STUDENT_NAME = True
 
-# STRICT: nothing but the space that separates words.
-_STRICT_MARKS = " "
+# STRICT, 2026-10-23. Letters, numbers, the space between words, and a CLOSED
+# LIST OF FIVE MARKS. Not "punctuation" - these five and nothing else.
+#
+# Taken from the values the teacher actually types, not from taste:
+#
+#     Midterm - Alcantara, Ben R.    hyphen, comma, period (middle initial)
+#     Eric Tablizo                   nothing
+#     Midterm (Set A)                parentheses
+#     Prelim - Math                  hyphen
+#
+# One set covers Exam Name, Description and Student Name, because the same
+# string can legitimately be typed in any of them - "Prelim - Math" is as good
+# an exam name as it is a description. Earlier versions gave Student Name its
+# own set; that split is gone, and with it the `student` flag that threaded
+# through _marks / _bad_chars / _allowed.
+#
+# STILL REFUSED, so Doc Rubrica's 2026-10-22 rule holds where it was aimed:
+#     @ # $ % ^ & * / \ ' " _ + = : ; ! ? [ ] { } < > ~ | and the en-dash.
+# "Ben@", "Eric@#$" and "@@@" all fail exactly as they did.
+#
+# A person's NAME is stricter still and lives in schemas/profile.py:
+# letters, space and a period, with no digits and no parentheses.
+#
+# The HYPHEN is written last so it is a literal hyphen, not a range.
+# Matches NOT_IN_LABEL_STRICT in frontend/src/lib/textField.ts.
+_STRICT_MARKS = " .,()-"
 
 # RELAXED: used only when the matching switch above is False. Taken from the
 # rows already in the database plus the near neighbours a teacher would reach
@@ -89,7 +133,9 @@ def _shown(bad) -> str:
 
 
 def _allowed(strict: bool) -> str:
-    return ("Use letters, numbers and spaces only."
+    """Must match allowedSentence() in textField.ts word for word - the
+    browser and the server say the same thing."""
+    return ("Use letters, numbers, spaces, and . , - ( ) only."
             if strict else
             "Use letters, numbers, spaces and ordinary punctuation.")
 
