@@ -52,6 +52,15 @@ from app.ml.ocr_identification import ocr_page_identification
 
 QUESTION_TYPES = ("encircled", "true_false", "written_letter", "identification", "mixed")
 
+# "mixed" is not told which blank belongs to which part, so every short blank
+# on the page is read with ONE alphabet: A-F covers a matching-type key, T
+# covers TRUE, F covers both FALSE and the letter F. See ocr_page_mixed.
+MIXED_LETTERS = "ABCDEFT"
+
+# Fewer answer lines than this is not treated as an identification part in
+# "mixed" - a two-rule "Name: ____ Date: ____" header is the same shape.
+MIXED_MIN_IDENT_LINES = 3
+
 
 def normalize_question_type(qt: Optional[str]) -> str:
     q = (qt or "encircled").strip().lower()
@@ -134,32 +143,105 @@ def ocr_page(
 def ocr_page_mixed(image_path: str, expected_items: Optional[int] = None,
                    keep_blanks: bool = False) -> OCRPageResult:
     """
-    NEW 2026-09-26 — one page that holds BOTH kinds of items, e.g.
-        Part I  - Multiple Choice (circled A-D)   items 1-5
-        Part II - True or False  (written words)  items 6-10
-    Both detectors are run on the page and their answers are merged in reading
-    order (top to bottom), so the item numbers stay 1..N across both parts.
-    A True/False blank that sits on the same line as a circled answer is
-    dropped, so an answer is never counted twice.
+    One page that holds items of DIFFERENT mechanics, read without the teacher
+    declaring where each part starts.
+
+        Part I   items 1-6    letter written on a blank
+        Part II  items 7-12   letter encircled
+        Part III items 13-18  letter written on a blank (A-F)
+        Part IV  items 19-24  a word written on an answer line
+        Part V   items 25-30  TRUE/FALSE written on a blank
+
+    Three detectors run over the page and their answers are merged in reading
+    order, so item numbers stay 1..N across every part. A detection that sits
+    on the same line as a circled answer is dropped, so no item is counted
+    twice.
+
+    REWRITTEN 2026-10-24 — it used to run only `ocr_page_encircled` and
+    `ocr_page_true_false`. Every blank with no circle on its line therefore
+    went to a classifier whose alphabet is {T, F}, so Doc Rubrica's Part I,
+    Part III and Part IV all came back as runs of "F", and Part IV's six
+    answer lines were found by neither detector, which pushed every Part V
+    answer six item numbers up the key. MEASURED on her two pages:
+
+                             page 1 (11 items)   page 2 (19 items)
+        encircled + tf              5/11               2/19
+        encircled + identification
+          + written_letter          7/11              15/19
+        ocr_page_parts (declared)   8/11              16/19
+
+    Why these three, and not the True/False detector:
+
+    * A CIRCLE is geometric and unambiguous, so `ocr_page_encircled` keeps
+      first claim on any line it finds one.
+    * An ANSWER LINE is geometric too: 8+ text-heights long and 15:1 thin,
+      where a T/F blank is 6.6x and a letter blank 4.9x. So Part IV can be
+      pulled out by shape alone and no longer vanishes.
+    * A SHORT BLANK is where the ambiguity actually lives. "B on a blank" and
+      "F on a blank" are the same shape; only the part number says which
+      alphabet applies, and that is what this function is not told. So every
+      short blank is read ONCE with the union alphabet `MIXED_LETTERS`
+      ("ABCDEFT") instead of twice with two narrow ones.
+
+    Cost of the union alphabet, stated rather than hidden. On her Part V,
+    `classify_tf` reads T F T T T T (6/6); the union alphabet reads
+    T D T T T T (5/6) — item 26's FALSE comes back as "D" at 0.41. On her
+    Part I the position is reversed: `classify_tf` gets 0/6 and the union
+    alphabet 3/6. Across both parts it is 8/12 against 6/12, so the union
+    wins, and it loses one real True/False item to do it.
+
+    REJECTED 2026-10-24, measured: "re-read the blank with `classify_tf` when
+    the union read is weak (<0.50) and the T/F read is strong (>0.90)". It
+    does fix item 26 (D@0.41 -> F@0.95) and it breaks Part I item 3 by the
+    same rule (D@0.41 -> F@0.99, truth D). Net zero, so the extra pass is not
+    worth its cost.
+
+    REJECTED 2026-10-24, measured: arbitrating the two narrow classifiers by
+    confidence. On written letters `classify_tf` returns F at 0.98-0.99 while
+    `classify_letter` returns the correct letter at 0.41-0.96, so "most
+    confident wins" still answers F on five of six.
+
+    KNOWN LIMITATION. An identification column of fewer than
+    MIXED_MIN_IDENT_LINES lines is ignored here, because a two-rule
+    "Name: ____  Date: ____" header and a two-item identification part are the
+    same shape, and `_find_answer_lines` can only check the even-pitch rule
+    from three lines up. On page 1 that header does produce a two-line column
+    which would otherwise be read as two phantom word answers. A mixed page
+    with a one- or two-item identification part needs `ocr_page_parts`.
+
+    This function stays a FALLBACK. `ocr_page_parts()` is better on both pages
+    because the y-cursor lets a part reject a detection that lies outside its
+    band — which is how it discards the phantom circle this page's header
+    produces at y=184, and how it keeps Part III's letters apart from Part V's
+    without a shared alphabet. Use declared parts whenever the teacher has
+    told the system where the parts are.
     """
     from app.ml.ocr_shared import limit_to_expected
 
-    mc = ocr_page_encircled(image_path)
-    tf = ocr_page_true_false(image_path, keep_blanks=keep_blanks)
+    mc    = ocr_page_encircled(image_path)
+    ident = ocr_page_identification(image_path, keep_blanks=keep_blanks)
+    wl    = ocr_page_written_letter(image_path, keep_blanks=keep_blanks,
+                                    letters=MIXED_LETTERS)
+
+    words = ident.answers if len(ident.answers) >= MIXED_MIN_IDENT_LINES else []
+    if ident.answers and not words:
+        print(f"DEBUG[mixed]: ignoring {len(ident.answers)} answer-line "
+              f"detection(s) - too few to tell from a page header")
 
     answers = [a for a in mc.answers if a.letter]
     sizes = [a.size for a in answers if a.size]
     line_tol = (0.6 * (sum(sizes) / len(sizes))) if sizes else 30.0
-    for a in tf.answers:
-        if any(abs(a.y - m.y) <= line_tol for m in answers):
-            continue                      # same line as a circle -> already counted
-        answers.append(a)
+    for pool in (words, wl.answers):
+        for a in pool:
+            if any(abs(a.y - m.y) <= line_tol for m in answers):
+                continue                  # same line as a circle -> already counted
+            answers.append(a)
     answers.sort(key=lambda a: (a.y, a.x))
 
     if not answers:
         return OCRPageResult(
             image_path=image_path, answers=[], mean_conf=0.0,
-            error=(mc.error or tf.error or
+            error=(mc.error or wl.error or ident.error or
                    "No answers detected on this page. Check that the photo is clear."),
         )
 
