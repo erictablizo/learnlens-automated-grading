@@ -62,6 +62,32 @@ MIXED_LETTERS = "ABCDEFT"
 MIXED_MIN_IDENT_LINES = 3
 
 
+def mixed_alphabet(letters: Optional[str] = None) -> str:
+    """The alphabet `mixed` reads short blanks with.
+
+    MEASURED 2026-10-24, why this cannot be one constant. On Doc Rubrica's
+    page 1 (Part I, options A-D only) and page 2 (Part III A-F + Part V T/F),
+    `ocr_page_written_letter` scores:
+
+                 page 1 blanks        page 2 blanks
+        ABCD        3/6, 2 left blank    3/12
+        ABCDT       3/6, 2 left blank    8/12
+        ABCDEF      3/6, 2 read as "E"   5/12
+        ABCDEFT     3/6, 2 read as "E"  10/12
+
+    Page 2 needs E, F and T. Page 1 must NOT have E or F: items 1 and 6 are
+    unreadable either way, and a wider alphabet does not read them correctly,
+    it only fills them with an "E" that Part I never offered. Same score,
+    worse key - a teacher can see an empty slot, but an "E" on a four-option
+    item looks like an answer.
+
+    So a caller that knows the page's options should narrow it. T is always
+    kept, because dropping it is what made every written letter read as "F".
+    """
+    base = (letters or "").strip().upper() or MIXED_LETTERS
+    return base if "T" in base else base + "T"
+
+
 def normalize_question_type(qt: Optional[str]) -> str:
     q = (qt or "encircled").strip().lower()
     for ch in ("-", " ", "/"):
@@ -132,7 +158,11 @@ def ocr_page(
                                        keep_blanks=keep_blanks,
                                        expected_lines=expected_lines)
     if qt == "mixed":
-        return ocr_page_mixed(image_path, expected_items=expected_items, keep_blanks=keep_blanks)
+        # An explicit alphabet from the caller wins; the plain "ABCD" default
+        # means "not stated" and leaves mixed on its own wider alphabet.
+        return ocr_page_mixed(image_path, expected_items=expected_items,
+                              keep_blanks=keep_blanks,
+                              letters=(None if letters == DEFAULT_LETTERS else letters))
     return OCRPageResult(
         image_path=image_path, answers=[], mean_conf=0.0,
         error=(f"Unknown question type '{question_type}'. Use 'encircled', "
@@ -141,7 +171,8 @@ def ocr_page(
 
 
 def ocr_page_mixed(image_path: str, expected_items: Optional[int] = None,
-                   keep_blanks: bool = False) -> OCRPageResult:
+                   keep_blanks: bool = False,
+                   letters: Optional[str] = None) -> OCRPageResult:
     """
     One page that holds items of DIFFERENT mechanics, read without the teacher
     declaring where each part starts.
@@ -218,10 +249,12 @@ def ocr_page_mixed(image_path: str, expected_items: Optional[int] = None,
     """
     from app.ml.ocr_shared import limit_to_expected
 
+    alphabet = mixed_alphabet(letters)
+
     mc    = ocr_page_encircled(image_path)
     ident = ocr_page_identification(image_path, keep_blanks=keep_blanks)
     wl    = ocr_page_written_letter(image_path, keep_blanks=keep_blanks,
-                                    letters=MIXED_LETTERS)
+                                    letters=alphabet)
 
     words = ident.answers if len(ident.answers) >= MIXED_MIN_IDENT_LINES else []
     if ident.answers and not words:
@@ -349,7 +382,7 @@ def ocr_page_parts(image_path: str, parts: list[PagePart],
 
 
 __all__ = [
-    "ocr_page", "ocr_page_mixed", "ocr_page_parts", "PagePart", "PartsResult",
+    "ocr_page", "ocr_page_mixed", "mixed_alphabet", "ocr_page_parts", "PagePart", "PartsResult",
     "infer_question_type", "normalize_question_type", "QUESTION_TYPES",
     "DetectedAnswer", "OCRPageResult", "setup_tesseract",
 ]
