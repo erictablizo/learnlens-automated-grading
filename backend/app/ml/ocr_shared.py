@@ -1,61 +1,28 @@
-"""
-app/ml/ocr_shared.py — Shared OCR utilities & preprocessing
-============================================================
-
-Shared components used by both encircled (multiple choice) and
-true/false question detection:
-  - Data classes
-  - Tesseract setup
-  - Image preprocessing pipeline (original steps kept for reference)
-  - Ink mask / text-height estimation (scale-aware — works for phone photos
-    of any resolution instead of hard-coded pixel sizes)
-  - Reading-order sorting (proper row clustering, not y // 40 buckets)
-  - Trimming to an expected number of items
-
-FIX 2026-09-22:
-  * `DetectedAnswer` has a new `size` field (mark height in px).
-  * `_sort_answers` used `y // 40` buckets. Two answers on the same printed
-    line at y=79 and y=81 landed in different "rows", scrambling the order.
-    Rows are now built by clustering, with a tolerance derived from `size`.
-  * Added `limit_to_expected()` so the caller can tell the OCR how many
-    items the page really has (e.g. 12 or 20). Extra false positives are
-    dropped by lowest confidence instead of being saved as extra answers.
-"""
-
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from typing import Optional
-
 import numpy as np
-
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
 
 @dataclass
 class DetectedAnswer:
-    y:          int
-    x:          int
-    letter:     str
-    confidence: float = 0.0      # always 0.0 – 1.0
-    size:       int   = 0        # mark height/diameter in px (used for row tolerance)
-
+    y: int
+    x: int
+    letter: str
+    confidence: float = 0.0
+    size: int = 0
+    # NEW 2026-10-24. 0 means "nobody said", and every caller that numbers by
+    # position keeps working. ocr_item_numbers fills it with the number
+    # PRINTED on the page, so a page that starts at item 12 says so.
+    item_number: int = 0
 
 @dataclass
 class OCRPageResult:
     image_path: str
-    answers:    list[DetectedAnswer]
-    mean_conf:  float
-    error:      Optional[str] = None
-    warning:    Optional[str] = None
-
-
-# ---------------------------------------------------------------------------
-# Tesseract setup
-# ---------------------------------------------------------------------------
+    answers: list
+    mean_conf: float
+    error: Optional[str] = None
+    warning: Optional[str] = None
 
 def setup_tesseract(cmd_path: str = "") -> None:
     if not cmd_path:
@@ -67,52 +34,10 @@ def setup_tesseract(cmd_path: str = "") -> None:
     except ImportError:
         pass
 
+MAX_SIDE = 2400
+MIN_SIDE = 2000
 
-# ---------------------------------------------------------------------------
-# Original preprocessing steps (kept — still used for letter reading)
-# ---------------------------------------------------------------------------
-
-def binarize(img: "np.ndarray") -> "np.ndarray":
-    """Grayscale -> binary threshold at 150 (original script step 1)."""
-    import cv2
-    gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, bw = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-    return bw
-
-
-def remove_noise(bw: "np.ndarray") -> "np.ndarray":
-    """Dilate -> erode -> morphClose -> medianBlur (original script step 2)."""
-    import cv2
-    kernel = np.ones((1, 1), np.uint8)
-    out    = cv2.dilate(bw, kernel, iterations=1)
-    out    = cv2.erode(out, kernel, iterations=1)
-    out    = cv2.morphologyEx(out, cv2.MORPH_CLOSE, kernel)
-    out    = cv2.medianBlur(out, 3)
-    return out
-
-
-def thick_font(bw: "np.ndarray") -> "np.ndarray":
-    """Thicken strokes: invert -> dilate 2x2 twice -> invert back (step 3)."""
-    import cv2
-    bgr    = cv2.cvtColor(bw, cv2.COLOR_GRAY2BGR)
-    bgr    = cv2.bitwise_not(bgr)
-    kernel = np.ones((2, 2), np.uint8)
-    bgr    = cv2.dilate(bgr, kernel, iterations=2)
-    bgr    = cv2.bitwise_not(bgr)
-    return bgr
-
-
-# ---------------------------------------------------------------------------
-# Scale-aware helpers
-# ---------------------------------------------------------------------------
-
-MAX_SIDE = 2400   # very large phone photos are downscaled to this (keeps speed sane)
-MIN_SIDE = 2000   # small / low-res images are upscaled so letters are big enough
-
-
-def load_gray(image_path: str) -> tuple["np.ndarray", float]:
-    """Read image -> grayscale, resized so MIN_SIDE <= long side <= MAX_SIDE.
-    Returns (gray, scale) where original_px = new_px / scale."""
+def load_gray(image_path: str):
     import cv2
     img = cv2.imread(image_path)
     if img is None:
@@ -128,23 +53,16 @@ def load_gray(image_path: str) -> tuple["np.ndarray", float]:
         gray = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
     return gray, scale
 
-
-def ink_mask(gray: "np.ndarray") -> "np.ndarray":
-    """White-on-black ink mask. Adaptive threshold copes with uneven
-    lighting / shadows in phone photos far better than a fixed 150."""
+def ink_mask(gray):
     import cv2
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    block = max(15, (min(gray.shape) // 40) | 1)          # odd, scales with image
-    th = cv2.adaptiveThreshold(
-        blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, block, 12
-    )
-    # remove salt noise
+    block = max(15, (min(gray.shape) // 40) | 1)
+    th = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                               cv2.THRESH_BINARY_INV, block, 12)
     th = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
     return th
 
-
-def estimate_text_height(ink: "np.ndarray") -> float:
-    """Median height of character-sized connected components (px)."""
+def estimate_text_height(ink) -> float:
     import cv2
     n, _, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
     H, W = ink.shape
@@ -153,21 +71,19 @@ def estimate_text_height(ink: "np.ndarray") -> float:
         x, y, w, h, area = stats[i]
         if area < 12 or h < 6:
             continue
-        if h > H * 0.08 or w > W * 0.15:       # lines, borders, big shapes
+        if h > H * 0.08 or w > W * 0.15:
             continue
-        if w / float(h) > 6:                   # underscores / rules
+        if w / float(h) > 6:
             continue
         heights.append(h)
     if not heights:
         return max(12.0, H / 80.0)
     return float(np.median(heights))
 
-
-def group_rows(items: list, key_y, tol: float) -> list[list]:
-    """Cluster items into rows by y (running mean). Returns rows top->bottom."""
+def group_rows(items: list, key_y, tol: float) -> list:
     items = sorted(items, key=key_y)
-    rows: list[list] = []
-    row_y: list[float] = []
+    rows: list = []
+    row_y: list = []
     for it in items:
         y = key_y(it)
         if rows and abs(y - row_y[-1]) <= tol:
@@ -178,25 +94,20 @@ def group_rows(items: list, key_y, tol: float) -> list[list]:
             row_y.append(float(y))
     return rows
 
-
-def _sort_answers(answers: list[DetectedAnswer], row_tol: Optional[float] = None) -> list[DetectedAnswer]:
-    """Sort top->bottom, left->right using real row clustering."""
+def _sort_answers(answers: list, row_tol: Optional[float] = None) -> list:
     if not answers:
         return answers
     if row_tol is None:
         sizes = [a.size for a in answers if a.size]
         row_tol = (0.6 * float(np.median(sizes))) if sizes else 40.0
     rows = group_rows(answers, key_y=lambda a: a.y, tol=row_tol)
-    out: list[DetectedAnswer] = []
+    out: list = []
     for r in rows:
         out.extend(sorted(r, key=lambda a: a.x))
     answers[:] = out
     return answers
 
-
-def sort_column_aware(answers: list[DetectedAnswer], page_w: int) -> list[DetectedAnswer]:
-    """For layouts with 2+ answer columns (e.g. items 1-10 left, 11-20 right),
-    read column by column. Falls back to row order for a single column."""
+def sort_column_aware(answers: list, page_w: int) -> list:
     if len(answers) < 4:
         return _sort_answers(answers)
     xs = sorted(a.x for a in answers)
@@ -205,26 +116,19 @@ def sort_column_aware(answers: list[DetectedAnswer], page_w: int) -> list[Detect
     if not big:
         return _sort_answers(answers)
     cuts = sorted(xs[i] + g / 2.0 for g, i in big)
-    cols: list[list[DetectedAnswer]] = [[] for _ in range(len(cuts) + 1)]
+    cols: list = [[] for _ in range(len(cuts) + 1)]
     for a in answers:
         idx = sum(1 for c in cuts if a.x > c)
         cols[idx].append(a)
-    # Only treat as columns if every column has a reasonable share of items
     if min(len(c) for c in cols) < 2:
         return _sort_answers(answers)
-    out: list[DetectedAnswer] = []
+    out: list = []
     for c in cols:
         out.extend(sorted(c, key=lambda a: a.y))
     answers[:] = out
     return answers
 
-
-def limit_to_expected(
-    answers: list[DetectedAnswer],
-    expected: Optional[int],
-) -> tuple[list[DetectedAnswer], Optional[str]]:
-    """If the page is known to have N items, keep the N most confident
-    detections (preserving reading order). Returns (answers, warning)."""
+def limit_to_expected(answers: list, expected: Optional[int]):
     if not expected or expected <= 0:
         return answers, None
     if len(answers) > expected:

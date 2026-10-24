@@ -532,22 +532,60 @@ async def generate_answer_key(
                 "identification": "written answers"}.get(question_type, "encircled answers")
         return {"success": False, "reason": f"No {kind} detected on this page. Ensure answers are clearly marked."}
 
-    # Replace this page's key, appended after all other keys, then renumber 1..N by page
+    # NEW 2026-10-24. When the OCR has read the item numbers PRINTED on the
+    # page, those numbers are the key's numbering. A page that starts at item
+    # 12 says so itself, and an item nobody could read leaves a hole instead
+    # of pulling every later item up by one - which is what produced "9
+    # answers on page 1" and then numbered page 2 from 10.
+    # renumber_answer_keys() must NOT run on that path: it assigns 1..N in
+    # page order and would turn 12-30 straight back into 1-19.
+    numbered = bool(answers) and all(getattr(a, "item_number", 0) > 0 for a in answers)
+
     await db.execute(delete(AnswerKey).where(AnswerKey.exam_id == exam_id, AnswerKey.page_id == page_id))
-    max_q = (await db.execute(
-        select(AnswerKey.question_number).where(AnswerKey.exam_id == exam_id)
-        .order_by(AnswerKey.question_number.desc()).limit(1)
-    )).scalar_one_or_none() or 0
-    for idx, a in enumerate(answers, start=1):
-        db.add(AnswerKey(
-            exam_id=exam_id, page_id=page_id, question_number=max_q + idx,
-            correct_answer=a.letter, ocr_confidence=round(float(a.confidence), 2),
-        ))
-    await db.commit()
-    await renumber_answer_keys(db, exam_id)
+
+    stolen = 0
+    if numbered:
+        wanted = [a.item_number for a in answers]
+        # Rows of OTHER pages claiming an item number this page has just
+        # proven is its own. They were numbered by position before this page
+        # was regenerated, so they are the stale ones. Removing them cannot
+        # deadlock the teacher the way refusing to save would.
+        res = await db.execute(
+            delete(AnswerKey).where(AnswerKey.exam_id == exam_id,
+                                    AnswerKey.page_id != page_id,
+                                    AnswerKey.question_number.in_(wanted)))
+        stolen = res.rowcount or 0
+        for a in answers:
+            db.add(AnswerKey(
+                exam_id=exam_id, page_id=page_id, question_number=a.item_number,
+                correct_answer=a.letter, ocr_confidence=round(float(a.confidence), 2),
+            ))
+        await db.commit()
+    else:
+        # Replace this page's key, appended after all other keys, then renumber 1..N by page
+        max_q = (await db.execute(
+            select(AnswerKey.question_number).where(AnswerKey.exam_id == exam_id)
+            .order_by(AnswerKey.question_number.desc()).limit(1)
+        )).scalar_one_or_none() or 0
+        for idx, a in enumerate(answers, start=1):
+            db.add(AnswerKey(
+                exam_id=exam_id, page_id=page_id, question_number=max_q + idx,
+                correct_answer=a.letter, ocr_confidence=round(float(a.confidence), 2),
+            ))
+        await db.commit()
+        await renumber_answer_keys(db, exam_id)
+
     reset = await reset_exam_paper_scores(db, exam_id)
 
-    msg = f"Answer key generated: {len(answers)} answers detected on page {page.page_number}."
+    if numbered:
+        lo, hi = min(a.item_number for a in answers), max(a.item_number for a in answers)
+        msg = (f"Answer key generated: {len(answers)} answers for items {lo}-{hi} "
+               f"on page {page.page_number}.")
+    else:
+        msg = f"Answer key generated: {len(answers)} answers detected on page {page.page_number}."
+    if stolen:
+        msg += (f" {stolen} answer(s) on another page were using these item numbers "
+                "and were removed - regenerate that page.")
     if reset:
         msg += f" {reset} checked paper(s) were reset and must be checked again."
     return {
@@ -555,6 +593,7 @@ async def generate_answer_key(
         "detected": len(answers),
         "expected_items": expected_items,
         "question_type": question_type,
+        "numbered_from_page": numbered,
         "message": msg,
         "warning": result.warning,
     }

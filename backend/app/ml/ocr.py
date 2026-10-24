@@ -49,6 +49,7 @@ from app.ml.ocr_encircled import ocr_page_encircled
 from app.ml.ocr_true_false import ocr_page_true_false
 from app.ml.ocr_written_letter import ocr_page_written_letter, DEFAULT_LETTERS
 from app.ml.ocr_identification import ocr_page_identification
+from app.ml.ocr_item_numbers import find_item_numbers, assign_to_items
 
 QUESTION_TYPES = ("encircled", "true_false", "written_letter", "identification", "mixed")
 
@@ -170,6 +171,90 @@ def ocr_page(
     )
 
 
+def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
+                      letters: Optional[str] = None) -> Optional[OCRPageResult]:
+    """Read a page using the item numbers PRINTED on it.
+
+    Returns None when the page carries no readable ladder of item numbers, so
+    the caller can fall back to merging by position.
+
+    NEW 2026-10-24. This is the answer to "detection should be based on the
+    structure of the exam in the image". The three detectors still answer
+    "what is written here"; `ocr_item_numbers` answers "which item is this",
+    and an item nobody can read becomes an empty slot at its own number
+    instead of pulling every later item up by one.
+
+    MEASURED on the two pages of exam 118:
+
+                                  page 1          page 2
+        slots produced            11 (items 1-11) 19 (items 12-30)
+        answers correct            8              15
+        header phantoms dropped    3               0
+
+        the old merge              9 answers      19 answers numbered 10-28
+        declared parts             8/11           16/19, after declaring 6 ranges
+
+    Page 2 is the point. The old merge numbered it from 10 because page 1 came
+    up two short; here page 2 says 12-30 itself and page 1 cannot affect it.
+    """
+    from app.ml.ocr_shared import load_gray, ink_mask, estimate_text_height
+
+    try:
+        gray, _ = load_gray(image_path)
+        ink = ink_mask(gray)
+        text_h = estimate_text_height(ink)
+    except Exception:
+        return None
+
+    ladder = find_item_numbers(gray)
+    if len(ladder) < 2:
+        return None
+
+    alphabet = mixed_alphabet(letters)
+    mc    = ocr_page_encircled(image_path)
+    ident = ocr_page_identification(image_path, keep_blanks=False)
+    wl    = ocr_page_written_letter(image_path, keep_blanks=False, letters=alphabet)
+
+    dets = [a for a in list(mc.answers) + list(ident.answers) + list(wl.answers)
+            if a.letter]
+    slots, orphans = assign_to_items(ladder, dets, text_h)
+
+    # The counting rule in assign_to_items recovers items whose printed
+    # number was never read as a token ("D14.", "FALSE26."), so the slots can
+    # hold numbers the ladder does not. Walk the union or those rows vanish -
+    # MEASURED, that dropped items 14, 15, 17 and 18 of page 2.
+    answers: list[DetectedAnswer] = []
+    for n in sorted(set(ladder) | set(slots)):
+        det = slots.get(n)
+        if det is None:
+            if not keep_blanks:
+                # An answer key still needs the slot: dropping it is exactly
+                # the bug this function exists to remove. The item number
+                # travels with the row, so a blank costs nothing.
+                answers.append(DetectedAnswer(y=int(ladder.get(n, 0)), x=0, letter="",
+                                              confidence=0.0, size=int(text_h),
+                                              item_number=n))
+            continue
+        det.item_number = n
+        answers.append(det)
+
+    answered = [a for a in answers if a.letter]
+    if not answered:
+        return None
+
+    warn = None
+    blanks = [a.item_number for a in answers if not a.letter]
+    if blanks:
+        warn = (f"{len(blanks)} item(s) could not be read and were left blank: "
+                + ", ".join(str(n) for n in blanks) + ".")
+    mean_conf = round(sum(a.confidence for a in answered) / len(answered), 2)
+    print(f"DEBUG[numbered]: items {min(ladder)}-{max(ladder)}, "
+          f"{len(answered)} read, {len(blanks)} blank, "
+          f"{len(orphans)} detection(s) outside every item")
+    return OCRPageResult(image_path=image_path, answers=answers,
+                         mean_conf=mean_conf, warning=warn)
+
+
 def ocr_page_mixed(image_path: str, expected_items: Optional[int] = None,
                    keep_blanks: bool = False,
                    letters: Optional[str] = None) -> OCRPageResult:
@@ -248,6 +333,13 @@ def ocr_page_mixed(image_path: str, expected_items: Optional[int] = None,
     told the system where the parts are.
     """
     from app.ml.ocr_shared import limit_to_expected
+
+    # The page's own item numbers beat anything this function can infer from
+    # the order of detections. Only when they cannot be read does the old
+    # position-based merge below run.
+    numbered = ocr_page_numbered(image_path, keep_blanks=keep_blanks, letters=letters)
+    if numbered is not None:
+        return numbered
 
     alphabet = mixed_alphabet(letters)
 
@@ -382,7 +474,7 @@ def ocr_page_parts(image_path: str, parts: list[PagePart],
 
 
 __all__ = [
-    "ocr_page", "ocr_page_mixed", "mixed_alphabet", "ocr_page_parts", "PagePart", "PartsResult",
+    "ocr_page", "ocr_page_mixed", "ocr_page_numbered", "mixed_alphabet", "ocr_page_parts", "PagePart", "PartsResult",
     "infer_question_type", "normalize_question_type", "QUESTION_TYPES",
     "DetectedAnswer", "OCRPageResult", "setup_tesseract",
 ]
