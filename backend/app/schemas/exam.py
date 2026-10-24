@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, List
 
@@ -7,11 +7,40 @@ from typing import Optional, List
 from app.schemas._text import check_exam_name, check_description
 
 
+# NEW 2026-10-24 — Doc Rubrica's sixth comment. Declared BEFORE ExamPageResponse
+# because that model now nests it.
+#
+# One declared part of one page: "items 13 to 18 are written letters A-F".
+# Her English 101 page 2 has four of these, and one question_type per page
+# cannot describe it.
+class ExamPagePartResponse(BaseModel):
+    part_id:       int
+    exam_id:       int
+    page_id:       int
+    first_item:    int
+    last_item:     int
+    question_type: str
+    letters:       str
+    model_config = {"from_attributes": True}
+
+
 class ExamPageResponse(BaseModel):
     page_id: int
     page_number: int
     image_path: str
     uploaded_at: datetime
+    # NEW 2026-10-24 — the ranges this page was declared with, so the exam
+    # screen can show "items 13-18 written letter" per page and the Declare
+    # Parts dialog can open pre-filled, instead of one extra request per page.
+    #
+    # REQUIRES a matching eager load. MEASURED: with get_exam()'s current
+    # `selectinload(Exam.pages)` and nothing more, touching page.parts raises
+    #     MissingGreenlet: greenlet_spawn has not been called
+    # which FastAPI turns into a 500 on GET /exams/{id}. exam_service.get_exam()
+    # must chain it:
+    #     selectinload(Exam.pages).selectinload(ExamPage.parts)
+    # Adding this field without that line breaks the exam detail page.
+    parts: List[ExamPagePartResponse] = []
     model_config = {"from_attributes": True}
 
 
@@ -34,6 +63,44 @@ class ExamPageNumberResponse(BaseModel):        # NEW 2026-09-29
     changed: bool
     reset: int
     message: str
+
+
+# ---------------------------------------------------------------------------
+# NEW 2026-10-24 — declaring a page's parts
+# ---------------------------------------------------------------------------
+
+class ExamPagePartIn(BaseModel):
+    """One part of the declaration POSTed to /answer-key/generate-parts."""
+
+    first_item:    int = Field(..., ge=1, le=500)
+    last_item:     int = Field(..., ge=1, le=500)
+    question_type: str = Field(..., min_length=1, max_length=32)
+    letters:       str = Field("ABCD", min_length=1, max_length=16)
+
+    @field_validator("question_type", "letters")
+    @classmethod
+    def _tidy(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("last_item")
+    @classmethod
+    def _range_is_forwards(cls, v: int, info) -> int:
+        first = info.data.get("first_item")
+        if first is not None and v < first:
+            raise ValueError(f"the last item ({v}) is before the first ({first})")
+        return v
+
+
+class ExamPagePartsRequest(BaseModel):
+    """Body of POST /exams/{exam_id}/answer-key/generate-parts?page_id=N.
+
+    The service re-validates all of this in `exam_service.validate_parts()`.
+    These limits only stop a malformed request reaching it; the real rules - no
+    overlapping ranges, a question type a part can actually have, a sane letters
+    alphabet - live in one place there rather than being half-stated twice.
+    """
+
+    parts: List[ExamPagePartIn] = Field(..., min_length=1, max_length=20)
 
 
 class AnswerKeyResponse(BaseModel):
@@ -122,3 +189,22 @@ class GenerateAnswerKeyResponse(BaseModel):   # NEW
     question_type: str
     message: str
     warning: Optional[str] = None
+
+
+class GenerateAnswerKeyPartsResponse(BaseModel):   # NEW 2026-10-24
+    """What POST /answer-key/generate-parts returns.
+
+    `blank_items` is the point of difference from GenerateAnswerKeyResponse: a
+    declared item the OCR could not read keeps its slot in the key as "" rather
+    than being dropped, because dropping item 20 would make item 21's answer the
+    key for item 20 and silently shift every later item. Those numbers come back
+    here so the teacher is told which ones to fill in.
+    """
+
+    success:     bool
+    detected:    int                      # items actually read
+    total_items: int                      # items declared
+    blank_items: List[int] = []           # declared but unreadable
+    parts:       List[dict] = []
+    message:     str
+    warnings:    List[str] = []

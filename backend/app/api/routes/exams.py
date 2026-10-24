@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.schemas.exam import (
     ExamCreate, ExamUpdate, ExamResponse, ExamListResponse, GenerateAnswerKeyResponse,
     ExamPageNumberUpdate, ExamPageNumberResponse,          # NEW 2026-09-29
+    # NEW 2026-10-24 — declared parts (add these to app/schemas/exam.py)
+    ExamPagePartsRequest, ExamPagePartResponse, GenerateAnswerKeyPartsResponse,
 )
 from app.services import exam_service
 from app.services.auth_service import get_current_user
@@ -168,3 +170,94 @@ async def generate_answer_key(
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("reason", "Answer key generation failed."))
     return result
+
+
+# ---------------------------------------------------------------------------
+# NEW 2026-10-24 — declared parts (Doc Rubrica's sixth comment)
+#
+# One question_type per page cannot describe her English 101 sheet: page 2
+# alone has item 12 encircled, items 13-18 as letters written on blanks,
+# 19-24 identification and 25-30 True/False. These three endpoints let the
+# teacher declare the ranges, read them back, and clear them again.
+#
+# The parts are PERSISTED because a paper must be read with the same ranges
+# its key was built with: infer_question_type() cannot tell `encircled` from
+# `written_letter`, since both store a bare letter.
+# ---------------------------------------------------------------------------
+
+@router.post("/{exam_id}/answer-key/generate-parts",
+             response_model=GenerateAnswerKeyPartsResponse)
+async def generate_answer_key_with_parts(
+    exam_id: int,
+    data: ExamPagePartsRequest,
+    page_id: int = Query(...),
+    uid: int = Depends(current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate one page's answer key from declared item ranges, and store them.
+
+    422 rather than 400 on a rejected declaration, to match the existing
+    /answer-key/generate endpoint: both fail on content the client could not
+    have known was wrong (overlapping ranges, an unreadable photo).
+    """
+    if not await exam_service.get_exam(db, exam_id, uid):
+        raise HTTPException(status_code=404, detail="Exam not found")
+    result = await exam_service.generate_answer_key_parts(
+        db, exam_id, page_id, [p.model_dump() for p in data.parts]
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=422,
+                            detail=result.get("reason", "Answer key generation failed."))
+    return result
+
+
+@router.get("/{exam_id}/pages/{page_id}/parts",
+            response_model=List[ExamPagePartResponse])
+async def get_exam_page_parts(
+    exam_id: int,
+    page_id: int,
+    uid: int = Depends(current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """What this page was declared as. The Declare Parts dialog reads this to
+    show the teacher her previous ranges instead of an empty form."""
+    if not await exam_service.get_exam(db, exam_id, uid):
+        raise HTTPException(status_code=404, detail="Exam not found")
+    page = (await db.execute(
+        select(ExamPage).where(ExamPage.page_id == page_id, ExamPage.exam_id == exam_id)
+    )).scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return await exam_service.get_page_parts(db, page_id)
+
+
+@router.delete("/{exam_id}/pages/{page_id}/parts", status_code=200)
+async def clear_exam_page_parts(
+    exam_id: int,
+    page_id: int,
+    uid: int = Depends(current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Go back to one question type for the whole page.
+
+    `generate_answer_key()` refuses to overwrite a page that has declared
+    parts, so without this a page declared once could never be un-declared.
+    This also drops that page's answer key, which was generated from the
+    ranges being removed. 200 with a body rather than 204, because the teacher
+    needs to be told the key went with them.
+    """
+    if not await exam_service.get_exam(db, exam_id, uid):
+        raise HTTPException(status_code=404, detail="Exam not found")
+    page = (await db.execute(
+        select(ExamPage).where(ExamPage.page_id == page_id, ExamPage.exam_id == exam_id)
+    )).scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    removed = await exam_service.clear_page_parts(db, exam_id, page_id)
+    return {
+        "success": True,
+        "removed": removed,
+        "message": (f"{removed} declared part(s) and this page's answer key were removed. "
+                    "Generate the key again with one question type, or declare new ranges."
+                    if removed else "This page had no declared parts."),
+    }

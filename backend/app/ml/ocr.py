@@ -5,6 +5,7 @@ Routes an image to the right detector:
   "encircled"      → Multiple Choice (circled A/B/C/D)   → ocr_encircled
   "true_false"     → True/False (written T/F)            → ocr_true_false
   "written_letter" → a LETTER written on a blank         → ocr_written_letter   NEW 2026-10-23
+  "identification" → a WORD written on an answer line     → ocr_identification   NEW 2026-10-23
   "mixed"          → one page with BOTH MC and T/F parts → both, merged by position
 
 FIX 2026-09-22:
@@ -24,7 +25,7 @@ parts in three different mechanics, and page 2 alone holds four of them:
 
     Part II   item 12      encircled
     Part III  items 13-18  letter written on a blank (A-F)
-    Part IV   items 19-24  identification (a word) - NOT YET SUPPORTED
+    Part IV   items 19-24  identification (a word)
     Part V    items 25-30  True/False
 
 One `question_type` per page cannot express that, and a plain union of
@@ -47,8 +48,9 @@ from app.ml.ocr_shared import DetectedAnswer, OCRPageResult, setup_tesseract
 from app.ml.ocr_encircled import ocr_page_encircled
 from app.ml.ocr_true_false import ocr_page_true_false
 from app.ml.ocr_written_letter import ocr_page_written_letter, DEFAULT_LETTERS
+from app.ml.ocr_identification import ocr_page_identification
 
-QUESTION_TYPES = ("encircled", "true_false", "written_letter", "mixed")
+QUESTION_TYPES = ("encircled", "true_false", "written_letter", "identification", "mixed")
 
 
 def normalize_question_type(qt: Optional[str]) -> str:
@@ -65,6 +67,9 @@ def normalize_question_type(qt: Optional[str]) -> str:
     if q in ("written_letter", "writtenletter", "written", "letter",
              "write_the_letter", "matching", "matching_type"):
         return "written_letter"
+    if q in ("identification", "identify", "ident", "id", "fill_in_the_blank",
+             "fill_in_blank", "fill_in_blanks", "short_answer", "word"):
+        return "identification"
     return q
 
 
@@ -76,12 +81,17 @@ def infer_question_type(answers: Iterable[str]) -> str:
     because both store a bare letter. When a page was generated with declared
     parts, the paper must be checked with those same parts rather than with
     this guess - see ocr_page_parts().
+
+    An answer longer than one character and not TRUE/FALSE can only have come
+    from identification, so that one IS recoverable.
     """
     vals = [a.strip().upper() for a in answers if a and a.strip()]
     if not vals:
         return "encircled"
     tf = [v for v in vals if v in ("T", "F", "TRUE", "FALSE")]
     mc = [v for v in vals if v in ("A", "B", "C", "D")]
+    if any(len(v) > 1 and v not in ("TRUE", "FALSE") for v in vals):
+        return "identification"
     if tf and mc:
         return "mixed"
     if tf and len(tf) == len(vals):
@@ -95,6 +105,7 @@ def ocr_page(
     expected_items: Optional[int] = None,
     keep_blanks: bool = False,
     letters: str = DEFAULT_LETTERS,
+    expected_lines: Optional[int] = None,
 ) -> OCRPageResult:
     qt = normalize_question_type(question_type)
     print(f"\n{'=' * 70}\nOCR_PAGE: {image_path}\nType: {qt}  expected_items: {expected_items}  "
@@ -107,12 +118,16 @@ def ocr_page(
     if qt == "written_letter":
         return ocr_page_written_letter(image_path, expected_items=expected_items,
                                        keep_blanks=keep_blanks, letters=letters)
+    if qt == "identification":
+        return ocr_page_identification(image_path, expected_items=expected_items,
+                                       keep_blanks=keep_blanks,
+                                       expected_lines=expected_lines)
     if qt == "mixed":
         return ocr_page_mixed(image_path, expected_items=expected_items, keep_blanks=keep_blanks)
     return OCRPageResult(
         image_path=image_path, answers=[], mean_conf=0.0,
-        error=(f"Unknown question type '{question_type}'. Use "
-               "'encircled', 'written_letter', 'true_false' or 'mixed'."),
+        error=(f"Unknown question type '{question_type}'. Use 'encircled', "
+               "'written_letter', 'identification', 'true_false' or 'mixed'."),
     )
 
 
@@ -208,9 +223,15 @@ def ocr_page_parts(image_path: str, parts: list[PagePart],
     errors: list[str] = []
     warnings: list[str] = []
     for qt in {normalize_question_type(p.question_type) for p in ordered}:
-        letters = next((p.letters for p in ordered
-                        if normalize_question_type(p.question_type) == qt), DEFAULT_LETTERS)
-        res = ocr_page(image_path, question_type=qt, keep_blanks=keep_blanks, letters=letters)
+        mine = [p for p in ordered if normalize_question_type(p.question_type) == qt]
+        letters = next((p.letters for p in mine), DEFAULT_LETTERS)
+        # How many items of this type the teacher declared on this page. The
+        # identification finder uses it to reject a column of printed rules
+        # that is nothing like that many lines - without it, the Name/Date
+        # rules in a page header read as two phantom answers.
+        declared = sum(p.count for p in mine)
+        res = ocr_page(image_path, question_type=qt, keep_blanks=keep_blanks,
+                       letters=letters, expected_lines=declared)
         if res.error:
             errors.append(f"{qt}: {res.error}")
         if res.warning:
