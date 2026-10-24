@@ -45,7 +45,17 @@ from app.ml.ocr_shared import DetectedAnswer
 # The separator class is wider than ".": MEASURED, Tesseract returns "11," for
 # item 11 on page 1 and "28," for item 28 on page 2. Requiring a full stop
 # loses both.
-_ITEM_TOKEN = re.compile(r"(?:^|[^0-9\-\u2010-\u2015])(\d{1,3})\s*[.,):;]$")
+_ITEM_TOKEN = re.compile(r"(?:^|[^0-9\-‐-―])(\d{1,3})\s*[.,):;]$")
+
+# A PRINTED option label: "A.", "B.", "C.", "D." under a multiple-choice
+# item, or the "A." - "F." of a matching type's Column B. The highest one
+# printed anywhere on the page is the highest letter any answer on that page
+# can legitimately be.
+_OPTION_LABEL = re.compile(r"^([A-F])\s*[.)]$")
+
+# An option label read below this confidence is ignored. The labels are
+# PRINTED, so a real one reads high; this only keeps handwriting out.
+MIN_OPTION_CONF = 50.0
 
 # How far a detection may sit BELOW an item number and still belong to it.
 # An encircled answer is on an option line under the question, so this is
@@ -59,15 +69,75 @@ BELOW_TOLERANCE_TEXT_HEIGHTS = 1.5
 PITCH_TOLERANCE = 0.10
 
 
-def _raw_tokens(gray) -> list[tuple[int, int, float, float, str]]:
-    """Every "<number><separator>" token on the page, as
-    (number, x_of_number, y_centre, confidence, raw token)."""
+def read_page_text(gray):
+    """One Tesseract pass over the whole page, shared by everything here.
+
+    Deliberately ONE call. The item numbers and the option labels come out of
+    the same pass, because the cost model in the thesis counts passes and a
+    second full-page read would show up in it.
+    """
     import pytesseract
     from pytesseract import Output
 
     try:
-        d = pytesseract.image_to_data(gray, config="--psm 6", output_type=Output.DICT)
+        return pytesseract.image_to_data(gray, config="--psm 6", output_type=Output.DICT)
     except Exception:
+        return None
+
+
+def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
+    """The letters this page can legitimately contain, from its PRINTED
+    option labels.
+
+    MEASURED 2026-10-24 on three scans of her sheet. Page 1 prints A-D and
+    nothing else; page 2 prints A-F because Part III's Column B runs to F.
+    Reading a page-1 blank with the wide alphabet is not merely permissive,
+    it is WORSE:
+
+        page 1, ocr_page_written_letter on the six Part I blanks
+            letters=ABCD     _ C D A C _   4 of 6, two honest blanks
+            letters=ABCDT    _ C D A C _   4 of 6
+            letters=ABCDEFT  F C F A C _   3 of 6
+
+    Item 3 is the case that settles it. Its "D" reads correctly at 0.31 when
+    the alphabet stops at D, and becomes "F" at 0.63 when F is allowed - the
+    wide alphabet does not just accept a misread the narrow one rejected, it
+    OUTRANKS a correct read. And "F" was never an option on a four-option
+    item in the first place.
+
+    "T" is always kept. Dropping it is what made every written letter come
+    back as "F", and MEASURED on page 1 it costs nothing: ABCD and ABCDT give
+    the same six readings.
+    """
+    if d is None:
+        return fallback
+    seen = set()
+    for i, raw in enumerate(d["text"]):
+        t = (raw or "").strip()
+        m = _OPTION_LABEL.match(t)
+        if not m:
+            continue
+        try:
+            conf = float(d["conf"][i])
+        except (TypeError, ValueError):
+            continue
+        if conf < MIN_OPTION_CONF:
+            continue
+        seen.add(m.group(1))
+    if not seen:
+        return fallback
+    top = max(seen)
+    alphabet = "ABCDEF"[: ord(top) - ord("A") + 1]
+    if "T" not in alphabet:
+        alphabet += "T"
+    print(f"DEBUG[item_numbers]: option labels up to {top} -> letters={alphabet}")
+    return alphabet
+
+
+def _raw_tokens(d) -> list[tuple[int, int, float, float, str]]:
+    """Every "<number><separator>" token on the page, as
+    (number, x_of_number, y_centre, confidence, raw token)."""
+    if d is None:
         return []
 
     out = []
@@ -158,9 +228,13 @@ def _fill_gaps(rows: list) -> dict[int, float]:
     return out
 
 
-def find_item_numbers(gray) -> dict[int, float]:
-    """{item_number: y} for every item number printed on the page."""
-    raw = _raw_tokens(gray)
+def find_item_numbers(d) -> dict[int, float]:
+    """{item_number: y} for every item number printed on the page.
+
+    Takes the shared `read_page_text` result, not the image, so the page is
+    read once.
+    """
+    raw = _raw_tokens(d)
     if len(raw) < 2:
         return {}
     ladder = _fill_gaps(_longest_ascending(raw))

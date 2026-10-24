@@ -49,7 +49,8 @@ from app.ml.ocr_encircled import ocr_page_encircled
 from app.ml.ocr_true_false import ocr_page_true_false
 from app.ml.ocr_written_letter import ocr_page_written_letter, DEFAULT_LETTERS
 from app.ml.ocr_identification import ocr_page_identification
-from app.ml.ocr_item_numbers import find_item_numbers, assign_to_items
+from app.ml.ocr_item_numbers import (read_page_text, find_item_numbers,
+                                     assign_to_items, page_alphabet)
 
 QUESTION_TYPES = ("encircled", "true_false", "written_letter", "identification", "mixed")
 
@@ -206,11 +207,16 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     except Exception:
         return None
 
-    ladder = find_item_numbers(gray)
+    page_text = read_page_text(gray)
+    ladder = find_item_numbers(page_text)
     if len(ladder) < 2:
         return None
 
-    alphabet = mixed_alphabet(letters)
+    # The page says which letters it can contain. A caller that states an
+    # alphabet still wins; "not stated" now means "ask the page" rather than
+    # "assume A-F".
+    alphabet = (mixed_alphabet(letters) if letters
+                else page_alphabet(page_text, fallback=MIXED_LETTERS))
     mc    = ocr_page_encircled(image_path)
     ident = ocr_page_identification(image_path, keep_blanks=False)
     wl    = ocr_page_written_letter(image_path, keep_blanks=False, letters=alphabet)
