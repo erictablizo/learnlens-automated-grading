@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, SmallInteger, String, Text, Boolean,
-    Numeric, ForeignKey, UniqueConstraint, CheckConstraint, Index, func
+    Numeric, ForeignKey, UniqueConstraint, CheckConstraint, Index, func, text
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import relationship
@@ -50,7 +50,7 @@ class PasswordReset(Base):
     user_id    = Column(Integer, ForeignKey("public.users.user_id", ondelete="CASCADE"), nullable=False)
     token      = Column(String(255), unique=True, nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    used       = Column(Boolean, default=False, nullable=False)
+    used       = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="password_resets")
@@ -66,7 +66,7 @@ class Exam(Base):
     exam_id     = Column(Integer, primary_key=True, autoincrement=True)
     created_by  = Column(Integer, ForeignKey("public.users.user_id", ondelete="CASCADE"), nullable=False)
     exam_name   = Column(String(255), nullable=False)
-    description = Column(Text, nullable=False, default="")
+    description = Column(Text, nullable=False, default="", server_default=text("''"))
     created_at  = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at  = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -157,7 +157,7 @@ class TestPaper(Base):
     exam_id      = Column(Integer, ForeignKey("public.exams.exam_id", ondelete="CASCADE"), nullable=False)
     student_name = Column(String(255), nullable=False)
     total_score  = Column(SmallInteger)
-    checked      = Column(Boolean, default=False, nullable=False)
+    checked      = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     added_at     = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at   = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
