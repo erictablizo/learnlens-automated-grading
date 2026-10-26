@@ -121,7 +121,7 @@ def _shape_tf(glyph: "np.ndarray") -> tuple[str, float]:
     return "T", 0.55
 
 
-_TF_MAP = {"T": "T", "7": "T", "+": "T", "I": "", "F": "F", "F": "F", "P": "F"}
+_TF_MAP = {"T": "T", "7": "T", "+": "T", "I": "", "F": "F", "E": "F", "P": "F"}
 
 
 def _tess_tf(glyph_white_on_black: "np.ndarray") -> tuple[str, float]:
