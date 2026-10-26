@@ -62,18 +62,21 @@ from app.ml.ocr_encircled import _cd_shape
 
 DEFAULT_LETTERS = "ABCD"
 
-# A blank whose ink is at least this many text-heights wide holds a WORD, not
-# a single letter, so it is read by the True/False word classifier instead.
+# A blank holds a WORD (TRUE / FALSE) rather than a single letter when its
+# ink is BOTH wide and made of several glyphs. Both tests are required.
 #
-# MEASURED 2026-10-26 on both page 2s of her sheet - 24 blanks, no overlap:
-#     Part III, one letter per blank     3.4x - 4.4x text_h
-#     Part V,   TRUE / FALSE written out 5.9x - 7.6x text_h
-# On those wide blanks `classify_tf` is 12 of 12 across the two pages while
-# `classify_letter` is 10 of 12: it reads the first glyph only, so a student's
-# FALSE becomes "E" or "D" whenever the alphabet contains them. Part III needs
-# E and F, so the alphabet cannot simply drop them - the width is what tells
-# the two apart, and it is a property of the handwriting, not a tuned number.
+# MEASURED 2026-10-26 on page 1 and page 2 of her sheet, 18 blanks:
+#     one letter per blank      3.4x - 4.5x text_h, 2 ink blobs
+#     TRUE / FALSE written out  5.9x - 7.2x text_h, 4 - 6 ink blobs
+#
+# REGRESSION that forced the blob test, same day: width alone was tried
+# first, and on the deployed scan of PAGE 1 the Part I blanks crossed 5.0x
+# (they are longer printed rules than Part III's) so items 1, 2 and 4 were
+# handed to the True/False classifier and came back T, F, F. Width depends on
+# how much of the printed rule lands in the crop; the number of glyphs does
+# not. One letter is 2 blobs on every blank measured, a word is at least 4.
 WORD_WIDTH_TEXT_HEIGHTS = 5.0
+WORD_MIN_GLYPH_BLOBS = 3
 
 # Characters Tesseract commonly returns for a hand-written letter, mapped back.
 # Only applied when the target letter is in the allowed alphabet, so a
@@ -175,6 +178,23 @@ def classify_letter(bin_crop: "np.ndarray", text_h: float,
     return letter, conf
 
 
+
+def _looks_like_a_word(tight: "np.ndarray", text_h: float) -> bool:
+    """Is the ink on this blank a WORD rather than a single letter?
+
+    Wide AND several glyphs. See WORD_WIDTH_TEXT_HEIGHTS for the measurements
+    and for why width on its own is not enough.
+    """
+    import cv2
+    if tight.shape[1] < WORD_WIDTH_TEXT_HEIGHTS * text_h:
+        return False
+    m = (tight > 0).astype("uint8")
+    n, _lbl, stats, _cent = cv2.connectedComponentsWithStats(m, 8)
+    floor = max(6, 0.08 * text_h * text_h)
+    blobs = sum(1 for k in range(1, n) if stats[k, cv2.CC_STAT_AREA] >= floor)
+    return blobs >= WORD_MIN_GLYPH_BLOBS
+
+
 def _blank_mode_letters(ink: "np.ndarray", text_h: float, letters: str,
                         keep_blanks: bool) -> list[DetectedAnswer]:
     """ocr_true_false._blank_mode, with the letter classifier in place of the
@@ -214,7 +234,7 @@ def _blank_mode_letters(ink: "np.ndarray", text_h: float, letters: str,
             answers.append(DetectedAnswer(y=b[1], x=b[0], letter="", confidence=0.0,
                                           size=int(text_h)))
             continue
-        if tight.shape[1] >= WORD_WIDTH_TEXT_HEIGHTS * text_h:
+        if _looks_like_a_word(tight, text_h):
             # A whole word on the blank: TRUE / FALSE. classify_tf votes on
             # the word, classify_letter would judge its first glyph alone.
             from app.ml.ocr_true_false import classify_tf
