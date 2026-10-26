@@ -233,13 +233,17 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     for n in sorted(set(ladder) | set(slots)):
         det = slots.get(n)
         if det is None:
-            if not keep_blanks:
-                # An answer key still needs the slot: dropping it is exactly
-                # the bug this function exists to remove. The item number
-                # travels with the row, so a blank costs nothing.
-                answers.append(DetectedAnswer(y=int(ladder.get(n, 0)), x=0, letter="",
-                                              confidence=0.0, size=int(text_h),
-                                              item_number=n))
+            # The slot is kept whatever `keep_blanks` says, which is the one
+            # place in this package that ignores it - CHANGED 2026-10-26, and
+            # deliberate. Everywhere else the flag decides whether a blank
+            # shifts its neighbours; here nothing can shift, because the row
+            # carries the item number PRINTED on the page. Both callers then
+            # get what they need: generate_answer_key drops blanks itself with
+            # `if a.letter`, and grade_paper matches on item_number, so an
+            # unanswered item counts as unanswered instead of vanishing.
+            answers.append(DetectedAnswer(y=int(ladder.get(n, 0)), x=0, letter="",
+                                          confidence=0.0, size=int(text_h),
+                                          item_number=n))
             continue
         det.item_number = n
         answers.append(det)

@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -82,18 +83,34 @@ def _init_tesseract() -> None:
         pass
 
 
-def _identification_items(parts_by_page: dict[int, list[ExamPagePart]]) -> set[int]:
+def _identification_items(parts_by_page: dict[int, list[ExamPagePart]],
+                          key_map: Optional[dict[int, str]] = None) -> set[int]:
     """Every question number that is a Part IV style word answer.
 
-    Only declared parts can say this. A key row on its own cannot: a one-letter
-    answer could be circled or written, and a word could only be identification
-    but by then it is too late to have read the page correctly.
+    A declared part says so outright. CHANGED 2026-10-26: when nothing is
+    declared, the KEY is read instead - an answer of more than one character
+    that is not TRUE or FALSE can only be an identification answer. The same
+    test `infer_question_type` already uses.
+
+    This matters for GRADING, not for reading. Without it a page read as
+    "mixed" has an empty identification set, so items 19-24 are compared
+    character for character: a key of "PROOFREAOING" (one letter misread)
+    marks a student who wrote PROOFREADING plainly WRONG, instead of sending
+    it to the teacher as `review`. The three-state grader exists precisely
+    because a word answer cannot be judged by equality.
     """
     out: set[int] = set()
     for parts in parts_by_page.values():
         for p in parts:
             if normalize_question_type(p.question_type) == "identification":
                 out.update(range(p.first_item, p.last_item + 1))
+    if key_map:
+        for q, ans in key_map.items():
+            if q in out:
+                continue
+            a = (ans or "").strip().upper()
+            if len(a) > 1 and a not in ("TRUE", "FALSE"):
+                out.add(q)
     return out
 
 
@@ -102,7 +119,7 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
 
     # ── Answer key, grouped by exam page number ──────────────────────────────
     rows = (await db.execute(
-        select(AnswerKey, ExamPage.page_number, ExamPage.page_id)
+        select(AnswerKey, ExamPage.page_number, ExamPage.page_id, ExamPage.question_type)
         .join(ExamPage, ExamPage.page_id == AnswerKey.page_id)
         .where(AnswerKey.exam_id == exam_id)
         .order_by(ExamPage.page_number, AnswerKey.question_number)
@@ -112,10 +129,13 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
 
     keys_by_page: dict[int, list[AnswerKey]] = defaultdict(list)
     page_id_by_no: dict[int, int] = {}
-    for ak, page_no, page_id in rows:
+    page_type_by_no: dict[int, str] = {}
+    for ak, page_no, page_id, page_qt in rows:
         keys_by_page[page_no].append(ak)
         page_id_by_no[page_no] = page_id
-    ak_by_q: dict[int, AnswerKey] = {ak.question_number: ak for ak, _, _ in rows}
+        if page_qt:
+            page_type_by_no[page_no] = page_qt
+    ak_by_q: dict[int, AnswerKey] = {ak.question_number: ak for ak, _, _, _ in rows}
     key_map: dict[int, str] = {q: (ak.correct_answer or "").upper() for q, ak in ak_by_q.items()}
 
     # A key with holes cannot grade anything, and saying so beats marking a
@@ -138,7 +158,7 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
     parts_by_page: dict[int, list[ExamPagePart]] = defaultdict(list)
     for part, page_no in part_rows:
         parts_by_page[page_no].append(part)
-    ident_items = _identification_items(parts_by_page)
+    ident_items = _identification_items(parts_by_page, key_map)
 
     # ── Paper pages ──────────────────────────────────────────────────────────
     pages: list[PaperPage] = list((await db.execute(
@@ -183,9 +203,16 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
                 if q in ak_by_q:
                     detected[q] = (letter, conf, page_no)
         else:
-            # No declared parts: infer from THIS page's keys only, not the
-            # whole exam's. See change 2 in the module docstring.
-            qt = infer_question_type([key_map[k.question_number] for k in keys])
+            # NEW 2026-10-26. Read the paper the way the KEY was read. The
+            # type is stored on the exam page when the key is generated,
+            # because infer_question_type() cannot recover it: `encircled`
+            # and `written_letter` both store a bare letter, so a "mixed"
+            # page was inferred as "encircled" and every student's Part I
+            # came back empty. Falls back to the old inference for a page
+            # whose key predates the column.
+            stored = (page_type_by_no.get(page_no) or "").strip()
+            qt = (normalize_question_type(stored) if stored
+                  else infer_question_type([key_map[k.question_number] for k in keys]))
             types_used[page_no] = qt
             result = ocr_page(pg.image_path, question_type=qt,
                               expected_items=len(keys), keep_blanks=True)
@@ -195,8 +222,23 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
             read_any = True
             if result.warning:
                 warnings.append(f"Page {page_no}: {result.warning}")
-            for ak, ans in zip(keys, result.answers):
-                detected[ak.question_number] = (ans.letter, ans.confidence, page_no)
+            # Match on the item number PRINTED on the page when the OCR
+            # read it. Zipping by position is what let one unread item shift
+            # every later item - the same fault that produced "9 answers on
+            # page 1" and then numbered page 2 from 10. The zip stays as the
+            # fallback for a page with no readable item numbers.
+            numbered = [a for a in result.answers if getattr(a, "item_number", 0) > 0]
+            if numbered and len(numbered) == len(result.answers):
+                for a in result.answers:
+                    if a.item_number in ak_by_q:
+                        detected[a.item_number] = (a.letter, a.confidence, page_no)
+                    else:
+                        warnings.append(
+                            f"Page {page_no}: item {a.item_number} is on the paper "
+                            "but not in the answer key - it was ignored.")
+            else:
+                for ak, ans in zip(keys, result.answers):
+                    detected[ak.question_number] = (ans.letter, ans.confidence, page_no)
 
     if not read_any:
         return {"success": False, "reason": " ".join(warnings) or "Could not read any uploaded page images."}

@@ -91,6 +91,16 @@ class ExamPage(Base):
     page_number = Column(SmallInteger, nullable=False)
     image_path  = Column(String(500), nullable=False)
     uploaded_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    # NEW 2026-10-26. The question type this page's ANSWER KEY was generated
+    # with. NULL means "never generated, or generated before this column
+    # existed", and the old inference is used then.
+    #
+    # This exists because infer_question_type() cannot recover it. `encircled`
+    # and `written_letter` both store a bare letter, so a page whose key was
+    # built as "mixed" was re-read as "encircled" when checking a paper, and
+    # Part I came back empty for every student. A page declared with parts
+    # does not need it: exam_page_parts already says what each range is.
+    question_type = Column(String(32), nullable=True)
 
     exam        = relationship("Exam", back_populates="pages")
     answer_keys = relationship("AnswerKey", back_populates="page", cascade="all, delete")

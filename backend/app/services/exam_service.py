@@ -444,6 +444,10 @@ async def generate_answer_key_parts(
             correct_answer=ans,              # NOT truncated - see the module docstring
             ocr_confidence=conf,
         ))
+    # The declared ranges now describe this page, so a single page-wide type
+    # left over from an earlier generate would be a lie. exam_page_parts is
+    # what Checking Paper reads for a declared page.
+    page.question_type = None
     await db.commit()
     # Deliberately NO renumber_answer_keys(): the declared numbers are the
     # teacher's, and renumbering would move her answers to other questions.
@@ -574,6 +578,14 @@ async def generate_answer_key(
             ))
         await db.commit()
         await renumber_answer_keys(db, exam_id)
+
+    # NEW 2026-10-26. Remember how this page was read, so Checking Paper reads
+    # the student's copy the same way. infer_question_type() cannot work it out
+    # from the key: `encircled` and `written_letter` both store a bare letter,
+    # so a "mixed" page was re-read as "encircled" and Part I scored zero for
+    # every student.
+    page.question_type = question_type
+    await db.commit()
 
     reset = await reset_exam_paper_scores(db, exam_id)
 
