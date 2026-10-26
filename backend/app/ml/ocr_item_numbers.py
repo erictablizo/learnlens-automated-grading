@@ -313,13 +313,22 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
 
     for group in groups:
         for det in sorted(group, key=lambda a: (a.y, a.x)):
+            # The NEAREST anchor above is the only candidate. Testing the
+            # reach inside this loop was wrong - FIXED 2026-10-26 after it
+            # cost two items on a real paper. When the nearest anchor failed
+            # the test the scan carried on to earlier ones, and `reach` is
+            # infinite between consecutive numbers, so the detection fell
+            # back one item FURTHER away instead of being left alone:
+            # COMMUNICATION, rejected by item 18, took item 17.
             owner = None
             for n, y in items:
                 if y <= det.y + tol:
-                    if det.y - y <= reach.get(n, float("inf")) + tol:
-                        owner = n
+                    owner = n
                 else:
                     break
+            if owner is not None and \
+                    det.y - ladder[owner] > reach.get(owner, float("inf")) + tol:
+                owner = None          # would cross a missing number
             if owner is None or owner in slots:
                 orphans.append(det)
                 continue
