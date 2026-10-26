@@ -320,9 +320,19 @@ def _read_word(band: "np.ndarray", text_h: float) -> tuple[str, float]:
     img = cv2.copyMakeBorder(img, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=255)
 
     white = "ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+    # CHANGED 2026-10-26. `tessedit_char_whitelist` switches OFF Tesseract 5's
+    # dictionary, so a word one letter from a real one stays broken: the key's
+    # THESIS STATEMENT came back "THHESISSTATEMENT". Two unrestricted passes
+    # are added to the ensemble so the language model gets a vote. MEASURED on
+    # her page 2: THHESISSTATEMENT -> THESIS STATEMENT, nothing else changed.
+    #
+    # The cost is punctuation ("_ COMMUNICATION ."). `normalize_answer` strips
+    # it for grading, but the key is DISPLAYED raw, so the edges are trimmed
+    # below - the teacher should not see an answer key full of stray dots.
+    configs = [f"--psm {psm} -c tessedit_char_whitelist={white}" for psm in (7, 6, 8)]
+    configs += [f"--psm {psm}" for psm in (7, 6)]
     best, best_conf = "", -1.0
-    for psm in (7, 6, 8):
-        cfg = f"--psm {psm} -c tessedit_char_whitelist={white}"
+    for cfg in configs:
         try:
             d = pytesseract.image_to_data(img, config=cfg, output_type=Output.DICT)
         except Exception:
@@ -350,6 +360,7 @@ def _read_word(band: "np.ndarray", text_h: float) -> tuple[str, float]:
             if (conf > best_conf) or (abs(conf - best_conf) < 1e-9
                                       and len(normalize_answer(text)) > len(normalize_answer(best))):
                 best, best_conf = text, conf
+    best = re.sub(r"^[^A-Z0-9]+|[^A-Z0-9]+$", "", best.upper()).strip()
     return best[:MAX_ANSWER_LEN], round(max(best_conf, 0.0), 2)
 
 

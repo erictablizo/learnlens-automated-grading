@@ -62,6 +62,19 @@ from app.ml.ocr_encircled import _cd_shape
 
 DEFAULT_LETTERS = "ABCD"
 
+# A blank whose ink is at least this many text-heights wide holds a WORD, not
+# a single letter, so it is read by the True/False word classifier instead.
+#
+# MEASURED 2026-10-26 on both page 2s of her sheet - 24 blanks, no overlap:
+#     Part III, one letter per blank     3.4x - 4.4x text_h
+#     Part V,   TRUE / FALSE written out 5.9x - 7.6x text_h
+# On those wide blanks `classify_tf` is 12 of 12 across the two pages while
+# `classify_letter` is 10 of 12: it reads the first glyph only, so a student's
+# FALSE becomes "E" or "D" whenever the alphabet contains them. Part III needs
+# E and F, so the alphabet cannot simply drop them - the width is what tells
+# the two apart, and it is a property of the handwriting, not a tuned number.
+WORD_WIDTH_TEXT_HEIGHTS = 5.0
+
 # Characters Tesseract commonly returns for a hand-written letter, mapped back.
 # Only applied when the target letter is in the allowed alphabet, so a
 # matching-type sheet that stops at D never gains an E or F by accident.
@@ -201,7 +214,15 @@ def _blank_mode_letters(ink: "np.ndarray", text_h: float, letters: str,
             answers.append(DetectedAnswer(y=b[1], x=b[0], letter="", confidence=0.0,
                                           size=int(text_h)))
             continue
-        letter, conf = classify_letter(tight, text_h, letters)
+        if tight.shape[1] >= WORD_WIDTH_TEXT_HEIGHTS * text_h:
+            # A whole word on the blank: TRUE / FALSE. classify_tf votes on
+            # the word, classify_letter would judge its first glyph alone.
+            from app.ml.ocr_true_false import classify_tf
+            letter, conf, _mode = classify_tf(tight, text_h)
+            if not letter:
+                letter, conf = classify_letter(tight, text_h, letters)
+        else:
+            letter, conf = classify_letter(tight, text_h, letters)
         answers.append(DetectedAnswer(y=b[1], x=b[0], letter=letter, confidence=conf,
                                       size=int(text_h)))
     if not keep_blanks:
