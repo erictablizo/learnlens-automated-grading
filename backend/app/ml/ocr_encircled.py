@@ -497,9 +497,8 @@ def ocr_page_encircled(image_path: str, expected_items: Optional[int] = None) ->
             # The printed labels around the circle are far more legible than the
             # letter inside it, so they decide whenever the block can be proved.
             from_page, why = label_for_circle(labels, cx, cy, r, pitch, circles)
+            print(f"DEBUG[encircled]: ({cx},{cy}) r={r} crop={letter or '-'}@{conf:.2f} labels={from_page or '-'} ({why})")
             if from_page:
-                if from_page != letter:
-                    print(f"DEBUG[encircled]: ({cx},{cy}) r={r} crop={letter or '-'}@{conf:.2f} labels={from_page or '-'} ({why})")
                 letter, conf = from_page, max(conf, 0.85)
             if letter:
                 raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf, size=2 * r))
