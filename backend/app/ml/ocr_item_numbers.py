@@ -287,6 +287,27 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
 
     items = sorted(ladder.items(), key=lambda kv: kv[1])
     tol = BELOW_TOLERANCE_TEXT_HEIGHTS * text_h
+
+    # How far below its own anchor a detection may still be claimed by it.
+    #
+    # CHANGED 2026-10-26, second fault found on the same paper. A detection
+    # took "the last anchor at or above it" with no upper bound, so when an
+    # item number was missing from the ladder the detection BELONGING to that
+    # item reached back and took the previous one. MEASURED on Ben's page 2,
+    # whose ladder is [... 17, 18, 20 ...] with 19 absent: the word
+    # COMMUNICATION (item 19) claimed item 18, item 18's own "F" then found
+    # 18 occupied and fell through to the counting rule, which put it in 19.
+    # Both answers were real, both ended up one slot out.
+    #
+    # Between CONSECUTIVE numbers nothing can be hiding, so the reach stays
+    # unbounded - an encircled answer sits well below its question. Across a
+    # gap that skips numbers the reach is one implied item pitch, so a
+    # detection cannot cross a number that is missing. It is left unclaimed
+    # and the counting rule below places it.
+    reach: dict[int, float] = {}
+    for (n, y), (n2, y2) in zip(items, items[1:]):
+        reach[n] = (y2 - y) / (n2 - n) if n2 - n > 1 else float("inf")
+
     slots: dict[int, DetectedAnswer] = {}
     orphans: list[DetectedAnswer] = []
 
@@ -295,7 +316,8 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
             owner = None
             for n, y in items:
                 if y <= det.y + tol:
-                    owner = n
+                    if det.y - y <= reach.get(n, float("inf")) + tol:
+                        owner = n
                 else:
                     break
             if owner is None or owner in slots:
