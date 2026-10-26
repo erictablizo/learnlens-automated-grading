@@ -469,6 +469,44 @@ def label_for_circle(labels: list[Label], cx: int, cy: int, r: int,
     return _LETTERS[k], f"option block {n_rows}x{n_cols}"
 
 
+def _slot_by_pitch(labels: list[Label], cx: int, cy: int, r: int,
+                   pitch: float) -> tuple[str, str]:
+    """LAST RESORT: count whole option pitches down from the labels that WERE
+    read, in the circle's own column.
+
+    NEW 2026-10-26, for a circle whose option block cannot be rebuilt because
+    too few of its labels were legible. MEASURED on the student's page 2,
+    item 12: Tesseract returned "A." and "B." but no token at all where "C."
+    is printed (a pen stroke crosses it) and none for "D." (it is inside the
+    ring). `label_for_circle` therefore stopped at "no printed label nearby",
+    the letter inside the ring was unreadable too, and the item was lost.
+
+    Reached ONLY after every branch above has returned "", so no circle that
+    the block logic already explains can be changed by this.
+
+    Two labels of the same question are needed, in the circle's column, one
+    option pitch apart and in alphabetical order - that is what proves the
+    pitch belongs to THIS question rather than to a neighbouring one.
+    """
+    near = sorted((l for l in labels if abs(l[1] - cx) <= max(2.0 * r, 1.5 * pitch)
+                   and l[2] < cy), key=lambda l: l[2])
+    if len(near) < 2:
+        return "", "no labels in this column"
+    a, b = near[-2], near[-1]
+    step = b[2] - a[2]
+    if not (0.75 * pitch <= step <= 1.25 * pitch):
+        return "", "labels not one pitch apart"
+    if _LETTERS.find(b[0]) - _LETTERS.find(a[0]) != 1:
+        return "", "labels not consecutive"
+    k = _LETTERS.find(b[0]) + int(round((cy - b[2]) / step))
+    if not 0 <= k <= 3:
+        return "", "outside block"
+    # The circle must land ON a row, not between two.
+    if abs((cy - b[2]) / step - round((cy - b[2]) / step)) > 0.35:
+        return "", "between rows"
+    return _LETTERS[k], f"pitch from {a[0]}/{b[0]}"
+
+
 # ---------------------------------------------------------------------------
 # Page pipeline
 # ---------------------------------------------------------------------------
@@ -497,6 +535,8 @@ def ocr_page_encircled(image_path: str, expected_items: Optional[int] = None) ->
             # The printed labels around the circle are far more legible than the
             # letter inside it, so they decide whenever the block can be proved.
             from_page, why = label_for_circle(labels, cx, cy, r, pitch, circles)
+            if not from_page:
+                from_page, why = _slot_by_pitch(labels, cx, cy, r, pitch)
             print(f"DEBUG[encircled]: ({cx},{cy}) r={r} crop={letter or '-'}@{conf:.2f} labels={from_page or '-'} ({why})")
             if from_page:
                 letter, conf = from_page, max(conf, 0.85)
