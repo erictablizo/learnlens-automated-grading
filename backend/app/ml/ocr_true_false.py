@@ -286,6 +286,11 @@ def _crop_above_blank(ink: "np.ndarray", b: Box, text_h: float,
     return _lowest_text_row(crop, text_h)
 
 
+# A text row narrower than this cannot be a handwritten answer - it is a
+# fragment of the printed item number touching the blank. See _lowest_text_row.
+MIN_ANSWER_ROW_TEXT_HEIGHTS = 1.0
+
+
 def _lowest_text_row(crop: "np.ndarray", text_h: float) -> "np.ndarray":
     """FIX 2026-09-26: keep only the ink on the line directly above the blank.
 
@@ -303,7 +308,28 @@ def _lowest_text_row(crop: "np.ndarray", text_h: float) -> "np.ndarray":
         return crop
     rows = group_rows(comps, key_y=lambda i: stats[i, cv2.CC_STAT_TOP] + stats[i, cv2.CC_STAT_HEIGHT] / 2.0,
                       tol=0.9 * text_h)
+
+    # FIX 2026-10-26. The bottom row is not always the answer. A sliver of the
+    # PRINTED item number touches the blank on some scans and forms a row of
+    # its own, so the handwriting a few pixels higher was discarded and the
+    # item read blank. MEASURED on page 1 of both the key and the paper:
+    #
+    #     sliver rows   0.2x - 0.7x text_h wide     (4px, 11px)
+    #     answer rows   1.5x - 4.5x text_h wide
+    #
+    # So the lowest row WIDE ENOUGH to be handwriting is taken instead. The
+    # original purpose is untouched: a wrapped printed line above the answer
+    # is wide, so it still loses to the answer row below it.
+    def _row_width(row):
+        lo = min(stats[i, cv2.CC_STAT_LEFT] for i in row)
+        hi = max(stats[i, cv2.CC_STAT_LEFT] + stats[i, cv2.CC_STAT_WIDTH] for i in row)
+        return hi - lo
+
     keep = rows[-1]
+    for row in reversed(rows):
+        if _row_width(row) >= MIN_ANSWER_ROW_TEXT_HEIGHTS * text_h:
+            keep = row
+            break
     out = np.isin(lbl, keep).astype(np.uint8) * 255
     return out if cv2.countNonZero(out) else crop
 
