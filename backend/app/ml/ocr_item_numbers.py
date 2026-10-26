@@ -242,37 +242,66 @@ def find_item_numbers(d) -> dict[int, float]:
     return ladder
 
 
-def assign_to_items(ladder: dict[int, float], detections: list[DetectedAnswer],
-                    text_h: float) -> tuple[dict[int, DetectedAnswer], list[DetectedAnswer]]:
+def assign_to_items(ladder: dict[int, float], groups, text_h: float
+                    ) -> tuple[dict[int, DetectedAnswer], list[DetectedAnswer]]:
     """Put each detection in the slot of the item number it sits under.
 
-    Returns ({item_number: DetectedAnswer}, detections that belong to no item).
+    `groups` is a list of detection LISTS in PRIORITY order, most specific
+    detector first; a plain flat list is still accepted and treated as one
+    group. Returns ({item_number: DetectedAnswer}, detections with no item).
 
     A detection ABOVE the first item number belongs to no item and is dropped.
     MEASURED on page 1, that silently removes all three of the header's
     phantoms - the circle the encircled detector finds in "ANSWER KEY" at
     0.96 confidence, and the two answer lines the identification detector
     finds in the Name/Date rules - without a single rule written about them.
+
+    CHANGED 2026-10-26 - priority, after a real paper lost a correct answer.
+    Two detections can land on the same item, and the merged list used to be
+    sorted by position alone, so which one won was arbitrary. MEASURED on
+    Ben Alcantara's page 2:
+
+        CIRCLES  ('A', y=1135, conf 0.40)   ('D', y=1277, conf 0.32)
+        WORDS    VERB y=1152                THESISSTATEMENT y=1287
+
+    The circle detector fits circles to the round letters of the handwriting
+    in Part IV, and the phantom "A" took item 21 from "VERB". The genuine
+    circle at item 12 was not found at all on that copy.
+
+    So the ranking is by how much STRUCTURE a detector needs before it will
+    fire, which is a property of the detectors, not a tuned number:
+
+      identification  a printed rule 8+ text-heights long and 15:1 thin,
+                      in a column of its own
+      encircled       a Hough circle, which can fit any round handwriting
+      written_letter  a short blank, the weakest shape of the three
+
+    A phantom circle can still take an item nothing else claims. It cannot
+    take one from a word.
     """
     if not ladder:
-        return {}, list(detections)
+        flat = [d for g in groups for d in g] if groups and isinstance(groups[0], list) else list(groups)
+        return {}, flat
+    if not (groups and isinstance(groups[0], list)):
+        groups = [list(groups)]
 
     items = sorted(ladder.items(), key=lambda kv: kv[1])
     tol = BELOW_TOLERANCE_TEXT_HEIGHTS * text_h
     slots: dict[int, DetectedAnswer] = {}
     orphans: list[DetectedAnswer] = []
 
-    for det in sorted(detections, key=lambda a: (a.y, a.x)):
-        owner = None
-        for n, y in items:
-            if y <= det.y + tol:
-                owner = n
-            else:
-                break
-        if owner is None or owner in slots:
-            orphans.append(det)
-            continue
-        slots[owner] = det
+    for group in groups:
+        for det in sorted(group, key=lambda a: (a.y, a.x)):
+            owner = None
+            for n, y in items:
+                if y <= det.y + tol:
+                    owner = n
+                else:
+                    break
+            if owner is None or owner in slots:
+                orphans.append(det)
+                continue
+            slots[owner] = det
 
     # An item number the OCR could not read leaves a hole between two anchors.
     # If the hole is m items wide and exactly m unclaimed detections fall

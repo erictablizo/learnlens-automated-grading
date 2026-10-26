@@ -221,9 +221,13 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     ident = ocr_page_identification(image_path, keep_blanks=False)
     wl    = ocr_page_written_letter(image_path, keep_blanks=False, letters=alphabet)
 
-    dets = [a for a in list(mc.answers) + list(ident.answers) + list(wl.answers)
-            if a.letter]
-    slots, orphans = assign_to_items(ladder, dets, text_h)
+    # Priority order, most specific detector first - see assign_to_items.
+    # A word on a printed answer line beats a circle fitted to round
+    # handwriting, which beats a letter on a short blank.
+    groups = [[a for a in ident.answers if a.letter],
+              [a for a in mc.answers    if a.letter],
+              [a for a in wl.answers    if a.letter]]
+    slots, orphans = assign_to_items(ladder, groups, text_h)
 
     # The counting rule in assign_to_items recovers items whose printed
     # number was never read as a token ("D14.", "FALSE26."), so the slots can
