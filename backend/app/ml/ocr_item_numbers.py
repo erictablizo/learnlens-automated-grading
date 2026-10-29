@@ -68,6 +68,11 @@ BELOW_TOLERANCE_TEXT_HEIGHTS = 1.5
 # 18 where nothing is written.
 PITCH_TOLERANCE = 0.10
 
+# How far below the last item number read on a page its own answer may sit,
+# in ladder pitches. A wrapped question pushes its options down; 2.16 is the
+# largest measured. See the end-of-ladder rescue in assign_to_items.
+END_TAIL_PITCHES = 2.5
+
 
 def read_page_text(gray):
     """One Tesseract pass over the whole page, shared by everything here.
@@ -83,6 +88,31 @@ def read_page_text(gray):
         return pytesseract.image_to_data(gray, config="--psm 6", output_type=Output.DICT)
     except Exception:
         return None
+
+
+def option_labels(d) -> set:
+    """Every option label ("A.", "B.", ...) PRINTED on the page.
+
+    Split out of page_alphabet 2026-10-28 so the same one pass can also answer
+    "does this page offer options at all", which is what decides whether a
+    circle detection means anything. See ocr_page_numbered.
+    """
+    out: set = set()
+    if d is None:
+        return out
+    for i, raw in enumerate(d["text"]):
+        t = (raw or "").strip()
+        m = _OPTION_LABEL.match(t)
+        if not m:
+            continue
+        try:
+            conf = float(d["conf"][i])
+        except (TypeError, ValueError):
+            continue
+        if conf < MIN_OPTION_CONF:
+            continue
+        out.add(m.group(1))
+    return out
 
 
 def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
@@ -109,21 +139,7 @@ def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
     back as "F", and MEASURED on page 1 it costs nothing: ABCD and ABCDT give
     the same six readings.
     """
-    if d is None:
-        return fallback
-    seen = set()
-    for i, raw in enumerate(d["text"]):
-        t = (raw or "").strip()
-        m = _OPTION_LABEL.match(t)
-        if not m:
-            continue
-        try:
-            conf = float(d["conf"][i])
-        except (TypeError, ValueError):
-            continue
-        if conf < MIN_OPTION_CONF:
-            continue
-        seen.add(m.group(1))
+    seen = option_labels(d)
     if not seen:
         return fallback
     top = max(seen)
@@ -160,8 +176,46 @@ def _raw_tokens(d) -> list[tuple[int, int, float, float, str]]:
         tail = t[m.start(1):]
         x_num = d["left"][i] + int(d["width"][i] * (1.0 - len(tail) / len(t)))
         y_mid = d["top"][i] + d["height"][i] / 2.0
-        out.append((int(m.group(1)), x_num, y_mid, conf / 100.0, t))
-    return sorted(out, key=lambda r: (r[2], r[1]))
+        out.append((int(m.group(1)), x_num, y_mid, conf / 100.0, t,
+                    d["left"][i], d["height"][i]))
+
+    # A number inside the question's own TEXT matches this pattern just as
+    # well as an item number does, and on one row it can outnumber the real
+    # one three to one.
+    #
+    # MEASURED 2026-10-28 on a 12-item multiple-choice answer key. Item 4 is
+    # "If a triangle has sides 3, 4, and 5, it is:" - which yields "3," "4,"
+    # and "5," at x = 386, 409 and 477, on the same row as item 4's own "4."
+    # at x = 147. The false "3," sits at y=494, six pixels above item 4's
+    # number and 78 below the real "3." at y=416, and the ascending-run rule
+    # cannot choose between two ladders of equal length. It took the false
+    # one, so item 3's circled C at y=439 had no anchor above it, was
+    # discarded as an orphan, and the item vanished from the key - which is
+    # how it was reported. The date's "12," and item 1's "+ 1," are the same
+    # thing, and were already harmless only by luck of where they sit.
+    #
+    # The rule is therefore NOT "an item number starts its line".
+    #
+    # REJECTED 2026-10-28, measured: that stricter rule, in both forms - the
+    # leftmost word of its Tesseract line, and the leftmost word of its
+    # geometric row. Both delete her English 101 items 1 to 6, because on her
+    # sheet the answer blank is printed to the LEFT of the item number, and
+    # both keep the stray "8." that is really an option label "B.". It cost
+    # her page 1 six of its eleven items and cost the True/False key its item
+    # 1 - MEASURED, 11 items -> 5, and 116/120 -> 115/120.
+    #
+    # What holds instead: of two item-number-shaped tokens on the SAME ROW,
+    # only the leftmost can be the item number. That cannot remove a real
+    # item number unless two items share a row, which a numbered single
+    # column cannot do, and it needs no threshold beyond "same row".
+    kept = []
+    for a in out:
+        if any(b is not a and b[5] < a[5]
+               and abs(b[2] - a[2]) <= 0.6 * max(a[6], b[6])
+               for b in out):
+            continue                      # an item number is already to its left
+        kept.append(a[:5])
+    return sorted(kept, key=lambda r: (r[2], r[1]))
 
 
 def _longest_ascending(rows: list) -> list:
@@ -354,5 +408,66 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
             slots[n] = det
             orphans.remove(det)
         print(f"DEBUG[item_numbers]: recovered {missing} by counting")
+
+    # The counting rule above pairs each anchor with the NEXT one, so it can
+    # only ever see a hole BETWEEN two numbers it read. An item whose number
+    # is the first or the last one on the page has no such pair, and its
+    # detection is simply dropped - the item does not even appear as an empty
+    # slot, because ocr_page_numbered walks `set(ladder) | set(slots)`.
+    #
+    # REPORTED 2026-10-29 on a 30-item multiple-choice exam across three
+    # pages: the key ran 1-9, then 11-19, then 20-29. Item 10 is the first on
+    # page 2 and item 30 the last on page 3 - precisely the two positions this
+    # blind spot covers, and the only two items lost.
+    #
+    # The ladder's own pitch says where the missing number would have been.
+    # One item is recovered at each end, and only when EXACTLY ONE unclaimed
+    # detection lies in that item's band, so a page with several strays is
+    # left alone rather than guessed at.
+    #
+    # The bands are not symmetric, and the measurement is why. Above the first
+    # anchor the window is one pitch: a detection sits BELOW its own number,
+    # so item n0-1's answer lies between where its number would be and n0's.
+    # Below the last anchor the window runs from one pitch to 2.5, because the
+    # last question's text can wrap and push its options further down - on the
+    # World Literature sheet item 10's circle sits 2.16 pitches below item 9.
+    #
+    # MEASURED 2026-10-29 over thirteen real scans, deleting the first and
+    # then the last anchor of each (26 trials):
+    #
+    #     recovered in the right slot        24
+    #     left empty, as today               2
+    #     FILLED WITH THE WRONG ANSWER       0
+    #     intact ladders changed at all      0
+    #
+    # The two it leaves alone are her English 101 page 2 and its paper, where
+    # the first anchor is a header artifact and the real gap is five pitches
+    # wide. Leaving those empty is the behaviour we already have.
+    #
+    # The "intact ladders changed: 0" row is the one that matters most: this
+    # cannot invent an item on a page that has no hole, because a slot is only
+    # filled when its number is absent from the ladder entirely.
+    if len(items) >= 2 and orphans:
+        (n0, y0), (n1, y1) = items[0], items[1]
+        (nP, yP), (nL, yL) = items[-2], items[-1]
+        p0 = (y1 - y0) / float(n1 - n0) if n1 > n0 else 0.0
+        pL = (yL - yP) / float(nL - nP) if nL > nP else 0.0
+
+        if p0 > 0 and n0 > 1 and (n0 - 1) not in slots:
+            band = [o for o in orphans if y0 - p0 < o.y < y0]
+            if len(band) == 1:
+                slots[n0 - 1] = band[0]
+                orphans.remove(band[0])
+                print(f"DEBUG[item_numbers]: recovered item {n0 - 1} above the "
+                      f"first number read on this page")
+
+        if pL > 0 and (nL + 1) not in slots:
+            band = [o for o in orphans
+                    if yL + pL < o.y < yL + END_TAIL_PITCHES * pL]
+            if len(band) == 1:
+                slots[nL + 1] = band[0]
+                orphans.remove(band[0])
+                print(f"DEBUG[item_numbers]: recovered item {nL + 1} below the "
+                      f"last number read on this page")
 
     return slots, orphans

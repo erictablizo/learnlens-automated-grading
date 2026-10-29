@@ -78,6 +78,29 @@ DEFAULT_LETTERS = "ABCD"
 WORD_WIDTH_TEXT_HEIGHTS = 5.0
 WORD_MIN_GLYPH_BLOBS = 3
 
+# A blank can hold a word WITHOUT passing the geometric test above, because
+# both of its measurements scale with how large the student writes.
+#
+# MEASURED 2026-10-28 on a 60-item purely True/False sheet (6 scans, 88
+# blanks): every TRUE/FALSE written on it is 3.6x - 5.4x text_h and 2 - 5
+# blobs, so 83 of the 88 fail WORD_WIDTH_TEXT_HEIGHTS and were read as single
+# letters out of "ABCDEFT". That read is right only by luck - TRUE and FALSE
+# begin with the two letters that alphabet already holds - and it still cost
+# 7 items on the answer key and 4 on the paper.
+#
+# The instrument that does separate them is what Tesseract SPELLS, because one
+# hand-written letter cannot come back as three letters of text:
+#
+#   60-item True/False sheet, 88 blanks   3 - 5 alpha chars ("TUE", "FASE",
+#                                         "TRVUE", "PAUSE", "FALSE")
+#   her written-letter parts, 24 blanks   0 - 3 ("C", "A 4", "DS;", "FOY")
+#
+# "FOY" is the one letter-blank that reaches three characters, so length alone
+# is not enough either: it sits 4 edits from FALSE, where the True/False
+# sheet's worst read is 3 ("FAY", "PAE"). Both tests are therefore required.
+TF_WORD_MIN_ALPHA = 3
+TF_WORD_MAX_EDITS = 3
+
 # Characters Tesseract commonly returns for a hand-written letter, mapped back.
 # Only applied when the target letter is in the allowed alphabet, so a
 # matching-type sheet that stops at D never gains an E or F by accident.
@@ -195,6 +218,37 @@ def _looks_like_a_word(tight: "np.ndarray", text_h: float) -> bool:
     return blobs >= WORD_MIN_GLYPH_BLOBS
 
 
+def _edits(a: str, b: str) -> int:
+    """Levenshtein distance between two short strings."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _spells_true_false(raw: str) -> bool:
+    """Did Tesseract read this blank as the WORD "TRUE" or "FALSE"?
+
+    `raw` is the third value classify_tf returns - the word text it read off
+    the crop, before any T/F decision. See TF_WORD_MIN_ALPHA for why the
+    length and the distance are both needed.
+
+    REJECTED 2026-10-28, measured: letting the SPELLING choose between TRUE
+    and FALSE instead of classify_tf's pixel vote. It was written to rescue
+    item 46 of the paper's page 3, where the student's TRUE reads "ACLE" and
+    the vote answers F at 0.72 - but "ACLE" is 3 edits from TRUE and 3 from
+    FALSE, so the spelling cannot choose either. Over the other 87 blanks the
+    two never disagreed. A rule that changes nothing is not worth its lines.
+    """
+    alpha = "".join(ch for ch in (raw or "").upper() if ch.isalpha())
+    if len(alpha) < TF_WORD_MIN_ALPHA:
+        return False
+    return min(_edits(alpha, "TRUE"), _edits(alpha, "FALSE")) <= TF_WORD_MAX_EDITS
+
+
 def _blank_mode_letters(ink: "np.ndarray", text_h: float, letters: str,
                         keep_blanks: bool) -> list[DetectedAnswer]:
     """ocr_true_false._blank_mode, with the letter classifier in place of the
@@ -234,11 +288,15 @@ def _blank_mode_letters(ink: "np.ndarray", text_h: float, letters: str,
             answers.append(DetectedAnswer(y=b[1], x=b[0], letter="", confidence=0.0,
                                           size=int(text_h)))
             continue
-        if _looks_like_a_word(tight, text_h):
+        # classify_tf runs on EVERY blank now, for its word text. One extra
+        # Tesseract pass per blank buys the spelling test below, which is the
+        # only thing that finds a word written small.
+        from app.ml.ocr_true_false import classify_tf
+        tf_letter, tf_conf, tf_raw = classify_tf(tight, text_h)
+        if _looks_like_a_word(tight, text_h) or _spells_true_false(tf_raw):
             # A whole word on the blank: TRUE / FALSE. classify_tf votes on
             # the word, classify_letter would judge its first glyph alone.
-            from app.ml.ocr_true_false import classify_tf
-            letter, conf, _mode = classify_tf(tight, text_h)
+            letter, conf = tf_letter, tf_conf
             if not letter:
                 letter, conf = classify_letter(tight, text_h, letters)
         else:

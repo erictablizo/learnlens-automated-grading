@@ -50,7 +50,8 @@ from app.ml.ocr_true_false import ocr_page_true_false
 from app.ml.ocr_written_letter import ocr_page_written_letter, DEFAULT_LETTERS
 from app.ml.ocr_identification import ocr_page_identification
 from app.ml.ocr_item_numbers import (read_page_text, find_item_numbers,
-                                     assign_to_items, page_alphabet)
+                                     assign_to_items, page_alphabet,
+                                     option_labels)
 
 QUESTION_TYPES = ("encircled", "true_false", "written_letter", "identification", "mixed")
 
@@ -58,6 +59,10 @@ QUESTION_TYPES = ("encircled", "true_false", "written_letter", "identification",
 # on the page is read with ONE alphabet: A-F covers a matching-type key, T
 # covers TRUE, F covers both FALSE and the letter F. See ocr_page_mixed.
 MIXED_LETTERS = "ABCDEFT"
+
+# What a blank can hold on a page that prints no option labels. See
+# ocr_page_numbered for the four misreads that forced this.
+NO_OPTION_LETTERS = "TF"
 
 # Fewer answer lines than this is not treated as an identification part in
 # "mixed" - a two-rule "Name: ____ Date: ____" header is the same shape.
@@ -215,8 +220,23 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     # The page says which letters it can contain. A caller that states an
     # alphabet still wins; "not stated" now means "ask the page" rather than
     # "assume A-F".
-    alphabet = (mixed_alphabet(letters) if letters
-                else page_alphabet(page_text, fallback=MIXED_LETTERS))
+    #
+    # A page that prints NO option labels offers no lettered choices at all,
+    # so the only thing a blank on it can hold is a word - and on a sheet
+    # read by this package that word is TRUE or FALSE. Handing such a page the
+    # wide "ABCDEFT" is what lets a cramped TRUE come back as "C" and a FALSE
+    # as "A". REPORTED 2026-10-28 on a 60-item True/False sheet: key item 41
+    # read C, key item 55 read A, paper item 1 read A, and paper item 49 read
+    # as nothing at all, because no letter in the wide alphabet matched. None
+    # of those four letters was ever an available answer on that page.
+    labels = option_labels(page_text)
+    if letters:
+        alphabet = mixed_alphabet(letters)
+    elif labels:
+        alphabet = page_alphabet(page_text, fallback=MIXED_LETTERS)
+    else:
+        alphabet = NO_OPTION_LETTERS
+        print(f"DEBUG[numbered]: page prints no option labels -> letters={alphabet}")
     mc    = ocr_page_encircled(image_path)
     ident = ocr_page_identification(image_path, keep_blanks=False)
     wl    = ocr_page_written_letter(image_path, keep_blanks=False, letters=alphabet)
@@ -224,9 +244,25 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     # Priority order, most specific detector first - see assign_to_items.
     # A word on a printed answer line beats a circle fitted to round
     # handwriting, which beats a letter on a short blank.
-    groups = [[a for a in ident.answers if a.letter],
-              [a for a in mc.answers    if a.letter],
-              [a for a in wl.answers    if a.letter]]
+    #
+    # ...unless the page prints no option labels at all. Nothing can be
+    # encircled on a page that offers no options, so every circle found there
+    # is a round piece of handwriting and must not outrank the handwriting
+    # itself. MEASURED 2026-10-28 on page 3 of a purely True/False answer key:
+    # the squeezed "FALSE" on item 54 produces one circle, read "A" at 0.35,
+    # which beat the written-letter detector's "F" at 0.99 and put a wrong
+    # answer into the KEY, where it would then mark every student's correct
+    # FALSE wrong. Demoted rather than discarded, so a sheet whose printed
+    # labels are simply read too faintly still gets its circles - they just
+    # have to wait for a blank nobody wrote on.
+    labelled = bool(labels)
+    circles  = [a for a in mc.answers if a.letter]
+    written  = [a for a in wl.answers if a.letter]
+    if not labelled and circles:
+        print(f"DEBUG[numbered]: no option labels printed - {len(circles)} "
+              f"circle(s) demoted below the written-letter detector")
+    groups = [[a for a in ident.answers if a.letter]]
+    groups += [circles, written] if labelled else [written, circles]
     slots, orphans = assign_to_items(ladder, groups, text_h)
 
     # The counting rule in assign_to_items recovers items whose printed
