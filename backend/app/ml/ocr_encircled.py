@@ -154,7 +154,11 @@ def _ring_score(ink: "np.ndarray", cx: int, cy: int, r: int, text_h: float) -> t
             inner.append(ink[y, x] > 0)
     inner_fill = float(np.mean(inner)) if inner else 1.0
     if inner_fill > 0.45:
-        return 0.0, r
+        # Hand back the REFINED radius, not the candidate's guess. A ring
+        # whose radius was over-estimated samples its own stroke here and
+        # reads as solid; the caller re-scores at the refined radius and the
+        # real ring is recovered. See apply_2026-10-30_radius_refine.py.
+        return 0.0, int(np.nanmedian(h))
     return float(coverage * smooth), int(np.nanmedian(h))
 
 
@@ -162,6 +166,15 @@ def _validate(ink, cands, text_h) -> list[tuple[Circle, float]]:
     out = []
     for (cx, cy, r), _ in cands:
         s, rr = _ring_score(ink, cx, cy, r, text_h)
+        if s < 0.90 and rr != r:
+            # The candidate radius is an ESTIMATE - minEnclosingCircle plus a
+            # dilation offset - and _ring_score has just measured where the
+            # ring actually is. Judge it there, once. MEASURED 2026-10-30:
+            # this is the whole of item 30 on exam 6's key page 3, which
+            # scores 0.706 at the guessed r=19 and 0.972 at the measured 15.
+            s2, rr2 = _ring_score(ink, cx, cy, rr, text_h)
+            if s2 > s:
+                s, rr = s2, rr2
         if s >= 0.90:          # real rings score ~0.97-1.0, text clutter ~0.7-0.87
             out.append(((cx, cy, rr), s))
     return out
