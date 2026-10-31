@@ -212,6 +212,39 @@ def _has_mid_bar(mask: "np.ndarray") -> bool:
                 cur = 0
     return best >= G_MID_BAR_WIDTH * w and start >= G_MID_BAR_START * w
 
+# An E has a bottom arm and an F does not - that one stroke is the whole
+# difference. MEASURED on every E and F glyph of exam 8's key and paper,
+# longest horizontal run of ink in the bottom band over glyph width:
+#
+#     F   0.263  0.273  0.286  0.300      highest 0.300
+#     E   0.857  0.900  0.947             lowest  0.857
+#
+# The fourth E, the paper's item 15, measures 0.238 - but it is an E whose
+# bottom arm was erased with the printed rule it sits on (see
+# _crop_above_blank), and Tesseract reads it "C", so this branch never sees
+# it. That erasure is a separate fault and is not fixed here.
+E_FOOT_WIDTH = 0.55
+E_FOOT_BAND = 0.78
+
+
+def _has_bottom_bar(mask: "np.ndarray") -> bool:
+    """Does this glyph have a long horizontal stroke along its base?"""
+    ys, xs = np.where(mask)
+    if len(xs) < 10:
+        return False
+    g = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    h, w = g.shape
+    if h < 6 or w < 4:
+        return False
+    best = 0
+    for row in g[int(E_FOOT_BAND * h):]:
+        cur = 0
+        for v in row:
+            cur = cur + 1 if v else 0
+            if cur > best:
+                best = cur
+    return best >= E_FOOT_WIDTH * w
+
 def classify_letter(bin_crop: "np.ndarray", text_h: float,
                     letters: str = DEFAULT_LETTERS) -> tuple[str, float]:
     """Classify the handwriting on one blank as a letter from `letters`."""
@@ -242,6 +275,14 @@ def classify_letter(bin_crop: "np.ndarray", text_h: float,
             letter, conf = l, c
         if conf >= 0.8:
             break
+
+    # An E read where an F is written. Only this direction: the reverse has no
+    # measured instance, and applying an arbiter outside its measured regime
+    # is what made _cd_shape harmful. Both letters must be on offer, so a page
+    # that prints only one of them is untouched.
+    if letter == "E" and {"E", "F"} <= set(letters.upper()) \
+            and not _has_bottom_bar(glyph > 0):
+        return "F", max(conf, 0.6)
 
     # A G reads as "C" every time - see _has_mid_bar. Tested BEFORE the C/D
     # arbiter below, because on exam 8's key item 4 that arbiter had already
