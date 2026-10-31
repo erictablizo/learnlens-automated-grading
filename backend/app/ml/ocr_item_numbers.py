@@ -51,7 +51,11 @@ _ITEM_TOKEN = re.compile(r"(?:^|[^0-9\-‐-―])(\d{1,3})\s*[.,):;]$")
 # item, or the "A." - "F." of a matching type's Column B. The highest one
 # printed anywhere on the page is the highest letter any answer on that page
 # can legitimately be.
-_OPTION_LABEL = re.compile(r"^([A-F])\s*[.)]$")
+# CHANGED 2026-10-31. The class was [A-F], which is why exam 8's Column B
+# running to H could not be read: "G." and "H." were not labels at all. Any
+# letter matches now, and option_labels below keeps only the contiguous run
+# from A, so a stray "Part V." cannot widen the alphabet.
+_OPTION_LABEL = re.compile(r"^([A-Z])\s*[.)]$")
 
 # An option label read below this confidence is ignored. The labels are
 # PRINTED, so a real one reads high; this only keeps handwriting out.
@@ -112,7 +116,23 @@ def option_labels(d) -> set:
         if conf < MIN_OPTION_CONF:
             continue
         out.add(m.group(1))
-    return out
+    # CHANGED 2026-10-31. _OPTION_LABEL now accepts any letter, so "Part V."
+    # matches it - MEASURED on key_p2 and paper_p2, both of which produce a
+    # stray 'V'. The printed options of a real question run A, B, C, ... with
+    # no gaps, so walk up from A and stop at the first letter the page does
+    # not print. The stray has no G..U beneath it and is dropped; a genuine
+    # Column B running to H survives whole.
+    #
+    # This belongs here and not in page_alphabet because ocr_page_numbered
+    # asks `bool(option_labels(...))` whether the page offers options at all.
+    # A True/False sheet headed "Part V." must still answer no, or the
+    # 2026-10-28 NO_OPTION_LETTERS fix is undone.
+    run: set = set()
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        if ch not in out:
+            break
+        run.add(ch)
+    return run
 
 
 def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
@@ -143,7 +163,11 @@ def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
     if not seen:
         return fallback
     top = max(seen)
-    alphabet = "ABCDEF"[: ord(top) - ord("A") + 1]
+    # CHANGED 2026-10-31. The slice source used to be "ABCDEF", so a Column B
+    # running to H silently came back as ABCDEF - "ABCDEF"[:8] is "ABCDEF" -
+    # and G and H could never be read. `seen` is already the contiguous run
+    # from A (see option_labels), so this cannot widen past what is printed.
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[: ord(top) - ord("A") + 1]
     if "T" not in alphabet:
         alphabet += "T"
     print(f"DEBUG[item_numbers]: option labels up to {top} -> letters={alphabet}")
