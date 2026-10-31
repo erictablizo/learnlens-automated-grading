@@ -47,15 +47,22 @@ from app.ml.ocr_shared import DetectedAnswer
 # loses both.
 _ITEM_TOKEN = re.compile(r"(?:^|[^0-9\-‐-―])(\d{1,3})\s*[.,):;]$")
 
-# A PRINTED option label: "A.", "B.", "C.", "D." under a multiple-choice
-# item, or the "A." - "F." of a matching type's Column B. The highest one
-# printed anywhere on the page is the highest letter any answer on that page
-# can legitimately be.
-# CHANGED 2026-10-31. The class was [A-F], which is why exam 8's Column B
-# running to H could not be read: "G." and "H." were not labels at all. Any
-# letter matches now, and option_labels below keeps only the contiguous run
-# from A, so a stray "Part V." cannot widen the alphabet.
-_OPTION_LABEL = re.compile(r"^([A-Z])\s*[.)]$")
+# CHANGED 2026-10-31. Two things the printed labels actually look like.
+#
+# The separator class is now the same as _ITEM_TOKEN's, and for the same
+# measured reason: Tesseract ends a label with a COMMA often enough to matter.
+# On exam 9 page 3 it returns "J," on both sheets and "F," on the paper, and
+# losing F truncated that page's alphabet at E - which made F, G and H
+# impossible on it even though G. and H. were read cleanly at conf 92 and 90.
+#
+# The pipe is here because a capital I printed alone is a bare vertical
+# stroke and Tesseract returns "|" for it - MEASURED, "|," on both sheets at
+# conf 78 and 87. It is mapped to I in option_labels below. Only the pipe:
+# "1." is what an item number looks like and _ITEM_TOKEN is entitled to it.
+_OPTION_LABEL = re.compile(r"^([A-Z|\u00a6])\s*[.,):;]$")
+
+# What _OPTION_LABEL's first group means when it is not already a letter.
+_LABEL_ALIASES = {"|": "I", "\u00a6": "I"}
 
 # An option label read below this confidence is ignored. The labels are
 # PRINTED, so a real one reads high; this only keeps handwriting out.
@@ -115,7 +122,7 @@ def option_labels(d) -> set:
             continue
         if conf < MIN_OPTION_CONF:
             continue
-        out.add(m.group(1))
+        out.add(_LABEL_ALIASES.get(m.group(1), m.group(1)))
     # CHANGED 2026-10-31. _OPTION_LABEL now accepts any letter, so "Part V."
     # matches it - MEASURED on key_p2 and paper_p2, both of which produce a
     # stray 'V'. The printed options of a real question run A, B, C, ... with
