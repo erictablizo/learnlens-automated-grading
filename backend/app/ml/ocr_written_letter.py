@@ -159,6 +159,58 @@ def _tess_letter(glyph_white_on_black: "np.ndarray", letters: str) -> tuple[str,
             break
     return best, round(max(conf, 0.0), 2)
 
+# A handwritten G is a C with a horizontal bar across its middle, and that bar
+# is the only thing separating them. MEASURED on exam 8's key and paper: all
+# four G glyphs read "C" from Tesseract at 0.64-0.92 with G in the whitelist,
+# at every crop size. The bar has to be found by shape, exactly as _cd_shape
+# finds D's bowl.
+#
+# Feature 1, the longest horizontal RUN of ink in the middle band, over the
+# glyph width. D contributes no run there - its right side is a vertical
+# stroke - and C has only its thin left spine:
+#
+#     C   0.261  0.308  0.286  0.222      highest 0.308
+#     D   0.280  0.286  0.240  0.300      highest 0.300
+#     G   0.519  0.536  0.600  0.680      lowest  0.519
+#
+# Feature 2 is needed because E, F and H have long bars too, and an E misread
+# as "C" would otherwise become a G - MEASURED, that is exam 8's paper item
+# 15. WHERE the run starts separates them: G's bar comes in from the right,
+# while E, F and H hang theirs off the left spine.
+#
+#     E   0.000  0.050  0.053  0.095     F   0.048  0.053  0.091  0.100
+#     H   0.048  0.050                   A   0.100  0.130  0.143  0.211
+#     G   0.320  0.360  0.407  0.429      <- lowest 0.320
+G_MID_BAR_WIDTH = 0.40
+G_MID_BAR_START = 0.25
+G_MID_BAND = (0.38, 0.72)
+
+
+def _has_mid_bar(mask: "np.ndarray") -> bool:
+    """Does this glyph have a long horizontal stroke coming in from the RIGHT
+    across its middle? That stroke is a G's bar."""
+    ys, xs = np.where(mask)
+    if len(xs) < 10:
+        return False
+    g = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    h, w = g.shape
+    if h < 6 or w < 4:
+        return False
+    lo = int(G_MID_BAND[0] * h)
+    hi = max(int(G_MID_BAND[1] * h), lo + 1)
+    best = start = 0
+    for row in g[lo:hi]:
+        cur = at = 0
+        for x, v in enumerate(row):
+            if v:
+                if cur == 0:
+                    at = x
+                cur += 1
+                if cur > best:
+                    best, start = cur, at
+            else:
+                cur = 0
+    return best >= G_MID_BAR_WIDTH * w and start >= G_MID_BAR_START * w
 
 def classify_letter(bin_crop: "np.ndarray", text_h: float,
                     letters: str = DEFAULT_LETTERS) -> tuple[str, float]:
@@ -190,6 +242,14 @@ def classify_letter(bin_crop: "np.ndarray", text_h: float,
             letter, conf = l, c
         if conf >= 0.8:
             break
+
+    # A G reads as "C" every time - see _has_mid_bar. Tested BEFORE the C/D
+    # arbiter below, because on exam 8's key item 4 that arbiter had already
+    # turned the misread C into a D, burying the G twice over. The guard on
+    # the alphabet is what keeps this off every page that does not print a
+    # "G." label: there, G was never an available answer in the first place.
+    if letter in ("C", "D") and "G" in letters.upper() and _has_mid_bar(glyph > 0):
+        return "G", max(conf, 0.6)   
 
     # C and D are the pair Tesseract gets wrong most often on handwriting: a
     # tight crop can clip D's right bowl and it reads as C. The letter's own
