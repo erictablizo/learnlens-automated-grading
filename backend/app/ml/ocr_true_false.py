@@ -289,6 +289,11 @@ def _crop_above_blank(ink: "np.ndarray", b: Box, text_h: float,
 # A text row narrower than this cannot be a handwritten answer - it is a
 # fragment of the printed item number touching the blank. See _lowest_text_row.
 MIN_ANSWER_ROW_TEXT_HEIGHTS = 1.0
+# ...and a row shorter than this cannot be one either. NEW 2026-10-31. Not a
+# new threshold: _blank_mode and _blank_mode_letters already refuse a finished
+# crop whose tight height is below 0.4 text-heights. This applies the same bar
+# one step earlier, while _lowest_text_row still has a choice to make.
+MIN_ANSWER_ROW_HEIGHT_TEXT_HEIGHTS = 0.4
 
 
 def _lowest_text_row(crop: "np.ndarray", text_h: float) -> "np.ndarray":
@@ -325,8 +330,31 @@ def _lowest_text_row(crop: "np.ndarray", text_h: float) -> "np.ndarray":
         hi = max(stats[i, cv2.CC_STAT_LEFT] + stats[i, cv2.CC_STAT_WIDTH] for i in row)
         return hi - lo
 
-    keep = rows[-1]
-    for row in reversed(rows):
+    # NEW 2026-10-31. _crop_above_blank reaches 0.6 text-heights BELOW its
+    # own rule, so on a tightly spaced sheet the top edge of the NEXT item's
+    # letter lands in this crop. MEASURED on exam 8's key, item 4: the crop
+    # holds the answer G (25x23, area 298) and a 22x3 fragment 37 px lower,
+    # which is the top bar of item 5's F. The width test below cannot see the
+    # difference - 22 px is wider than a text height - so the fragment won and
+    # seven of fifteen items came back blank.
+    #
+    # A row that is BOTH too short to be a letter AND flush with the bottom
+    # edge of the crop is that clipped next answer. Both halves are needed:
+    # short alone would reject a genuine fragment, flush alone would reject
+    # handwriting that dips below the line - which is tall, so it survives.
+    bottom = crop.shape[0]
+
+    def _is_clipped_next_answer(row):
+        top = min(stats[i, cv2.CC_STAT_TOP] for i in row)
+        bot = max(stats[i, cv2.CC_STAT_TOP] + stats[i, cv2.CC_STAT_HEIGHT] for i in row)
+        return (bot - top) < MIN_ANSWER_ROW_HEIGHT_TEXT_HEIGHTS * text_h and bot >= bottom
+
+    cands = [r for r in rows if not _is_clipped_next_answer(r)]
+    if not cands:
+        cands = rows
+
+    keep = cands[-1]
+    for row in reversed(cands):
         if _row_width(row) >= MIN_ANSWER_ROW_TEXT_HEIGHTS * text_h:
             keep = row
             break
