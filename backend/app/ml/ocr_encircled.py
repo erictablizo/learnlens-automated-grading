@@ -554,7 +554,14 @@ def ocr_page_encircled(image_path: str, expected_items: Optional[int] = None) ->
             if from_page:
                 letter, conf = from_page, max(conf, 0.85)
             if letter:
-                raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf, size=2 * r))
+                # `from_page` is the only proof that this circle is an
+                # encircled OPTION rather than a loop of handwriting. When it
+                # is empty the letter below came out of the crop alone, and
+                # the crop of a handwritten B's bowl reads as A, C or D just
+                # as readily as a circled option does. Record which it was;
+                # ocr_page_numbered ranks on it.
+                raw.append(DetectedAnswer(y=cy, x=cx, letter=letter, confidence=conf,
+                                          size=2 * r, proved_by_label=bool(from_page)))
             else:
                 unread += 1
 

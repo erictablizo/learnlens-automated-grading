@@ -15,6 +15,11 @@ class DetectedAnswer:
     # position keeps working. ocr_item_numbers fills it with the number
     # PRINTED on the page, so a page that starts at item 12 says so.
     item_number: int = 0
+    # NEW 2026-10-31. Only the encircled detector ever sets this False, for a
+    # circle whose option could not be proved from the printed labels - i.e.
+    # a circle that is round handwriting, not a circled option. True is the
+    # default so every other detector and every existing caller is unchanged.
+    proved_by_label: bool = True
 
 @dataclass
 class OCRPageResult:

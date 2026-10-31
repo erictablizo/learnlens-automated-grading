@@ -261,8 +261,21 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     if not labelled and circles:
         print(f"DEBUG[numbered]: no option labels printed - {len(circles)} "
               f"circle(s) demoted below the written-letter detector")
+    # CHANGED 2026-10-31. Splitting `circles` by whether the printed labels
+    # could place them. A circle around a printed option label is the most
+    # specific evidence on the page and still outranks a short blank. A circle
+    # the labels could NOT place is round handwriting carrying a crop guess,
+    # and it must wait its turn behind the handwriting detector - on a
+    # "Write Letter Only" sheet every circle is of that second kind, because
+    # the mark sits on the blank line, nowhere near an option column.
+    proved  = [a for a in circles if getattr(a, "proved_by_label", True)]
+    guessed = [a for a in circles if not getattr(a, "proved_by_label", True)]
+    if guessed:
+        print(f"DEBUG[numbered]: {len(guessed)} circle(s) could not be placed "
+              f"by the printed labels - demoted below the written-letter "
+              f"detector: {[(a.letter, a.y) for a in guessed]}")
     groups = [[a for a in ident.answers if a.letter]]
-    groups += [circles, written] if labelled else [written, circles]
+    groups += [proved, written, guessed] if labelled else [written, proved, guessed]
     slots, orphans = assign_to_items(ladder, groups, text_h)
 
     # The counting rule in assign_to_items recovers items whose printed
