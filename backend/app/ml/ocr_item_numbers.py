@@ -141,6 +141,27 @@ def option_labels(d) -> set:
         run.add(ch)
     return run
 
+# A page that offers True/False prints both words in its directions. A page
+# that does not, prints neither - MEASURED on ten scans across four formats,
+# four of four and six of six, no false positive and no false negative.
+#
+# BOTH words are required. A Column B definition could carry the word "true"
+# by itself; a page carrying both and having no True/False part has not been
+# seen. And the failure mode is the safe one - a false positive leaves T in
+# the alphabet, which is what happened unconditionally before this.
+_TF_WORD = re.compile(r"^(TRUE|FALSE)[.,:;]?$")
+
+
+def page_offers_true_false(d) -> bool:
+    """Does this page have a True/False part at all?"""
+    if d is None:
+        return False
+    seen = set()
+    for raw in d["text"]:
+        m = _TF_WORD.match((raw or "").strip().upper())
+        if m:
+            seen.add(m.group(1))
+    return {"TRUE", "FALSE"} <= seen
 
 def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
     """The letters this page can legitimately contain, from its PRINTED
@@ -175,7 +196,12 @@ def page_alphabet(d, fallback: str = "ABCDEFT") -> str:
     # and G and H could never be read. `seen` is already the contiguous run
     # from A (see option_labels), so this cannot widen past what is printed.
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[: ord(top) - ord("A") + 1]
-    if "T" not in alphabet:
+     # CHANGED 2026-11-01. T only when the page actually offers True/False.
+    # It used to be unconditional, and on exam 13 - a pure matching sheet,
+    # Column B A-J, no True/False on it - two serif capital I glyphs were read
+    # as T at 0.90 and 0.76, because a serif I is a T with one extra stroke
+    # and T was on the list. It was never an available answer there.
+    if "T" not in alphabet and page_offers_true_false(d):
         alphabet += "T"
     print(f"DEBUG[item_numbers]: option labels up to {top} -> letters={alphabet}")
     return alphabet
