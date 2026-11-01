@@ -276,13 +276,29 @@ def classify_letter(bin_crop: "np.ndarray", text_h: float,
         if conf >= 0.8:
             break
 
-    # An E read where an F is written. Only this direction: the reverse has no
-    # measured instance, and applying an arbiter outside its measured regime
-    # is what made _cd_shape harmful. Both letters must be on offer, so a page
-    # that prints only one of them is untouched.
-    if letter == "E" and {"E", "F"} <= set(letters.upper()) \
-            and not _has_bottom_bar(glyph > 0):
-        return "F", max(conf, 0.6)
+    # E and F differ by the bottom arm, so the foot decides both ways. Both
+    # letters must be on offer, so a page that prints only one is untouched.
+    #
+    # E -> F came first, 2026-10-31. F -> E was deliberately left out then,
+    # for want of a measured instance; exam 13 page 2 item 39 is one - truth
+    # E, Tesseract F@0.83, and the glyph HAS a foot.
+    #
+    # MEASURED over every E and F glyph in the project before adding it,
+    # twelve glyphs across exam 8 and exam 9:
+    #
+    #     real F glyphs: 6, of which foot=True: 0
+    #     real E glyphs: 6, of which foot=True: 5
+    #     real F that Tesseract called F AND have a foot: 0
+    #
+    # so nothing is taken away from a real F. (The one footless E is exam 8
+    # paper item 15, whose bottom arm was erased with the rule it sits on -
+    # a separate fault in _crop_above_blank, not a counter-example.)
+    if {"E", "F"} <= set(letters.upper()):
+        foot = _has_bottom_bar(glyph > 0)
+        if letter == "E" and not foot:
+            return "F", max(conf, 0.6)
+        if letter == "F" and foot:
+            return "E", max(conf, 0.6)
 
     # A G reads as "C" every time - see _has_mid_bar. Tested BEFORE the C/D
     # arbiter below, because on exam 8's key item 4 that arbiter had already
@@ -290,7 +306,7 @@ def classify_letter(bin_crop: "np.ndarray", text_h: float,
     # the alphabet is what keeps this off every page that does not print a
     # "G." label: there, G was never an available answer in the first place.
     if letter in ("C", "D") and "G" in letters.upper() and _has_mid_bar(glyph > 0):
-        return "G", max(conf, 0.6)   
+        return "G", max(conf, 0.6)
 
     # C and D are the pair Tesseract gets wrong most often on handwriting: a
     # tight crop can clip D's right bowl and it reads as C. The letter's own
