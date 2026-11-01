@@ -10,7 +10,7 @@ import EditPaperModal from "@/components/papers/EditPaperModal";
 import { examService } from "@/services/examService";
 import QuestionTypeModal from "@/components/exams/QuestionTypeModal";
 import { paperService } from "@/services/paperService";
-import { Exam } from "@/types/exam";
+import { Exam, QuestionType } from "@/types/exam";
 import { Paper } from "@/types/paper";
 import { usePapers } from "@/hooks/usePapers";
 import { getToken, isAuthenticated } from "@/lib/auth";
@@ -79,7 +79,10 @@ export default function ViewExamPage() {
   // const [generatingKey, setGeneratingKey] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
   const [showQuestionTypeModal, setShowQuestionTypeModal] = useState(false);
-  const [selectedQuestionType, setSelectedQuestionType] = useState<"true_false" | "encircled" | null>(null);
+  // CHANGED 2026-11-01. Widened from "true_false" | "encircled". Since the
+  // 2026-10-22 button removal the modal only ever sends "mixed", which that
+  // union excluded - the type described a dialog that no longer exists.
+  const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionType | null>(null);
  
   // Page viewer
   const [pageIdx,     setPageIdx]     = useState(0);
@@ -270,8 +273,8 @@ export default function ViewExamPage() {
   //     setSelectedQuestionType(null);
   //   }
   // };
-    const handleGenerateKeyWithType = async (
-      questionType: "true_false" | "encircled",
+     const handleGenerateKeyWithType = async (
+      questionType: QuestionType,
       expectedItems: number | null = null,
     ) => {
       const currentPage = examPages[pageIdx];
@@ -299,18 +302,31 @@ export default function ViewExamPage() {
     };
  
   // ── Page nav ──────────────────────────────────────────────────────────────
-  const examPages  = exam?.pages ?? [];
-  const paperPages = selectedPaperFull?.paper_pages ?? [];
+  // FIX 2026-11-01. The API does not promise an order for these, and on exam
+  // 18 it returned page_number 2 first. Everything else on this screen reads
+  // examPages[pageIdx].page_number - the image, the Generate dialog, the
+  // "answer(s) on page N" footer - so those three agreed with each other and
+  // the pager below, which printed pageIdx + 1, did not. The label read
+  // "Page 1 of 2" above the sheet holding items 21-40.
+  //
+  // paper_pages is sorted for the same reason: currentPaperPage is taken at
+  // the SAME pageIdx, so an unsorted paper would put the student's page 2
+  // beside the exam's page 1.
+  const examPages  = (exam?.pages ?? [])
+    .slice().sort((a, b) => a.page_number - b.page_number);
+  const paperPages = (selectedPaperFull?.paper_pages ?? [])
+    .slice().sort((a, b) => a.page_number - b.page_number);
   const totalPages = Math.max(examPages.length, 1);
- 
+
   const goPage = (dir: 1 | -1) => {
     setPageIdx(i => Math.min(Math.max(0, i + dir), examPages.length - 1));
     setExamImgErr(false); setPaperImgErr(false);
   };
- 
+
   const currentExamPage  = examPages[pageIdx];
   const currentPaperPage = paperPages[pageIdx];
-    // FIX 2026-09-22: show only the answers of the page being viewed
+
+  // FIX 2026-09-22: show only the answers of the page being viewed
   const currentPageKeys = (exam?.answer_keys ?? [])
     .filter(ak => !currentExamPage || ak.page_id == null || ak.page_id === currentExamPage.page_id)
     .slice()
@@ -403,7 +419,10 @@ export default function ViewExamPage() {
         {/* Page nav */}
         <div className="page-nav">
           <button className="btn-icon" onClick={() => goPage(-1)} disabled={pageIdx === 0} aria-label="Previous page"><IconLeft /></button>
-          <span>Page {pageIdx + 1} of {totalPages}</span>
+          {/* the page's OWN number, not its position in the array - see the
+              sort above. They agree once sorted, and this stays correct if a
+              page is ever missing from the middle. */}
+          <span>Page {examPages[pageIdx]?.page_number ?? pageIdx + 1} of {totalPages}</span>
           <button className="btn-icon" onClick={() => goPage(1)} disabled={pageIdx >= examPages.length - 1} aria-label="Next page"><IconRight /></button>
           {selectedPaper && (
             <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginLeft: "0.5rem" }}>
