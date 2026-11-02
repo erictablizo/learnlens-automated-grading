@@ -2,6 +2,7 @@ import os, shutil
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy import func
 from fastapi import UploadFile
  
 from app.models.profile import UserProfile
@@ -51,15 +52,50 @@ async def update_profile(
     return profile
  
  
+# Added 2026-11-02: the avatar is written to ONE name per user, so the image
+# FORMAT is the only thing that can change that name. Derive it from the
+# content type the route has already validated, never from the uploaded file
+# name — splitext() on "shell.html" yields ".html", which would then be written
+# into a statically served directory and served back as HTML.
+_AVATAR_EXT  = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+_AVATAR_EXTS = tuple(sorted(set(_AVATAR_EXT.values())))
+
+
+def _avatar_ext(content_type: Optional[str]) -> str:
+    return _AVATAR_EXT.get((content_type or "").split(";")[0].strip().lower(), ".jpg")
+
+
 async def upload_avatar(db: AsyncSession, user_id: int, file: UploadFile) -> UserProfile:
     profile = await get_or_create_profile(db, user_id)
     upload_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
     os.makedirs(upload_dir, exist_ok=True)
-    ext = os.path.splitext(file.filename or "avatar.jpg")[1] or ".jpg"
+
+    ext = _avatar_ext(file.content_type)
     file_path = os.path.join(upload_dir, f"user_{user_id}{ext}")
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+
+    # A previous photo saved under a different format would otherwise linger
+    # forever, and both files would be reachable from the uploads directory.
+    for other in _AVATAR_EXTS:
+        stale = os.path.join(upload_dir, f"user_{user_id}{other}")
+        if stale != file_path and os.path.exists(stale):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+
     profile.avatar_path = file_path
+
+    # FIX 2026-11-02: every upload writes to the SAME file name, so when the
+    # format is unchanged the line above assigns a string identical to the one
+    # already stored. SQLAlchemy then sees no dirty column, emits no UPDATE,
+    # and onupdate=func.now() never fires. updated_at is the ?v= cache-buster
+    # on the image URL, so without this the browser keeps serving the previous
+    # photo. Measured on PostgreSQL 16.15 / SQLAlchemy 2.0.30: the FIRST upload
+    # bumps it (NULL -> path is a real change), every later one does not.
+    profile.updated_at = func.now()
+
     await db.commit()
     await db.refresh(profile)
     return profile
