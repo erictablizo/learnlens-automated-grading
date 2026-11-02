@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\Eric\OneDrive\ドキュメント\learnlens-automated-grading\backend\venv"
+VIRTUAL_ENV="C:\Users\Grace T\OneDrive\Documents\workspace\learnlens-automated-grading\backend\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
