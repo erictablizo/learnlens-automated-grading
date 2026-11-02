@@ -142,19 +142,37 @@ export default function EditProfilePage() {
 
     setSaving(true);
     try {
-      // Upload the photo first (if changed) so the saved profile already has it
-      if (avatarFile) await profileService.uploadAvatar(avatarFile, token);
+      // Upload the photo first (if changed) so the saved profile already has it.
+      // CHANGED 2026-11-02: keep the response. POST /profile/avatar is declared
+      // response_model=ProfileResponse and returns the profile with the new
+      // avatar_path AND a freshly bumped updated_at. Throwing it away made the
+      // photo depend on the PUT below bumping the timestamp — and when only the
+      // photo changed, the PUT sends identical values and may issue no UPDATE at
+      // all, leaving ?v= unchanged and the browser showing the cached old photo.
+      let uploaded: UserProfile | null = null;
+      if (avatarFile) uploaded = await profileService.uploadAvatar(avatarFile, token);
+
       const updated = await profileService.save({
-        // FIX 2026-10-22: tidyName, not trim - the server collapses runs of
-        // whitespace, so send what it would have stored anyway.
-        first_name: tidyName(firstName),
-        last_name:  tidyName(lastName),
+        first_name: firstName.trim(),
+        last_name:  lastName.trim(),
         college:    college as College,
         course,
-        position:   tidyName(position) || undefined,
-        year_level: year === "" ? undefined : year,     // Added on 2026-10-04
+        position:   position.trim() || undefined,
       }, token);
-      setProfile(updated);
+
+      // Take whichever stamp is actually newer. Date.parse, not a string
+      // compare: "2026-11-02T14:10:00+08:00" sorts above "2026-11-02T07:55:14Z"
+      // as text while being the same instant.
+      const newest = [updated.updated_at, uploaded?.updated_at]
+        .filter(Boolean)
+        .sort((a, b) => Date.parse(b as string) - Date.parse(a as string))[0]
+        ?? updated.updated_at;
+
+      setProfile({
+        ...updated,
+        avatar_path: uploaded?.avatar_path ?? updated.avatar_path,
+        updated_at:  newest,
+      });
       setAvatarFile(null);
       setAvatarPreview(null);
       setSaved(true);
