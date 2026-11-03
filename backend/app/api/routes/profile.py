@@ -39,7 +39,11 @@ async def save_profile(
         college    = data.college,
         course     = data.course,
         position   = data.position,
-        year_level = data.year_level,      # Added on 2026-10-04
+        # FIX 2026-11-03: ProfileSetup has declared and validated year_level
+        # since 2026-10-04 and update_profile has accepted it since the same
+        # day, but the route never forwarded it — so /setup collected a Year
+        # Level, validated it, and dropped it one line before the database.
+        year_level = data.year_level,
     )
  
  

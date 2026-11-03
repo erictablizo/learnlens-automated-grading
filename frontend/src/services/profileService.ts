@@ -7,7 +7,7 @@ export interface ProfileSavePayload {
   college?:    string;
   course?:     string;
   position?:   string;
-  year_level?: number;      // Added on 2026-10-04
+  year_level?: number | null;      // Added on 2026-10-04
 }
  
 export const profileService = {

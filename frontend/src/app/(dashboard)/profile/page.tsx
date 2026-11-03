@@ -158,6 +158,9 @@ export default function EditProfilePage() {
         college:    college as College,
         course,
         position:   position.trim() || undefined,
+        // FIX 2026-11-03: was never sent, so Year Level could be set during
+        // /setup and then never changed from here.
+        year_level: year === "" ? undefined : year,
       }, token);
 
       // Take whichever stamp is actually newer. Date.parse, not a string
