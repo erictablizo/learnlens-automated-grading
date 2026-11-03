@@ -24,6 +24,10 @@ const MAX_PAGES = 10;
 interface Props {
   paper:     Paper;
   examId:    number;
+  // NEW 2026-11-03: the modal had no way to know how many pages the exam has,
+  // so the Pages dropdown offered 1..10 regardless and a 3-page exam happily
+  // accepted a 1-page paper. The parent already knows this number.
+  examPages: number;
   onClose:   () => void;
   onSuccess: (msg: string) => void;
 }
@@ -69,7 +73,7 @@ function ConfirmDialog({
 }
  
 // ── Main EditPaperModal ───────────────────────────────────────────────────────
-export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Props) {
+export default function EditPaperModal({ paper, examId, examPages, onClose, onSuccess }: Props) {
   const [step, setStep] = useState<"confirm" | "form">(
     paper.checked ? "confirm" : "form"
   );
@@ -93,6 +97,17 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
  
   // Page count dropdown — can add pages
   const pageCount = pages.filter(p => !p.removed).length;
+    // NEW 2026-11-03: the paper must carry at least as many pages as the exam.
+  const MIN_PAGES = Math.max(1, examPages);
+
+  // MIN_PAGES..MAX_PAGES, plus this paper's CURRENT count when it is already
+  // below the minimum. A paper saved before this guard existed would otherwise
+  // have a <select> whose value matches no option — the trap Create Exam hit on
+  // 2026-10-23 with value={12} against options 1..10 — leaving the row blank
+  // and un-editable. handleSave still refuses it, so the teacher is told to add
+  // the missing pages rather than being stuck.
+  const pageOptions = Array.from({ length: MAX_PAGES }, (_, i) => i + 1)
+    .filter(n => n >= MIN_PAGES || n === pageCount);
  
   const handlePageCountChange = (n: number) => {
     const current = pages.filter(p => !p.removed);
@@ -173,28 +188,38 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
  
   const handleSave = async () => {
     setError(null);
+
+    // NEW 2026-11-03: a paper with fewer pages than the exam leaves whole
+    // parts of the answer key with no student answer, and nothing downstream
+    // reports it — the Pages dropdown used to offer 1..10 regardless of the
+    // exam, so a 3-page exam accepted a 1-page paper without a word.
+    if (pageCount < MIN_PAGES) {
+      setError(`This exam has ${examPages} page(s). The paper must have all ${examPages}.`);
+      return;
+    }
+
     // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
     // characters. Same rule, same words and same order as
     // check_student_name() in backend/app/schemas/_text.py.
     const nameMsg = checkStudentName(studentName);
     if (nameMsg) { setError(nameMsg); return; }
- 
+
     const token = getToken();
     if (!token) return;
     setSaving(true);
- 
+
     try {
       // 1. Update student name
       // FIX 2026-10-22: tidyText, not trim - the server collapses runs of
       // whitespace, so send what it would have stored anyway.
       await paperService.updateName(examId, paper.paper_id, tidyText(studentName), token);
- 
+
       // 2. Delete removed pages
       const removed = pages.filter(p => p.removed && p.paper_page_id > 0);
       for (const pg of removed) {
         await paperService.deletePage(examId, paper.paper_id, pg.paper_page_id, token);
       }
- 
+
       // 3. Upload new/replacement pages
       const active = pages.filter(p => !p.removed);
       for (const pg of active) {
@@ -202,12 +227,12 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           await paperService.uploadPage(examId, paper.paper_id, pg.page_number, pg.file, token);
         }
       }
- 
+
       // 4. If paper was already checked, reset score
       if (paper.checked) {
         await paperService.resetScore(examId, paper.paper_id, token);
       }
- 
+
       onSuccess("Paper updated successfully.");
       onClose();
     } catch (e: unknown) {
@@ -260,10 +285,15 @@ export default function EditPaperModal({ paper, examId, onClose, onSuccess }: Pr
           style={{ width: "80px" }}
           disabled={saving}
         >
-          {Array.from({ length: MAX_PAGES }, (_, i) => i + 1).map(n => (
+          {pageOptions.map(n => (
             <option key={n} value={n}>{n}</option>
           ))}
         </select>
+        {examPages > 0 && (
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginLeft: "0.6rem" }}>
+            The exam has {examPages} page(s).
+          </span>
+        )}
       </div>
  
       {/* Pages table */}

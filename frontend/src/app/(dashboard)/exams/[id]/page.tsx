@@ -533,6 +533,7 @@ export default function ViewExamPage() {
           <EditPaperModal
             paper={editingPaper}
             examId={examId}
+            examPages={examPages.length || 1}
             onClose={() => setEditingPaper(null)}
             onSuccess={handleEditSuccess}
           />
