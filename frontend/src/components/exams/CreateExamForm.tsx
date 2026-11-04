@@ -5,6 +5,7 @@
  * Image Uploaded."
  *  - Exam Name: required, at least 7 characters
  *  - Description: required
+ *  - Subject, Schedule: required          NEW 2026-11-04 (Doc Rubrica)
  *  - Every page row must have an image (at least Page 1)
  *  - Only image files are accepted
  * Errors are shown under each field plus a banner, and nothing is sent to the
@@ -18,8 +19,10 @@ import Button from "@/components/ui/Button";
 import { useExams } from "@/hooks/useExams";
 import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
-import { checkExamName, checkDescription, tidyText, tidyMultiline }
-  from "@/lib/textField";
+// CHANGED 2026-11-04: checkSubject / checkSchedule join the other two. The
+// browser and schemas/_text.py say the same words in the same order.
+import { checkExamName, checkDescription, checkSubject, checkSchedule,
+         tidyText, tidyMultiline } from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
@@ -37,11 +40,17 @@ export default function CreateExamForm() {
   const { createExam, error } = useExams();
   const [examName, setExamName] = useState("");
   const [description, setDescription] = useState("");
+  // NEW 2026-11-04 (Doc Rubrica, consultation): "2 additional Fields in Exam
+  // Info Table".
+  const [subject, setSubject] = useState("");
+  const [schedule, setSchedule] = useState("");
   const [pages, setPages] = useState<PageRow[]>([{ pageNumber: 1, file: null }]);
   const [pagesOpen, setPagesOpen] = useState(true);
 
   const [nameError, setNameError] = useState<string | null>(null);
   const [descError, setDescError] = useState<string | null>(null);
+  const [subjectError, setSubjectError] = useState<string | null>(null);    // NEW 2026-11-04
+  const [scheduleError, setScheduleError] = useState<string | null>(null);  // NEW 2026-11-04
   const [pageErrors, setPageErrors] = useState<Record<number, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -86,7 +95,11 @@ export default function CreateExamForm() {
     let ok = true;
     const name = examName.trim();
     const desc = description.trim();
-    setNameError(null); setDescError(null); setSubmitError(null);
+    const subj = subject.trim();      // NEW 2026-11-04
+    const sched = schedule.trim();    // NEW 2026-11-04
+    setNameError(null); setDescError(null);
+    setSubjectError(null); setScheduleError(null);
+    setSubmitError(null);
 
     // CHANGED 2026-10-22 (Doc Rubrica): the required / length checks moved
     // into lib/textField.ts together with the character rules, so this form,
@@ -100,6 +113,15 @@ export default function CreateExamForm() {
 
     const descMsg = checkDescription(desc);
     if (descMsg) { setDescError(descMsg); ok = false; }
+
+    // NEW 2026-11-04. Both are REQUIRED here because ExamCreate requires them;
+    // catching it in the browser turns a 422 banner into a message under the
+    // field that is wrong.
+    const subjMsg = checkSubject(subj);
+    if (subjMsg) { setSubjectError(subjMsg); ok = false; }
+
+    const schedMsg = checkSchedule(sched);
+    if (schedMsg) { setScheduleError(schedMsg); ok = false; }
 
     const pErr: Record<number, string> = {};
     pages.forEach((p, i) => {
@@ -125,6 +147,9 @@ export default function CreateExamForm() {
       // whitespace, so send what it would have stored anyway.
       const exam = await createExam({
         exam_name: tidyText(examName), description: tidyMultiline(description),
+        // NEW 2026-11-04. Not optional on ExamCreatePayload, so leaving these
+        // out is a compile error rather than a 422 at run time.
+        subject: tidyText(subject), schedule: tidyText(schedule),
       });
       if (!exam) return;             // useExams already set `error`
       createdId = exam.exam_id;
@@ -178,6 +203,37 @@ export default function CreateExamForm() {
           style={descError ? { borderBottomColor: "var(--error)" } : undefined}
         />
         {fieldErr(descError)}
+
+        {/* NEW 2026-11-04 (Doc Rubrica, consultation): Subject and Schedule,
+            between Description and the Answer Key section so the Exam Info
+            fields stay together. */}
+        <label className="form-label" htmlFor="exam-subject">Subject <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
+        <input
+          id="exam-subject"
+          className="form-input"
+          value={subject}
+          onChange={e => { setSubject(e.target.value); setSubjectError(null); }}
+          placeholder="e.g. Mathematics in the Modern World"
+          aria-required="true"
+          aria-invalid={!!subjectError}
+          disabled={saving}
+          style={subjectError ? { borderBottomColor: "var(--error)" } : undefined}
+        />
+        {fieldErr(subjectError)}
+
+        <label className="form-label" htmlFor="exam-schedule">Schedule <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
+        <input
+          id="exam-schedule"
+          className="form-input"
+          value={schedule}
+          onChange={e => { setSchedule(e.target.value); setScheduleError(null); }}
+          placeholder="e.g. MWF 9:00-10:00 AM"
+          aria-required="true"
+          aria-invalid={!!scheduleError}
+          disabled={saving}
+          style={scheduleError ? { borderBottomColor: "var(--error)" } : undefined}
+        />
+        {fieldErr(scheduleError)}
 
         <p className="form-label" style={{ marginBottom: "0.75rem" }}>
           Answer Key <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>

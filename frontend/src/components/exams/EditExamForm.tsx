@@ -18,6 +18,20 @@
  *  - ✕ now CLEARS the image instead of deleting the whole page, and a page
  *    with no image can no longer be saved (thesis p.5 observation). Use the
  *    Pages dropdown to actually remove a page.
+ *
+ * NEW 2026-11-04 (Doc Rubrica, consultation): Subject and Schedule, her
+ * "2 additional Fields in Exam Info Table". Both are REQUIRED here, the same
+ * as in Create Exam.
+ *
+ * READ THIS BEFORE SHIPPING. An exam created before the migration has NULL
+ * subject and schedule. Its form therefore opens with both boxes EMPTY, and
+ * Save is refused with "Subject is required." under the field until the
+ * teacher types one — even if all they wanted to change was the exam name.
+ * MEASURED 2026-11-04: sending subject:"" to PUT /api/exams/{id} is a 422
+ * ("Subject is required.; Schedule is required."), so this is not a choice
+ * between working and not working; it is a choice between the message landing
+ * under the field or arriving as a red banner from the server. Run the
+ * backfill on the 7 existing exams FIRST and no teacher ever meets a blank.
  */
 import ExamKeyViewer from "@/components/exams/ExamKeyViewer";
 import { useState, useEffect } from "react";
@@ -26,8 +40,9 @@ import Button from "@/components/ui/Button";
 import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
 import { Exam, ExamPage } from "@/types/exam";
-import { checkExamName, checkDescription, tidyText, tidyMultiline }
-  from "@/lib/textField";
+// CHANGED 2026-11-04: checkSubject / checkSchedule join the other two.
+import { checkExamName, checkDescription, checkSubject, checkSchedule,
+         tidyText, tidyMultiline } from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
@@ -57,10 +72,14 @@ export default function EditExamForm({ examId }: Props) {
 
   const [examName,    setExamName]    = useState("");
   const [description, setDescription] = useState("");
+  const [subject,     setSubject]     = useState("");   // NEW 2026-11-04
+  const [schedule,    setSchedule]    = useState("");   // NEW 2026-11-04
   const [pages,        setPages]      = useState<PageRow[]>([]);
 
   const [nameError, setNameError] = useState<string | null>(null);
   const [descError, setDescError] = useState<string | null>(null);
+  const [subjectError,  setSubjectError]  = useState<string | null>(null);  // NEW 2026-11-04
+  const [scheduleError, setScheduleError] = useState<string | null>(null);  // NEW 2026-11-04
   const [formError, setFormError] = useState<string | null>(null);
   const [pageErrors, setPageErrors] = useState<Record<number, string>>({});
 
@@ -79,6 +98,11 @@ export default function EditExamForm({ examId }: Props) {
         setExam(data);
         setExamName(data.exam_name);
         setDescription(data.description ?? "");
+        // NEW 2026-11-04. The "?? """ is NOT decoration: Exam.subject is
+        // `string | null`, and tsc refuses setSubject(data.subject) outright
+        // (TS2345). The exams that predate the migration really are null.
+        setSubject(data.subject ?? "");
+        setSchedule(data.schedule ?? "");
 
         const existingPages: ExamPage[] = (data.pages ?? [])
           .slice()
@@ -206,6 +230,8 @@ export default function EditExamForm({ examId }: Props) {
     let ok = true;
     setNameError(null);
     setDescError(null);
+    setSubjectError(null);
+    setScheduleError(null);
     setFormError(null);
 
     // CHANGED 2026-10-22 (Doc Rubrica): the required / length checks moved into
@@ -218,6 +244,15 @@ export default function EditExamForm({ examId }: Props) {
 
     const descMsg = checkDescription(description);
     if (descMsg) { setDescError(descMsg); ok = false; }
+
+    // NEW 2026-11-04. Required, matching Create Exam and ExamCreate. On an exam
+    // that predates the migration both boxes open EMPTY and this is what stops
+    // the Save - see the note at the top of the file.
+    const subjMsg = checkSubject(subject);
+    if (subjMsg) { setSubjectError(subjMsg); ok = false; }
+
+    const schedMsg = checkSchedule(schedule);
+    if (schedMsg) { setScheduleError(schedMsg); ok = false; }
 
     // NEW 2026-09-29: a page with no image can no longer be saved (p.5)
     const pErr: Record<number, string> = {};
@@ -275,7 +310,11 @@ export default function EditExamForm({ examId }: Props) {
       // whitespace, so send what it would have stored anyway.
       await examService.update(
         examId,
-        { exam_name: tidyText(examName), description: tidyMultiline(description) },
+        { exam_name: tidyText(examName), description: tidyMultiline(description),
+          // NEW 2026-11-04. validate() has already refused a blank, so these
+          // are never "" here - which matters, because ExamUpdate's validator
+          // rejects "" with "Subject is required." rather than ignoring it.
+          subject: tidyText(subject), schedule: tidyText(schedule) },
         token,
       );
 
@@ -374,6 +413,44 @@ export default function EditExamForm({ examId }: Props) {
         {descError && (
           <p role="alert" style={{ color: "var(--error)", fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem" }}>
             {descError}
+          </p>
+        )}
+
+        {/* Subject — NEW 2026-11-04 (Doc Rubrica, consultation) */}
+        <label className="form-label" htmlFor="exam-subject">Subject</label>
+        <input
+          id="exam-subject"
+          className="form-input"
+          value={subject}
+          onChange={e => { setSubject(e.target.value); setSubjectError(null); }}
+          placeholder="e.g. Mathematics in the Modern World"
+          aria-required="true"
+          aria-invalid={!!subjectError}
+          disabled={saving}
+          style={subjectError ? { borderBottomColor: "var(--error)" } : undefined}
+        />
+        {subjectError && (
+          <p role="alert" style={{ color: "var(--error)", fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem" }}>
+            {subjectError}
+          </p>
+        )}
+
+        {/* Schedule — NEW 2026-11-04 (Doc Rubrica, consultation) */}
+        <label className="form-label" htmlFor="exam-schedule">Schedule</label>
+        <input
+          id="exam-schedule"
+          className="form-input"
+          value={schedule}
+          onChange={e => { setSchedule(e.target.value); setScheduleError(null); }}
+          placeholder="e.g. MWF 9:00-10:00 AM"
+          aria-required="true"
+          aria-invalid={!!scheduleError}
+          disabled={saving}
+          style={scheduleError ? { borderBottomColor: "var(--error)" } : undefined}
+        />
+        {scheduleError && (
+          <p role="alert" style={{ color: "var(--error)", fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem" }}>
+            {scheduleError}
           </p>
         )}
 

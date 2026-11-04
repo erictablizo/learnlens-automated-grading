@@ -15,7 +15,7 @@ import { Paper } from "@/types/paper";
 import { usePapers } from "@/hooks/usePapers";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
- 
+
 // ── icons ─────────────────────────────────────────────────────────────────────
 const IconBack = () => (
   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -32,15 +32,15 @@ const IconRight = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
   </svg>
 );
- 
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 const API_BASE    = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 const STATIC_BASE = API_BASE.replace("/api", "");
- 
+
 function imgUrl(path: string): string {
   return `${STATIC_BASE}/${path.replace(/\\/g, "/").replace(/^\//, "")}`;
 }
- 
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 4000); return () => clearTimeout(t); }, [onDone]);
@@ -63,13 +63,13 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
     </div>
   );
 }
- 
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ViewExamPage() {
   const params  = useParams();
   const router  = useRouter();
   const examId  = Number(params?.id ?? params?.exam_id ?? 0);
- 
+
   // Exam
   const [exam,          setExam]          = useState<Exam | null>(null);
   const [loading,       setLoading]       = useState(true);
@@ -83,33 +83,33 @@ export default function ViewExamPage() {
   // 2026-10-22 button removal the modal only ever sends "mixed", which that
   // union excluded - the type described a dialog that no longer exists.
   const [selectedQuestionType, setSelectedQuestionType] = useState<QuestionType | null>(null);
- 
+
   // Page viewer
   const [pageIdx,     setPageIdx]     = useState(0);
   const [examImgErr,  setExamImgErr]  = useState(false);
   const [paperImgErr, setPaperImgErr] = useState(false);
- 
+
   // Selected paper
   const [selectedPaper,     setSelectedPaper]     = useState<Paper | null>(null);
   const [selectedPaperFull, setSelectedPaperFull] = useState<Paper | null>(null);
   const [loadingPaper,      setLoadingPaper]       = useState(false);
- 
+
   // Grading
   const [checking, setChecking] = useState(false);
- 
+
   // Delete confirm dialog
   const [deletingPaper, setDeletingPaper] = useState<Paper | null>(null);
   const [deleting,      setDeleting]      = useState(false);
- 
+
   // Modals
   const [showAddPaper, setShowAddPaper] = useState(false);
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
- 
+
   // Toast
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
- 
+
   const { papers, fetchPapers, deletePaper } = usePapers(examId);
- 
+
   // ── Load exam ─────────────────────────────────────────────────────────────
   const loadExam = useCallback(async () => {
     if (!examId) return;
@@ -124,13 +124,13 @@ export default function ViewExamPage() {
       setLoadError("Could not load exam.");
     } finally { setLoading(false); }
   }, [examId, router]);
- 
+
   useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
     loadExam();
     fetchPapers();
   }, [loadExam, fetchPapers, router]);
- 
+
   // ── Load full paper detail ────────────────────────────────────────────────
   const loadPaperDetail = useCallback(async (paper: Paper) => {
     setLoadingPaper(true); setPaperImgErr(false);
@@ -143,7 +143,7 @@ export default function ViewExamPage() {
       setSelectedPaperFull(null);
     } finally { setLoadingPaper(false); }
   }, [examId]);
- 
+
   // ── Select paper row ──────────────────────────────────────────────────────
   const handleSelectPaper = useCallback(async (paper: Paper) => {
     if (selectedPaper?.paper_id === paper.paper_id) {
@@ -152,7 +152,7 @@ export default function ViewExamPage() {
     setSelectedPaper(paper); setSelectedPaperFull(null); setPageIdx(0);
     await loadPaperDetail(paper);
   }, [selectedPaper, loadPaperDetail]);
- 
+
   // ── Edit paper ────────────────────────────────────────────────────────────
   const handleEditPaper = useCallback(async (paper: Paper) => {
     const token = getToken();
@@ -164,7 +164,7 @@ export default function ViewExamPage() {
       setEditingPaper(paper);
     }
   }, [examId]);
- 
+
   const handleEditSuccess = useCallback(async (msg: string) => {
     setEditingPaper(null);
     await fetchPapers();
@@ -179,12 +179,12 @@ export default function ViewExamPage() {
     }
     setToast({ msg, type: "success" });
   }, [fetchPapers, selectedPaper, examId]);
- 
+
   // ── Delete paper — step 1: show confirm dialog ────────────────────────────
   const handleDeleteRequest = useCallback((paper: Paper) => {
     setDeletingPaper(paper);
   }, []);
- 
+
   // ── Delete paper — step 2: confirmed ─────────────────────────────────────
   const handleDeleteConfirmed = async () => {
     if (!deletingPaper) return;
@@ -201,7 +201,7 @@ export default function ViewExamPage() {
       setToast({ msg: "Something went wrong while deleting the paper. Please try again.", type: "error" });
     } finally { setDeleting(false); }
   };
- 
+
   // ── Check / grade paper ───────────────────────────────────────────────────
   const handleCheckPaper = async () => {
     if (!selectedPaper) return;
@@ -224,13 +224,13 @@ export default function ViewExamPage() {
       setToast({ msg: e instanceof Error ? e.message : "Something went wrong while checking the paper. Please try again.", type: "error" });
     } finally { setChecking(false); }
   };
- 
+
   // ── Paper added ───────────────────────────────────────────────────────────
   const handlePaperAdded = async () => {
     await fetchPapers();
     setToast({ msg: "Paper added successfully.", type: "success" });
   };
- 
+
   // Commented on 2026-09-4:
   // ── Generate answer key ───────────────────────────────────────────────────
   // const handleGenerateKey = async () => {
@@ -300,7 +300,7 @@ export default function ViewExamPage() {
         setShowQuestionTypeModal(false);   // close AFTER it finishes, so the spinner shows
       }
     };
- 
+
   // ── Page nav ──────────────────────────────────────────────────────────────
   // FIX 2026-11-01. The API does not promise an order for these, and on exam
   // 18 it returned page_number 2 first. Everything else on this screen reads
@@ -331,7 +331,7 @@ export default function ViewExamPage() {
     .filter(ak => !currentExamPage || ak.page_id == null || ak.page_id === currentExamPage.page_id)
     .slice()
     .sort((a, b) => a.question_number - b.question_number);
- 
+
   // ── Loading / error ───────────────────────────────────────────────────────
   if (loading) return (
     <div className="dashboard-layout">
@@ -342,7 +342,7 @@ export default function ViewExamPage() {
       </main>
     </div>
   );
- 
+
   if (loadError || !exam) return (
     <div className="dashboard-layout">
       <Navbar />
@@ -352,12 +352,12 @@ export default function ViewExamPage() {
       </main>
     </div>
   );
- 
+
   return (
     <div className="dashboard-layout">
       <Navbar />
       <main className="main-content">
- 
+
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
           <button className="btn-icon" onClick={() => router.push("/exams")} aria-label="Back" style={{ color: "var(--navy)" }}>
@@ -367,13 +367,36 @@ export default function ViewExamPage() {
             {exam.exam_name}
           </h1>
         </div>
- 
+
+        {/* NEW 2026-11-04 (Doc Rubrica, consultation): Subject and Schedule, her
+            "2 additional Fields in Exam Info Table".
+
+            Both rows are ALWAYS shown, with an em dash when the value is null.
+            Hiding the block when both are empty - which is what a `(exam.subject
+            || exam.schedule) &&` guard does - is wrong here: the 7 exams created
+            before the migration have NULL in both, so the teacher would see no
+            Subject anywhere on this screen, click Edit Exam to change something
+            else, and be stopped by "Subject is required." on a field they never
+            knew the exam had. The dash is what tells them it exists and is not
+            filled in yet. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem 2rem",
+                      marginBottom: "1rem", fontSize: "0.85rem" }}>
+          <span>
+            <span style={{ color: "var(--text-muted)" }}>Subject: </span>
+            <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.subject ?? "—"}</span>
+          </span>
+          <span>
+            <span style={{ color: "var(--text-muted)" }}>Schedule: </span>
+            <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.schedule ?? "—"}</span>
+          </span>
+        </div>
+
         {exam.description && (
           <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem", lineHeight: 1.6 }}>
             {exam.description}
           </p>
         )}
- 
+
         {/* ── Exam section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Exam</p>
@@ -381,7 +404,7 @@ export default function ViewExamPage() {
             Edit Exam
           </Button>
         </div>
- 
+
         {/* Side-by-side viewer */}
         <div className="page-viewer">
           <div className="page-viewer-slot">
@@ -415,7 +438,7 @@ export default function ViewExamPage() {
             )}
           </div>
         </div>
- 
+
         {/* Page nav */}
         <div className="page-nav">
           <button className="btn-icon" onClick={() => goPage(-1)} disabled={pageIdx === 0} aria-label="Previous page"><IconLeft /></button>
@@ -430,7 +453,7 @@ export default function ViewExamPage() {
             </span>
           )}
         </div>
- 
+
         {/* ── Answer Key section ── */}
         <p className="section-title">Answer Key</p>
         <div className="page-viewer" style={{ marginBottom: "1.5rem" }}>
@@ -489,7 +512,7 @@ export default function ViewExamPage() {
             )}
           </div>
         </div>
- 
+
         {/* ── Test Papers section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Test Papers</p>
@@ -497,7 +520,7 @@ export default function ViewExamPage() {
             Add paper
           </Button>
         </div>
- 
+
         <PapersTable
           papers={papers}
           selectedPaperId={selectedPaper?.paper_id ?? null}
@@ -505,7 +528,7 @@ export default function ViewExamPage() {
           onEdit={handleEditPaper}
           onDelete={handleDeleteRequest}
         />
- 
+
         {/* ── Delete confirm dialog ── */}
         {deletingPaper && (
           <ConfirmDialog
@@ -518,7 +541,7 @@ export default function ViewExamPage() {
             dangerous
           />
         )}
- 
+
         {/* ── Modals ── */}
         {showAddPaper && (
           <AddEditPaperModal
@@ -528,7 +551,7 @@ export default function ViewExamPage() {
             onSuccess={handlePaperAdded}
           />
         )}
- 
+
         {editingPaper && (
           <EditPaperModal
             paper={editingPaper}

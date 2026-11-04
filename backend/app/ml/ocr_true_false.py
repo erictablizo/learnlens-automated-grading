@@ -1,34 +1,3 @@
-"""
-app/ml/ocr_true_false.py — True/False (written) OCR
-====================================================
-
-FIX 2026-09-22 — "Answer key shows 107 answers but the sheet only has 20"
--------------------------------------------------------------------------
-Old pipeline: every contour 15-200 px wide was OCR'd with `--psm 6` and
-accepted if the text merely *started with* "T" or "F". Printed words such as
-"The", "To", "This", "For", "From", "Filipino"... all passed, so the whole
-question text became answers (107). Hard-coded pixel sizes also broke on
-different photo resolutions.
-
-New pipeline — one answer per item, never one per word:
-  A. BLANK MODE (normal sheets: "____T____ 1. The sun rises in the east")
-     1. Find the answer blanks: short horizontal lines (underscores) using a
-        horizontal morphological opening. Full-width rules are ignored.
-     2. For every blank, look only at the ink written just above/on it.
-     3. Classify that handwriting as T or F (see below).
-     -> exactly one answer per blank. An empty blank on a student paper is
-        kept as "" so later items are not shifted (grading stays aligned).
-  B. ROW MODE (fallback when no blanks are printed)
-     1. Group ink into text lines; take the FIRST word of each line.
-     2. Keep only lines whose first word sits in the dominant left answer
-        column and is short (a letter or TRUE/FALSE, not "Directions:").
-     3. Keep it only if it really reads as T/F/TRUE/FALSE.
-  T-vs-F classification = Tesseract (psm 10, whitelist TF) + a stroke-shape
-  check (T has its vertical stem in the middle, F has it on the left). When
-  both agree confidence is high; if Tesseract is unsure the shape wins.
-  Optional `expected_items` keeps the N most confident answers.
-"""
-
 from __future__ import annotations
 
 from typing import Optional

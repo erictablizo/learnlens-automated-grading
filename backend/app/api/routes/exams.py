@@ -42,7 +42,14 @@ async def list_exams(uid: int = Depends(current_user_id), db: AsyncSession = Dep
 
 @router.post("", response_model=ExamListResponse, status_code=201)
 async def create_exam(data: ExamCreate, uid: int = Depends(current_user_id), db: AsyncSession = Depends(get_db)):
-    return await exam_service.create_exam(db, uid, data.exam_name, data.description)
+    # FIX 2026-11-04: subject and schedule MUST be forwarded here. ExamCreate
+    # declares and validates them, but a route that lists its arguments one by
+    # one silently drops anything not listed — exactly how routes/profile.py
+    # accepted year_level since 2026-10-04 and never stored it.
+    return await exam_service.create_exam(
+        db, uid, data.exam_name, data.description,
+        subject=data.subject, schedule=data.schedule,
+    )
 
 
 @router.get("/{exam_id}", response_model=ExamResponse)
@@ -62,7 +69,11 @@ async def check_has_checked_papers(exam_id: int, uid: int = Depends(current_user
 
 @router.put("/{exam_id}", response_model=ExamListResponse)
 async def update_exam(exam_id: int, data: ExamUpdate, uid: int = Depends(current_user_id), db: AsyncSession = Depends(get_db)):
-    exam = await exam_service.update_exam(db, exam_id, uid, exam_name=data.exam_name, description=data.description)
+    exam = await exam_service.update_exam(
+        db, exam_id, uid,
+        exam_name=data.exam_name, description=data.description,
+        subject=data.subject, schedule=data.schedule,   # FIX 2026-11-04
+    )
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
     return exam

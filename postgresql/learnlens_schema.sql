@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict yIMIPAFMTdNY5m4ozdM5MQh1dj9TZik3PsDl0dxJkK1be5R2wruOV3QyEjOKuGf
+\restrict emMa7HWhdzQuhSskyHmNsbltcQWUdYEMxxeewnKVdXSM3TJk0TeosZg4WWVG78Z
 
 -- Dumped from database version 18.1
 -- Dumped by pg_dump version 18.1
 
--- Started on 2026-10-26 11:55:30
+-- Started on 2026-11-04 19:52:42
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -61,7 +61,7 @@ CREATE SEQUENCE public.answer_keys_answer_key_id_seq
 ALTER SEQUENCE public.answer_keys_answer_key_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5165 (class 0 OID 0)
+-- TOC entry 5166 (class 0 OID 0)
 -- Dependencies: 229
 -- Name: answer_keys_answer_key_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -107,7 +107,7 @@ CREATE SEQUENCE public.exam_page_parts_part_id_seq
 ALTER SEQUENCE public.exam_page_parts_part_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5166 (class 0 OID 0)
+-- TOC entry 5167 (class 0 OID 0)
 -- Dependencies: 237
 -- Name: exam_page_parts_part_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -150,7 +150,7 @@ CREATE SEQUENCE public.exam_pages_page_id_seq
 ALTER SEQUENCE public.exam_pages_page_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5167 (class 0 OID 0)
+-- TOC entry 5168 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: exam_pages_page_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -170,6 +170,8 @@ CREATE TABLE public.exams (
     description text DEFAULT ''::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now(),
+    subject character varying(255),
+    schedule character varying(255),
     CONSTRAINT exams_exam_name_check CHECK ((char_length((exam_name)::text) >= 7))
 );
 
@@ -193,7 +195,7 @@ CREATE SEQUENCE public.exams_exam_id_seq
 ALTER SEQUENCE public.exams_exam_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5168 (class 0 OID 0)
+-- TOC entry 5169 (class 0 OID 0)
 -- Dependencies: 225
 -- Name: exams_exam_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -235,7 +237,7 @@ CREATE SEQUENCE public.paper_pages_paper_page_id_seq
 ALTER SEQUENCE public.paper_pages_paper_page_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5169 (class 0 OID 0)
+-- TOC entry 5170 (class 0 OID 0)
 -- Dependencies: 233
 -- Name: paper_pages_paper_page_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -284,7 +286,7 @@ CREATE SEQUENCE public.paper_scores_score_id_seq
 ALTER SEQUENCE public.paper_scores_score_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5170 (class 0 OID 0)
+-- TOC entry 5171 (class 0 OID 0)
 -- Dependencies: 235
 -- Name: paper_scores_score_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -326,7 +328,7 @@ CREATE SEQUENCE public.password_resets_reset_id_seq
 ALTER SEQUENCE public.password_resets_reset_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5171 (class 0 OID 0)
+-- TOC entry 5172 (class 0 OID 0)
 -- Dependencies: 223
 -- Name: password_resets_reset_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -346,7 +348,9 @@ CREATE TABLE public.test_papers (
     total_score smallint,
     checked boolean DEFAULT false NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now()
+    updated_at timestamp with time zone DEFAULT now(),
+    first_name character varying(255),
+    last_name character varying(255)
 );
 
 
@@ -369,7 +373,7 @@ CREATE SEQUENCE public.test_papers_paper_id_seq
 ALTER SEQUENCE public.test_papers_paper_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5172 (class 0 OID 0)
+-- TOC entry 5173 (class 0 OID 0)
 -- Dependencies: 231
 -- Name: test_papers_paper_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -404,7 +408,7 @@ CREATE TABLE public.user_profiles (
 ALTER TABLE public.user_profiles OWNER TO postgres;
 
 --
--- TOC entry 5173 (class 0 OID 0)
+-- TOC entry 5174 (class 0 OID 0)
 -- Dependencies: 222
 -- Name: COLUMN user_profiles.year_level; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -429,7 +433,7 @@ CREATE SEQUENCE public.user_profiles_profile_id_seq
 ALTER SEQUENCE public.user_profiles_profile_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5174 (class 0 OID 0)
+-- TOC entry 5175 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: user_profiles_profile_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -470,7 +474,7 @@ CREATE SEQUENCE public.users_user_id_seq
 ALTER SEQUENCE public.users_user_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5175 (class 0 OID 0)
+-- TOC entry 5176 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: users_user_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -559,7 +563,7 @@ ALTER TABLE ONLY public.users ALTER COLUMN user_id SET DEFAULT nextval('public.u
 
 
 --
--- TOC entry 5151 (class 0 OID 30503)
+-- TOC entry 5152 (class 0 OID 30503)
 -- Dependencies: 230
 -- Data for Name: answer_keys; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -569,7 +573,7 @@ COPY public.answer_keys (answer_key_id, exam_id, page_id, question_number, corre
 
 
 --
--- TOC entry 5159 (class 0 OID 30610)
+-- TOC entry 5160 (class 0 OID 30610)
 -- Dependencies: 238
 -- Data for Name: exam_page_parts; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -579,7 +583,7 @@ COPY public.exam_page_parts (part_id, exam_id, page_id, first_item, last_item, q
 
 
 --
--- TOC entry 5149 (class 0 OID 30480)
+-- TOC entry 5150 (class 0 OID 30480)
 -- Dependencies: 228
 -- Data for Name: exam_pages; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -589,17 +593,17 @@ COPY public.exam_pages (page_id, exam_id, page_number, image_path, uploaded_at, 
 
 
 --
--- TOC entry 5147 (class 0 OID 30457)
+-- TOC entry 5148 (class 0 OID 30457)
 -- Dependencies: 226
 -- Data for Name: exams; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.exams (exam_id, created_by, exam_name, description, created_at, updated_at) FROM stdin;
+COPY public.exams (exam_id, created_by, exam_name, description, created_at, updated_at, subject, schedule) FROM stdin;
 \.
 
 
 --
--- TOC entry 5155 (class 0 OID 30550)
+-- TOC entry 5156 (class 0 OID 30550)
 -- Dependencies: 234
 -- Data for Name: paper_pages; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -609,7 +613,7 @@ COPY public.paper_pages (paper_page_id, paper_id, page_number, image_path, uploa
 
 
 --
--- TOC entry 5157 (class 0 OID 30573)
+-- TOC entry 5158 (class 0 OID 30573)
 -- Dependencies: 236
 -- Data for Name: paper_scores; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -619,7 +623,7 @@ COPY public.paper_scores (score_id, paper_id, paper_page_id, answer_key_id, ques
 
 
 --
--- TOC entry 5145 (class 0 OID 30435)
+-- TOC entry 5146 (class 0 OID 30435)
 -- Dependencies: 224
 -- Data for Name: password_resets; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -629,17 +633,17 @@ COPY public.password_resets (reset_id, user_id, token, expires_at, used, created
 
 
 --
--- TOC entry 5153 (class 0 OID 30530)
+-- TOC entry 5154 (class 0 OID 30530)
 -- Dependencies: 232
 -- Data for Name: test_papers; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.test_papers (paper_id, exam_id, student_name, total_score, checked, added_at, updated_at) FROM stdin;
+COPY public.test_papers (paper_id, exam_id, student_name, total_score, checked, added_at, updated_at, first_name, last_name) FROM stdin;
 \.
 
 
 --
--- TOC entry 5143 (class 0 OID 30410)
+-- TOC entry 5144 (class 0 OID 30410)
 -- Dependencies: 222
 -- Data for Name: user_profiles; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -649,7 +653,7 @@ COPY public.user_profiles (profile_id, user_id, first_name, last_name, college, 
 
 
 --
--- TOC entry 5141 (class 0 OID 30393)
+-- TOC entry 5142 (class 0 OID 30393)
 -- Dependencies: 220
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -659,7 +663,7 @@ COPY public.users (user_id, email, password_hash, created_at, updated_at) FROM s
 
 
 --
--- TOC entry 5176 (class 0 OID 0)
+-- TOC entry 5177 (class 0 OID 0)
 -- Dependencies: 229
 -- Name: answer_keys_answer_key_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -668,7 +672,7 @@ SELECT pg_catalog.setval('public.answer_keys_answer_key_id_seq', 1, false);
 
 
 --
--- TOC entry 5177 (class 0 OID 0)
+-- TOC entry 5178 (class 0 OID 0)
 -- Dependencies: 237
 -- Name: exam_page_parts_part_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -677,7 +681,7 @@ SELECT pg_catalog.setval('public.exam_page_parts_part_id_seq', 1, false);
 
 
 --
--- TOC entry 5178 (class 0 OID 0)
+-- TOC entry 5179 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: exam_pages_page_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -686,7 +690,7 @@ SELECT pg_catalog.setval('public.exam_pages_page_id_seq', 1, false);
 
 
 --
--- TOC entry 5179 (class 0 OID 0)
+-- TOC entry 5180 (class 0 OID 0)
 -- Dependencies: 225
 -- Name: exams_exam_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -695,7 +699,7 @@ SELECT pg_catalog.setval('public.exams_exam_id_seq', 1, false);
 
 
 --
--- TOC entry 5180 (class 0 OID 0)
+-- TOC entry 5181 (class 0 OID 0)
 -- Dependencies: 233
 -- Name: paper_pages_paper_page_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -704,7 +708,7 @@ SELECT pg_catalog.setval('public.paper_pages_paper_page_id_seq', 1, false);
 
 
 --
--- TOC entry 5181 (class 0 OID 0)
+-- TOC entry 5182 (class 0 OID 0)
 -- Dependencies: 235
 -- Name: paper_scores_score_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -713,7 +717,7 @@ SELECT pg_catalog.setval('public.paper_scores_score_id_seq', 1, false);
 
 
 --
--- TOC entry 5182 (class 0 OID 0)
+-- TOC entry 5183 (class 0 OID 0)
 -- Dependencies: 223
 -- Name: password_resets_reset_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -722,7 +726,7 @@ SELECT pg_catalog.setval('public.password_resets_reset_id_seq', 1, false);
 
 
 --
--- TOC entry 5183 (class 0 OID 0)
+-- TOC entry 5184 (class 0 OID 0)
 -- Dependencies: 231
 -- Name: test_papers_paper_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -731,7 +735,7 @@ SELECT pg_catalog.setval('public.test_papers_paper_id_seq', 1, false);
 
 
 --
--- TOC entry 5184 (class 0 OID 0)
+-- TOC entry 5185 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: user_profiles_profile_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -740,7 +744,7 @@ SELECT pg_catalog.setval('public.user_profiles_profile_id_seq', 1, false);
 
 
 --
--- TOC entry 5185 (class 0 OID 0)
+-- TOC entry 5186 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: users_user_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -767,7 +771,7 @@ ALTER TABLE ONLY public.answer_keys
 
 
 --
--- TOC entry 4975 (class 2606 OID 30740)
+-- TOC entry 4976 (class 2606 OID 30740)
 -- Name: exam_page_parts exam_page_parts_page_id_first_item_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -776,7 +780,7 @@ ALTER TABLE ONLY public.exam_page_parts
 
 
 --
--- TOC entry 4977 (class 2606 OID 30625)
+-- TOC entry 4978 (class 2606 OID 30625)
 -- Name: exam_page_parts exam_page_parts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -812,7 +816,7 @@ ALTER TABLE ONLY public.exams
 
 
 --
--- TOC entry 4967 (class 2606 OID 30566)
+-- TOC entry 4968 (class 2606 OID 30566)
 -- Name: paper_pages paper_pages_paper_id_page_number_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -821,7 +825,7 @@ ALTER TABLE ONLY public.paper_pages
 
 
 --
--- TOC entry 4969 (class 2606 OID 30564)
+-- TOC entry 4970 (class 2606 OID 30564)
 -- Name: paper_pages paper_pages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -830,7 +834,7 @@ ALTER TABLE ONLY public.paper_pages
 
 
 --
--- TOC entry 4971 (class 2606 OID 30591)
+-- TOC entry 4972 (class 2606 OID 30591)
 -- Name: paper_scores paper_scores_paper_id_answer_key_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -839,7 +843,7 @@ ALTER TABLE ONLY public.paper_scores
 
 
 --
--- TOC entry 4973 (class 2606 OID 30589)
+-- TOC entry 4974 (class 2606 OID 30589)
 -- Name: paper_scores paper_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -866,7 +870,7 @@ ALTER TABLE ONLY public.password_resets
 
 
 --
--- TOC entry 4965 (class 2606 OID 30543)
+-- TOC entry 4966 (class 2606 OID 30543)
 -- Name: test_papers test_papers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -911,7 +915,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4978 (class 1259 OID 30638)
+-- TOC entry 4979 (class 1259 OID 30638)
 -- Name: ix_exam_page_parts_exam_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -919,7 +923,7 @@ CREATE INDEX ix_exam_page_parts_exam_id ON public.exam_page_parts USING btree (e
 
 
 --
--- TOC entry 4979 (class 1259 OID 30639)
+-- TOC entry 4980 (class 1259 OID 30639)
 -- Name: ix_exam_page_parts_page_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -927,7 +931,15 @@ CREATE INDEX ix_exam_page_parts_page_id ON public.exam_page_parts USING btree (p
 
 
 --
--- TOC entry 4984 (class 2606 OID 30519)
+-- TOC entry 4964 (class 1259 OID 39388)
+-- Name: ix_test_papers_exam_lastname; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX ix_test_papers_exam_lastname ON public.test_papers USING btree (exam_id, lower((last_name)::text), lower((first_name)::text));
+
+
+--
+-- TOC entry 4985 (class 2606 OID 30519)
 -- Name: answer_keys answer_keys_exam_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -936,7 +948,7 @@ ALTER TABLE ONLY public.answer_keys
 
 
 --
--- TOC entry 4985 (class 2606 OID 30524)
+-- TOC entry 4986 (class 2606 OID 30524)
 -- Name: answer_keys answer_keys_page_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -945,7 +957,7 @@ ALTER TABLE ONLY public.answer_keys
 
 
 --
--- TOC entry 4991 (class 2606 OID 30628)
+-- TOC entry 4992 (class 2606 OID 30628)
 -- Name: exam_page_parts exam_page_parts_exam_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -954,7 +966,7 @@ ALTER TABLE ONLY public.exam_page_parts
 
 
 --
--- TOC entry 4992 (class 2606 OID 30633)
+-- TOC entry 4993 (class 2606 OID 30633)
 -- Name: exam_page_parts exam_page_parts_page_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -963,7 +975,7 @@ ALTER TABLE ONLY public.exam_page_parts
 
 
 --
--- TOC entry 4983 (class 2606 OID 30497)
+-- TOC entry 4984 (class 2606 OID 30497)
 -- Name: exam_pages exam_pages_exam_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -972,7 +984,7 @@ ALTER TABLE ONLY public.exam_pages
 
 
 --
--- TOC entry 4982 (class 2606 OID 30474)
+-- TOC entry 4983 (class 2606 OID 30474)
 -- Name: exams exams_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -981,7 +993,7 @@ ALTER TABLE ONLY public.exams
 
 
 --
--- TOC entry 4987 (class 2606 OID 30567)
+-- TOC entry 4988 (class 2606 OID 30567)
 -- Name: paper_pages paper_pages_paper_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -990,7 +1002,7 @@ ALTER TABLE ONLY public.paper_pages
 
 
 --
--- TOC entry 4988 (class 2606 OID 30602)
+-- TOC entry 4989 (class 2606 OID 30602)
 -- Name: paper_scores paper_scores_answer_key_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -999,7 +1011,7 @@ ALTER TABLE ONLY public.paper_scores
 
 
 --
--- TOC entry 4989 (class 2606 OID 30592)
+-- TOC entry 4990 (class 2606 OID 30592)
 -- Name: paper_scores paper_scores_paper_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1008,7 +1020,7 @@ ALTER TABLE ONLY public.paper_scores
 
 
 --
--- TOC entry 4990 (class 2606 OID 30597)
+-- TOC entry 4991 (class 2606 OID 30597)
 -- Name: paper_scores paper_scores_paper_page_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1017,7 +1029,7 @@ ALTER TABLE ONLY public.paper_scores
 
 
 --
--- TOC entry 4981 (class 2606 OID 30451)
+-- TOC entry 4982 (class 2606 OID 30451)
 -- Name: password_resets password_resets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1026,7 +1038,7 @@ ALTER TABLE ONLY public.password_resets
 
 
 --
--- TOC entry 4986 (class 2606 OID 30544)
+-- TOC entry 4987 (class 2606 OID 30544)
 -- Name: test_papers test_papers_exam_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1035,7 +1047,7 @@ ALTER TABLE ONLY public.test_papers
 
 
 --
--- TOC entry 4980 (class 2606 OID 30429)
+-- TOC entry 4981 (class 2606 OID 30429)
 -- Name: user_profiles user_profiles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1043,11 +1055,11 @@ ALTER TABLE ONLY public.user_profiles
     ADD CONSTRAINT user_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id) ON DELETE CASCADE;
 
 
--- Completed on 2026-10-26 11:55:30
+-- Completed on 2026-11-04 19:52:42
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict yIMIPAFMTdNY5m4ozdM5MQh1dj9TZik3PsDl0dxJkK1be5R2wruOV3QyEjOKuGf
+\unrestrict emMa7HWhdzQuhSskyHmNsbltcQWUdYEMxxeewnKVdXSM3TJk0TeosZg4WWVG78Z
 

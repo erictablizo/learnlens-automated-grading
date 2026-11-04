@@ -8,14 +8,22 @@
  *  - If an upload fails, the half-saved paper is deleted and the error is shown
  *    (it used to continue and grade a paper with missing pages).
  *  - If checking fails, the real reason is shown (it used to say "skipped").
+ *
+ * CHANGED 2026-11-04 (Doc Rubrica, consultation, page 4): she struck out
+ * "Student Name" and wrote "Name: [First Name] -> Split Name to Last Name &
+ * First Name". One box becomes two, and student_name is composed server-side.
  */
 import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { paperService } from "@/services/paperService";
 import { getToken } from "@/lib/auth";
-import { PageUploadState } from "@/types/paper";
-import { checkStudentName, tidyText } from "@/lib/textField";
+import { PageUploadState, GradeResult } from "@/types/paper";
+// CHANGED 2026-11-04: checkNamePart replaces checkStudentName. student_name is
+// no longer typed by the teacher, so validating it as user input is now wrong -
+// the apostrophe is legal in a name part and illegal under the label rule, so
+// "O'Brien" would be accepted here and refused by the API.
+import { checkNamePart, tidyText } from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
@@ -35,12 +43,19 @@ const blankPages = (n: number): PageUploadState[] =>
   Array.from({ length: n }, (_, i) => ({ pageNumber: i + 1, file: null, uploaded: false, uploading: false, error: null }));
 
 export default function AddEditPaperModal({ examId, examPages, onClose, onSuccess }: Props) {
-  const [studentName, setStudentName] = useState("");
-  const [nameError,   setNameError]   = useState<string | null>(null);
+  // CHANGED 2026-11-04: one studentName state becomes two.
+  const [lastName,  setLastName]  = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastNameError,  setLastNameError]  = useState<string | null>(null);
+  const [firstNameError, setFirstNameError] = useState<string | null>(null);
   const [pageCount,   setPageCount]   = useState(Math.max(1, examPages));
   const [pages,       setPages]       = useState<PageUploadState[]>(() => blankPages(Math.max(1, examPages)));
   const [step,        setStep]        = useState<"form" | "uploading" | "grading" | "done">("form");
-  const [gradeResult, setGradeResult] = useState<{ correct: number; total: number; pct: number; warning?: string | null } | null>(null);
+  // CHANGED 2026-11-04: the whole GradeResult is kept instead of four renamed
+  // fields. types/paper.ts was missing max_possible / needs_review /
+  // review_items / is_final entirely, so this screen could not say that a
+  // paper was still under review even though the API said so on every grade.
+  const [gradeResult, setGradeResult] = useState<GradeResult | null>(null);
   const [gradeError,  setGradeError]  = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
@@ -76,13 +91,16 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   const validate = (): boolean => {
     let ok = true;
     setGlobalError(null);
-    setNameError(null);
-    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
-    // characters. Same rule, same words and same order as
-    // check_student_name() in backend/app/schemas/_text.py. The blank case
-    // still says "Student name is required." exactly as before.
-    const nameMsg = checkStudentName(studentName);
-    if (nameMsg) { setNameError(nameMsg); ok = false; }
+    setLastNameError(null);
+    setFirstNameError(null);
+    // CHANGED 2026-11-04 (Doc Rubrica): two fields, same rule, same words and
+    // same order as check_name_part() in backend/app/schemas/_text.py. A comma
+    // in either box gets its own sentence, because a comma there means the
+    // teacher typed "Surname, First name" into one of them.
+    const lastMsg = checkNamePart(lastName, "Last name");
+    if (lastMsg) { setLastNameError(lastMsg); ok = false; }
+    const firstMsg = checkNamePart(firstName, "First name");
+    if (firstMsg) { setFirstNameError(firstMsg); ok = false; }
     const checked = pages.map(p => ({
       ...p,
       error: !p.file ? `Please upload an image for Page ${p.pageNumber}.`
@@ -107,9 +125,18 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setStep("uploading");
     let paperId: number | null = null;
     try {
-      // FIX 2026-10-22: tidyText, not trim - the server collapses runs of
-      // whitespace, so send what it would have stored anyway.
-      const paper = await paperService.create(examId, tidyText(studentName), token);
+      // CHANGED 2026-11-04: one object, not two positional strings. Both parts
+      // are `string`, so TypeScript cannot catch them being swapped either way
+      // - what the object DOES catch is an omitted field (TS2741), and it names
+      // each value at the call site so a reader can see which is which.
+      //
+      // tidyText, not trim - the server collapses runs of whitespace, so send
+      // what it would have stored anyway.
+      const paper = await paperService.create(
+        examId,
+        { last_name: tidyText(lastName), first_name: tidyText(firstName) },
+        token,
+      );
       paperId = paper.paper_id;
 
       for (let i = 0; i < pages.length; i++) {
@@ -135,8 +162,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
 
     setStep("grading");
     try {
-      const result = await paperService.grade(examId, paperId as number, token);
-      setGradeResult({ correct: result.correct, total: result.total_items, pct: result.score_percent, warning: result.warning });
+      setGradeResult(await paperService.grade(examId, paperId as number, token));
     } catch (e: unknown) {
       setGradeResult(null);
       setGradeError(e instanceof Error ? e.message : "Checking failed.");
@@ -147,22 +173,38 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
 
   const busy = step === "uploading" || step === "grading";
 
+  const nameErr = (msg: string | null) =>
+    msg && (
+      <p role="alert" style={{ color: "var(--error)", fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem" }}>
+        {msg}
+      </p>
+    );
+
   return (
     <Modal title="Add Paper" onClose={busy ? () => {} : onClose}>
       {step === "form" && (
         <>
-          <label className="form-label" htmlFor="student-name">
-            Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+          {/* CHANGED 2026-11-04. The old placeholder was "e.g. Tablizo, Eric",
+              which TAUGHT the comma format the split is meant to end - and a
+              comma is now refused with its own message. These two teach the
+              shape the two boxes actually want. */}
+          <label className="form-label" htmlFor="last-name">
+            Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
-          <input id="student-name" className="form-input" value={studentName}
-            onChange={e => { setStudentName(e.target.value); setNameError(null); }}
-            placeholder="e.g. Tablizo, Eric" aria-required="true" aria-invalid={!!nameError}
-            style={nameError ? { borderBottomColor: "var(--error)" } : undefined} />
-          {nameError && (
-            <p role="alert" style={{ color: "var(--error)", fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem" }}>
-              {nameError}
-            </p>
-          )}
+          <input id="last-name" className="form-input" value={lastName}
+            onChange={e => { setLastName(e.target.value); setLastNameError(null); }}
+            placeholder="e.g. Dela Cruz-Santos" aria-required="true" aria-invalid={!!lastNameError}
+            style={lastNameError ? { borderBottomColor: "var(--error)" } : undefined} />
+          {nameErr(lastNameError)}
+
+          <label className="form-label" htmlFor="first-name">
+            First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+          </label>
+          <input id="first-name" className="form-input" value={firstName}
+            onChange={e => { setFirstName(e.target.value); setFirstNameError(null); }}
+            placeholder="e.g. Ma. Teresa" aria-required="true" aria-invalid={!!firstNameError}
+            style={firstNameError ? { borderBottomColor: "var(--error)" } : undefined} />
+          {nameErr(firstNameError)}
 
           <div style={{ marginBottom: "1rem" }}>
             <label className="form-label" htmlFor="page-count">Pages</label>
@@ -248,12 +290,24 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
         <div style={{ padding: "1rem 0", textAlign: "center" }}>
           {gradeResult ? (
             <>
+              {/* CHANGED 2026-11-04. `correct` is a FLOOR when items are still
+                  under review; `max_possible` is the ceiling. Printing only
+                  `correct` is the bug the backend comment named: "the browser
+                  then sees '11 of 19' for a paper whose true score is 15". */}
               <p style={{ fontWeight: 700, fontSize: "1.1rem", color: "var(--navy)", marginBottom: "0.3rem" }}>
-                {gradeResult.correct} / {gradeResult.total} correct
+                {gradeResult.is_final
+                  ? `${gradeResult.correct} / ${gradeResult.total_items} correct`
+                  : `${gradeResult.correct}–${gradeResult.max_possible} of ${gradeResult.total_items} correct`}
               </p>
-              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: gradeResult.warning ? "0.6rem" : "1.25rem" }}>
-                Score: <strong style={{ color: "var(--orange)" }}>{gradeResult.pct}%</strong>
+              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.6rem" }}>
+                Score: <strong style={{ color: "var(--orange)" }}>{gradeResult.score_percent}%</strong>
               </p>
+              {!gradeResult.is_final && (
+                <div role="status" className="alert alert-error" style={{ marginBottom: "1.25rem", fontSize: "0.82rem", textAlign: "left" }}>
+                  {gradeResult.needs_review} item(s) need your decision before this score is final
+                  {gradeResult.review_items.length > 0 && ` (question ${gradeResult.review_items.join(", ")})`}.
+                </div>
+              )}
               {gradeResult.warning && (
                 <div role="status" className="alert alert-error" style={{ marginBottom: "1.25rem", fontSize: "0.82rem", textAlign: "left" }}>
                   {gradeResult.warning}

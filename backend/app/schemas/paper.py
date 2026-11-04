@@ -4,7 +4,24 @@ from typing import Optional, List
 
 # NEW 2026-10-22 (Doc Rubrica): the character rules live in one module so
 # exam.py, paper.py and frontend/src/lib/textField.ts cannot drift apart.
-from app.schemas._text import check_student_name
+#
+# CHANGED 2026-11-04 (Doc Rubrica, consultation, page 4): check_student_name is
+# gone from this file and check_name_part has taken its place on the INPUT
+# models. student_name is no longer something the teacher types - it is DERIVED
+# from last_name and first_name by compose_student_name() in the service - so
+# validating it as user input is now wrong, not merely redundant.
+#
+# MEASURED 2026-11-04, and this is the reason rather than tidiness: the
+# apostrophe is legal in a name part and illegal under _STRICT_MARKS, so
+#
+#     "O'Brien" + "Ana"  ->  "O'Brien, Ana"   REFUSED by check_student_name
+#     "D'Souza" + "Lee"  ->  "D'Souza, Lee"   REFUSED by check_student_name
+#
+# 3 of 6 realistic composed values failed. Leaving check_student_name on the
+# input path would mean O'Brien is a surname Add Paper accepts and the API then
+# rejects. Widening _STRICT_MARKS instead would let an apostrophe into exam
+# names and descriptions, which is what the 2026-10-22 rule was aimed at.
+from app.schemas._text import check_name_part
 
 
 class PaperPageResponse(BaseModel):
@@ -33,36 +50,80 @@ class PaperScoreResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-def _check_student_name(v: str) -> str:
-    # FIX 2026-09-22: a blank / spaces-only name was accepted
-    # CHANGED 2026-10-22: plus the character classes, and runs of whitespace
-    # are collapsed rather than only trimmed - see schemas/_text.py.
-    # The 255 cap is unchanged; it mirrors test_papers.student_name.
-    return check_student_name(v)
+# NEW 2026-11-04 — the two wrappers follow the _check_* pattern this file
+# already used for student_name, so the label the teacher sees lives here and
+# the character rule lives in _text.py.
+def _check_last_name(v: str) -> str:
+    return check_name_part(v, "Last name")
+
+
+def _check_first_name(v: str) -> str:
+    return check_name_part(v, "First name")
 
 
 class PaperCreate(BaseModel):
-    student_name: str
+    # CHANGED 2026-11-04. student_name is REMOVED, not made optional.
+    #
+    # Pydantic ignores unknown keys by default, so the old frontend payload
+    # {"student_name": "..."} does not error on the extra key - it fails with
+    # 422 on the two MISSING ones instead. MEASURED: that is a loud failure,
+    # which is what we want; an optional student_name would have been a silent
+    # one, accepting the old payload and storing ", " as the composed name.
+    #
+    # The frontend MUST ship in the same deploy as this file.
+    last_name:  str
+    first_name: str
 
-    @field_validator("student_name")
+    @field_validator("last_name")
     @classmethod
-    def _name(cls, v: str) -> str:
-        return _check_student_name(v)
+    def _last(cls, v: str) -> str:
+        return _check_last_name(v)
+
+    @field_validator("first_name")
+    @classmethod
+    def _first(cls, v: str) -> str:
+        return _check_first_name(v)
 
 
 class PaperUpdate(BaseModel):
-    student_name: Optional[str] = None
+    """The rename / hand-split model.
 
-    @field_validator("student_name")
+    Until 2026-11-04 this class existed and NOTHING imported it: routes/papers.py
+    defined its own PaperNameUpdate(BaseModel) with no validators at all, so
+    PUT /exams/{id}/papers/{paper_id} accepted "@@@", "", "   ", "123",
+    "<script>alert(1)</script>" and 300 characters. The route imports this now.
+
+    BOTH fields are REQUIRED, which is unusual for an "Update" model and is
+    deliberate: student_name is recomposed from the pair, and recomposing from
+    one half would need a read of the other half first. Edit Paper always sends
+    both - it pre-fills them from a best-effort split of the stored
+    student_name, which is how the 18 pre-migration papers get split by hand.
+    """
+
+    last_name:  str
+    first_name: str
+
+    @field_validator("last_name")
     @classmethod
-    def _name(cls, v: Optional[str]) -> Optional[str]:
-        return None if v is None else _check_student_name(v)
+    def _last(cls, v: str) -> str:
+        return _check_last_name(v)
+
+    @field_validator("first_name")
+    @classmethod
+    def _first(cls, v: str) -> str:
+        return _check_first_name(v)
 
 
 class PaperResponse(BaseModel):
     paper_id:     int
     exam_id:      int
     student_name: str
+    # NEW 2026-11-04. Optional because the 18 papers that predate the migration
+    # have NULL in both until someone opens Edit Paper and splits them. The
+    # migration deliberately does not backfill: 4 of 7 real student_name values
+    # split wrongly, e.g. "Midterm - Alcantara, Ben R." -> "Midterm - Alcantara".
+    last_name:    Optional[str] = None
+    first_name:   Optional[str] = None
     total_score:  Optional[int] = None
     checked:      bool
     added_at:     datetime
@@ -74,6 +135,12 @@ class PaperResponse(BaseModel):
 class PaperListResponse(BaseModel):
     paper_id:     int
     student_name: str
+    # NEW 2026-11-04 — PapersTable shows "Last Name" and "First Name" as two
+    # columns (her page 4), and this is the model behind that table. It is also
+    # the response_model of create_paper and update_paper_name, so both write
+    # paths hand the new values straight back to the browser.
+    last_name:    Optional[str] = None
+    first_name:   Optional[str] = None
     total_score:  Optional[int] = None
     checked:      bool
     added_at:     datetime

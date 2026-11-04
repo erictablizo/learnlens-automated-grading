@@ -1,6 +1,11 @@
 "use client";
 import { Paper } from "@/types/paper";
 import Button from "@/components/ui/Button";
+// NEW 2026-11-04 (Doc Rubrica, page 4): "Paper Table: [Last Name] [First Name]".
+// These three read a MIXED table - papers entered from now on have the two
+// columns, the 18 that predate the migration have only student_name - so the
+// JSX below needs no branch of its own.
+import { paperLastName, paperFirstName, needsNameSplit } from "@/lib/textField";
 
 const IconEdit = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -28,22 +33,48 @@ function ScoreCell({ paper }: { paper: Paper }) {
   return <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>—</span>;
 }
 
+/** NEW 2026-11-04. The marker on a row whose name has not been split yet.
+ *
+ *  It exists because the character rule CANNOT catch the bad case: MEASURED,
+ *  "Midterm - Alcantara" with an ASCII hyphen pre-fills Edit Paper, passes
+ *  checkNamePart and saves wrong unless a person notices. The teacher spotting
+ *  it unaided is not a control; a visible marker is. */
+function SplitBadge() {
+  return (
+    <span
+      title="This paper's name has not been split into Last name and First name yet. Open Edit Paper to split it."
+      style={{
+        marginLeft: "0.4rem", fontSize: "0.68rem", fontWeight: 700,
+        color: "var(--orange)", background: "var(--orange-light)",
+        border: "1px solid var(--orange)", borderRadius: "10px",
+        padding: "0.05rem 0.4rem", whiteSpace: "nowrap",
+      }}
+    >
+      needs split
+    </span>
+  );
+}
+
+const HEAD = (
+  <tr>
+    <th style={{ width: 40 }}>ID</th>
+    <th>Last Name</th>
+    <th>First Name</th>
+    <th style={{ width: 80 }}>Score</th>
+    <th style={{ width: 90 }}>Actions</th>
+  </tr>
+);
+
 export default function PapersTable({ papers, selectedPaperId, onSelect, onEdit, onDelete }: Props) {
   if (papers.length === 0) {
     return (
       <div className="table-wrapper">
         <table>
-          <thead>
-            <tr>
-              <th style={{ width: 40 }}>ID</th>
-              <th>Name</th>
-              <th style={{ width: 80 }}>Score</th>
-              <th style={{ width: 90 }}>Actions</th>
-            </tr>
-          </thead>
+          <thead>{HEAD}</thead>
           <tbody>
             <tr>
-              <td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem" }}>
+              {/* CHANGED 2026-11-04: colSpan 4 -> 5. Two name columns now. */}
+              <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem" }}>
                 No test papers added yet.
               </td>
             </tr>
@@ -56,17 +87,15 @@ export default function PapersTable({ papers, selectedPaperId, onSelect, onEdit,
   return (
     <div className="table-wrapper">
       <table aria-label="Test papers">
-        <thead>
-          <tr>
-            <th style={{ width: 40 }}>ID</th>
-            <th>Name</th>
-            <th style={{ width: 80 }}>Score</th>
-            <th style={{ width: 90 }}>Actions</th>
-          </tr>
-        </thead>
+        <thead>{HEAD}</thead>
         <tbody>
           {papers.map((p, idx) => {
             const isSelected = p.paper_id === selectedPaperId;
+            const unsplit    = needsNameSplit(p);
+            const nameStyle  = {
+              fontWeight: isSelected ? 600 : 500,
+              color:      isSelected ? "var(--orange)" : "var(--navy)",
+            };
             return (
               <tr
                 key={p.paper_id}
@@ -79,15 +108,20 @@ export default function PapersTable({ papers, selectedPaperId, onSelect, onEdit,
                 }}
               >
                 <td style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>{idx + 1}</td>
-                <td style={{
-                  fontWeight: isSelected ? 600 : 500,
-                  color:      isSelected ? "var(--orange)" : "var(--navy)",
-                }}>
-                  {p.student_name}
+                {/* The two columns read through paperLastName / paperFirstName,
+                    so a legacy row shows its best-effort split rather than a
+                    blank cell - and carries the badge saying so. */}
+                <td style={nameStyle}>
+                  {paperLastName(p) || "—"}
+                  {unsplit && <SplitBadge />}
                 </td>
+                <td style={nameStyle}>{paperFirstName(p) || "—"}</td>
                 <td><ScoreCell paper={p} /></td>
                 <td onClick={e => e.stopPropagation()}>
                   <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                    {/* aria-label still uses student_name, which is composed
+                        server-side and therefore never stale. That is the
+                        payoff of keeping the column rather than dropping it. */}
                     <Button
                       variant="icon"
                       onClick={() => onEdit(p)}

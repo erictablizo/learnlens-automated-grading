@@ -18,6 +18,13 @@ export interface Exam {
   exam_id: number;
   exam_name: string;
   description: string;
+  // NEW 2026-11-04 (Doc Rubrica) — "2 additional Fields in Exam Info Table".
+  // NOT optional with "?": ExamResponse and ExamListResponse both declare
+  // them, so Pydantic always serialises the key.  The value is null for the
+  // exams that predate the migration, which is why it is "| null" and not
+  // a bare string.
+  subject: string | null;
+  schedule: string | null;
   created_at: string;
   updated_at?: string;
   pages?: ExamPage[];
@@ -27,11 +34,20 @@ export interface Exam {
 export interface ExamCreatePayload {
   exam_name: string;
   description: string;
+  // REQUIRED, mirroring ExamCreate on the backend.  Marking these optional
+  // would let CreateExamForm compile while omitting a field the API refuses,
+  // trading a compile error for a 422 at runtime.
+  subject: string;
+  schedule: string;
 }
 
 export interface ExamUpdatePayload {
   exam_name?: string;
   description?: string;
+  // Optional, mirroring ExamUpdate.  update_exam() skips any value that
+  // arrives as None, so an omitted key leaves the stored value alone.
+  subject?: string;
+  schedule?: string;
 }
 
 export type QuestionType = "true_false" | "encircled" | "mixed";

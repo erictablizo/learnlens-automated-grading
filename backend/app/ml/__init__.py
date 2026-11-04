@@ -1,12 +1,3 @@
-"""
-app/ml/__init__.py
-
-CHANGED 2026-10-23 — the new question types and the three-state grading are
-re-exported here too, so `from app.ml import ...` keeps working the way the
-existing imports do. Nothing is removed: every name the old file exported is
-still exported, in the same order.
-"""
-
 from app.ml.ocr import (
     ocr_page,
     ocr_page_parts,

@@ -3,12 +3,17 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.config import settings
+# CHANGED 2026-11-04: PaperUpdate is imported now. It already existed in
+# schemas/paper.py and this file never imported it - the PUT below used a local
+# PaperNameUpdate(BaseModel) with NO validators instead, so the entire
+# character-rule programme of 2026-10-22/23 was bypassable on that endpoint.
+# MEASURED: it accepted "@@@", "", "   ", "123", "<script>alert(1)</script>"
+# and 300 characters (the last reaching varchar(255) as a 500, not a 422).
 from app.schemas.paper import (
-    PaperCreate, PaperResponse, PaperListResponse, GradeResponse,
+    PaperCreate, PaperUpdate, PaperResponse, PaperListResponse, GradeResponse,
     # NEW 2026-10-24 — review queue (add these to app/schemas/paper.py)
     ReviewItemResponse, ReviewResolveRequest, ReviewResolveResponse,
 )
@@ -32,8 +37,11 @@ async def _uid(
     return user.user_id
 
 
-class PaperNameUpdate(BaseModel):
-    student_name: str
+# REMOVED 2026-11-04 — class PaperNameUpdate(BaseModel): student_name: str
+#
+# It had no validators of any kind, and schemas/paper.py already held a
+# validated PaperUpdate that this file did not import. Validation for the
+# rename now comes from the schema, where the rest of this project keeps it.
 
 
 @router.get("", response_model=List[PaperListResponse])
@@ -43,7 +51,20 @@ async def list_papers(exam_id: int, uid: int = Depends(_uid), db: AsyncSession =
 
 @router.post("", response_model=PaperListResponse, status_code=201)
 async def create_paper(exam_id: int, data: PaperCreate, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
-    return await paper_service.create_paper(db, exam_id, data.student_name)
+    # FIX 2026-11-04 (Doc Rubrica, consultation, page 4): this line named
+    # student_name one argument at a time, so the two new fields were validated
+    # by PaperCreate and then dropped on the floor - the same bug as the
+    # year_level route and the subject route, third occurrence.
+    # MEASURED: the service received {'student_name': None} and nothing else.
+    #
+    # student_name is NOT passed from here. paper_service composes it from the
+    # two parts, so exactly one place in the codebase knows the "Last, First"
+    # format.
+    return await paper_service.create_paper(
+        db, exam_id,
+        last_name=data.last_name,
+        first_name=data.first_name,
+    )
 
 
 @router.get("/{paper_id}", response_model=PaperResponse)
@@ -57,14 +78,29 @@ async def get_paper(exam_id: int, paper_id: int, uid: int = Depends(_uid), db: A
 
 
 @router.put("/{paper_id}", response_model=PaperListResponse)
-async def update_paper_name(exam_id: int, paper_id: int, data: PaperNameUpdate, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(TestPaper).where(TestPaper.paper_id == paper_id))
-    paper  = result.scalar_one_or_none()
+async def update_paper_name(exam_id: int, paper_id: int, data: PaperUpdate, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
+    # CHANGED 2026-11-04. Two things:
+    #
+    #  1. PaperUpdate replaces the inline, unvalidated PaperNameUpdate - see
+    #     the import comment above for what that model accepted.
+    #
+    #  2. This is the HAND-SPLIT endpoint. The teacher opens Edit Paper on one
+    #     of the 18 papers that predate the migration, the Last name / First
+    #     name boxes arrive pre-filled from a best-effort split of
+    #     student_name, she corrects them, and student_name is rewritten from
+    #     the parts so every existing read site stays correct.
+    #
+    # The select / setattr / commit body moved into paper_service.rename_paper:
+    # recomposing student_name is logic, this would otherwise be the second
+    # place that knows the format, and the service is where an ownership check
+    # belongs. The 404 shape matches delete_paper and grade_paper below.
+    paper = await paper_service.rename_paper(
+        db, paper_id, exam_id,
+        last_name=data.last_name,
+        first_name=data.first_name,
+    )
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
-    paper.student_name = data.student_name
-    await db.commit()
-    await db.refresh(paper)
     return paper
 
 

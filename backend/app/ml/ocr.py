@@ -1,44 +1,3 @@
-"""
-app/ml/ocr.py — Main OCR Router
-================================
-Routes an image to the right detector:
-  "encircled"      → Multiple Choice (circled A/B/C/D)   → ocr_encircled
-  "true_false"     → True/False (written T/F)            → ocr_true_false
-  "written_letter" → a LETTER written on a blank         → ocr_written_letter   NEW 2026-10-23
-  "identification" → a WORD written on an answer line     → ocr_identification   NEW 2026-10-23
-  "mixed"          → one page with BOTH MC and T/F parts → both, merged by position
-
-FIX 2026-09-22:
-  * `expected_items` — how many items the page really has (from the
-    "Number of items on this page" field, or from the answer key when checking
-    a paper). Extra false detections are dropped instead of being saved.
-  * `keep_blanks` — for student papers: an unanswered T/F blank stays in its
-    place as "" so later items are not shifted.
-  * `infer_question_type()` — lets Checking Paper use the same detector
-    the answer key was made with (it used to always use the circle detector).
-NEW 2026-09-26:
-  * "mixed" question type for a page like
-    "Part I - Multiple Choice (1-5)" + "Part II - True or False (6-10)".
-
-NEW 2026-10-23 — Doc Rubrica, sixth comment. Her English 101 sheet has FIVE
-parts in three different mechanics, and page 2 alone holds four of them:
-
-    Part II   item 12      encircled
-    Part III  items 13-18  letter written on a blank (A-F)
-    Part IV   items 19-24  identification (a word)
-    Part V    items 25-30  True/False
-
-One `question_type` per page cannot express that, and a plain union of
-detectors cannot either: "F" is a valid matching-type letter AND the first
-letter of FALSE. Part III item 18 really is F; Part V item 26 really is FALSE.
-
-So `ocr_page_parts()` takes the item ranges the teacher declares and assigns
-detections to them using a Y-CURSOR: parts run down the page in item order, so
-each part claims the next detections of ITS type that lie below the previous
-part. That is what keeps Part III's letters apart from Part V's words even
-though both are "handwriting on a blank".
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -70,27 +29,6 @@ MIXED_MIN_IDENT_LINES = 3
 
 
 def mixed_alphabet(letters: Optional[str] = None) -> str:
-    """The alphabet `mixed` reads short blanks with.
-
-    MEASURED 2026-10-24, why this cannot be one constant. On Doc Rubrica's
-    page 1 (Part I, options A-D only) and page 2 (Part III A-F + Part V T/F),
-    `ocr_page_written_letter` scores:
-
-                 page 1 blanks        page 2 blanks
-        ABCD        3/6, 2 left blank    3/12
-        ABCDT       3/6, 2 left blank    8/12
-        ABCDEF      3/6, 2 read as "E"   5/12
-        ABCDEFT     3/6, 2 read as "E"  10/12
-
-    Page 2 needs E, F and T. Page 1 must NOT have E or F: items 1 and 6 are
-    unreadable either way, and a wider alphabet does not read them correctly,
-    it only fills them with an "E" that Part I never offered. Same score,
-    worse key - a teacher can see an empty slot, but an "E" on a four-option
-    item looks like an answer.
-
-    So a caller that knows the page's options should narrow it. T is always
-    kept, because dropping it is what made every written letter read as "F".
-    """
     base = (letters or "").strip().upper() or MIXED_LETTERS
     return base if "T" in base else base + "T"
 
@@ -116,17 +54,6 @@ def normalize_question_type(qt: Optional[str]) -> str:
 
 
 def infer_question_type(answers: Iterable[str]) -> str:
-    """Work out how a paper must be read from the answer key of its page:
-    all T/F -> 'true_false', all A-D -> 'encircled', a bit of both -> 'mixed'.
-
-    NOTE 2026-10-23: this cannot distinguish 'encircled' from 'written_letter',
-    because both store a bare letter. When a page was generated with declared
-    parts, the paper must be checked with those same parts rather than with
-    this guess - see ocr_page_parts().
-
-    An answer longer than one character and not TRUE/FALSE can only have come
-    from identification, so that one IS recoverable.
-    """
     vals = [a.strip().upper() for a in answers if a and a.strip()]
     if not vals:
         return "encircled"
@@ -179,30 +106,6 @@ def ocr_page(
 
 def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
                       letters: Optional[str] = None) -> Optional[OCRPageResult]:
-    """Read a page using the item numbers PRINTED on it.
-
-    Returns None when the page carries no readable ladder of item numbers, so
-    the caller can fall back to merging by position.
-
-    NEW 2026-10-24. This is the answer to "detection should be based on the
-    structure of the exam in the image". The three detectors still answer
-    "what is written here"; `ocr_item_numbers` answers "which item is this",
-    and an item nobody can read becomes an empty slot at its own number
-    instead of pulling every later item up by one.
-
-    MEASURED on the two pages of exam 118:
-
-                                  page 1          page 2
-        slots produced            11 (items 1-11) 19 (items 12-30)
-        answers correct            8              15
-        header phantoms dropped    3               0
-
-        the old merge              9 answers      19 answers numbered 10-28
-        declared parts             8/11           16/19, after declaring 6 ranges
-
-    Page 2 is the point. The old merge numbered it from 10 because page 1 came
-    up two short; here page 2 says 12-30 itself and page 1 cannot affect it.
-    """
     from app.ml.ocr_shared import load_gray, ink_mask, estimate_text_height
 
     try:
@@ -216,19 +119,6 @@ def ocr_page_numbered(image_path: str, keep_blanks: bool = False,
     ladder = find_item_numbers(page_text)
     if len(ladder) < 2:
         return None
-
-    # The page says which letters it can contain. A caller that states an
-    # alphabet still wins; "not stated" now means "ask the page" rather than
-    # "assume A-F".
-    #
-    # A page that prints NO option labels offers no lettered choices at all,
-    # so the only thing a blank on it can hold is a word - and on a sheet
-    # read by this package that word is TRUE or FALSE. Handing such a page the
-    # wide "ABCDEFT" is what lets a cramped TRUE come back as "C" and a FALSE
-    # as "A". REPORTED 2026-10-28 on a 60-item True/False sheet: key item 41
-    # read C, key item 55 read A, paper item 1 read A, and paper item 49 read
-    # as nothing at all, because no letter in the wide alphabet matched. None
-    # of those four letters was ever an available answer on that page.
     labels = option_labels(page_text)
     if letters:
         alphabet = mixed_alphabet(letters)

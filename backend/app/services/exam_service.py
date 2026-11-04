@@ -59,8 +59,24 @@ async def get_exam(db: AsyncSession, exam_id: int, user_id: int) -> Optional[Exa
     return result.scalar_one_or_none()
 
 
-async def create_exam(db: AsyncSession, user_id: int, exam_name: str, description: str) -> Exam:
-    exam = Exam(created_by=user_id, exam_name=exam_name.strip(), description=description.strip())
+async def create_exam(
+    db: AsyncSession,
+    user_id: int,
+    exam_name: str,
+    description: str,
+    subject: Optional[str] = None,      # NEW 2026-11-04 (Doc Rubrica)
+    schedule: Optional[str] = None,     # NEW 2026-11-04 (Doc Rubrica)
+) -> Exam:
+    # Defaulted to None so the 4-argument callers that already exist keep
+    # working.  Blank or whitespace-only becomes NULL rather than '' so the
+    # column has one single "not provided" value instead of two.
+    exam = Exam(
+        created_by=user_id,
+        exam_name=exam_name.strip(),
+        description=description.strip(),
+        subject=(subject or "").strip() or None,
+        schedule=(schedule or "").strip() or None,
+    )
     db.add(exam)
     await db.commit()
     await db.refresh(exam)

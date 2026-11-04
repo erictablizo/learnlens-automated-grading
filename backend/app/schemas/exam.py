@@ -4,7 +4,10 @@ from typing import Optional, List
 
 # NEW 2026-10-22 (Doc Rubrica): the character rules live in one module so
 # exam.py, paper.py and frontend/src/lib/textField.ts cannot drift apart.
-from app.schemas._text import check_exam_name, check_description
+# CHANGED 2026-11-04: + subject and schedule, her "2 additional Fields".
+from app.schemas._text import (
+    check_exam_name, check_description, check_subject, check_schedule,
+)
 
 
 # NEW 2026-10-24 — Doc Rubrica's sixth comment. Declared BEFORE ExamPageResponse
@@ -133,9 +136,27 @@ def _check_description(v: str) -> str:
     return check_description(v)
 
 
+def _check_subject(v: str) -> str:
+    # NEW 2026-11-04 (Doc Rubrica, consultation): "2 additional Fields in Exam
+    # Info Table". Subject uses the SHARED character set - "English101" and
+    # "Math 101 (Set A)" need nothing an exam name does not.
+    return check_subject(v)
+
+
+def _check_schedule(v: str) -> str:
+    # NEW 2026-11-04. Schedule is the ONE field that allows a COLON, because
+    # her own examples are "1:00pm to 12pm", "11:00AM - 7pm" and "12:00 PM".
+    # MEASURED: 4 of her 5 examples are refused by the shared set. It also
+    # skips the "must contain a letter" test, since "1:00 - 3:00" is a
+    # legitimate schedule. See _SCHEDULE_STRICT_MARKS in schemas/_text.py.
+    return check_schedule(v)
+
+
 class ExamCreate(BaseModel):
     exam_name: str
     description: str
+    subject: str                                  # NEW 2026-11-04
+    schedule: str                                 # NEW 2026-11-04
 
     @field_validator("exam_name")
     @classmethod
@@ -147,10 +168,22 @@ class ExamCreate(BaseModel):
     def _desc(cls, v: str) -> str:
         return _check_description(v)
 
+    @field_validator("subject")
+    @classmethod
+    def _subject(cls, v: str) -> str:
+        return _check_subject(v)
+
+    @field_validator("schedule")
+    @classmethod
+    def _schedule(cls, v: str) -> str:
+        return _check_schedule(v)
+
 
 class ExamUpdate(BaseModel):
     exam_name: Optional[str] = None
     description: Optional[str] = None
+    subject: Optional[str] = None                 # NEW 2026-11-04
+    schedule: Optional[str] = None                # NEW 2026-11-04
 
     @field_validator("exam_name")
     @classmethod
@@ -162,11 +195,25 @@ class ExamUpdate(BaseModel):
     def _desc(cls, v: Optional[str]) -> Optional[str]:
         return None if v is None else _check_description(v)
 
+    @field_validator("subject")
+    @classmethod
+    def _subject(cls, v: Optional[str]) -> Optional[str]:
+        return None if v is None else _check_subject(v)
+
+    @field_validator("schedule")
+    @classmethod
+    def _schedule(cls, v: Optional[str]) -> Optional[str]:
+        return None if v is None else _check_schedule(v)
+
 
 class ExamResponse(BaseModel):
     exam_id: int
     exam_name: str
     description: str
+    # NEW 2026-11-04. Optional, because the exams created before the migration
+    # have NULL here until the teacher opens Edit Exam and fills them in.
+    subject: Optional[str] = None
+    schedule: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     pages: List[ExamPageResponse] = []
@@ -178,6 +225,12 @@ class ExamListResponse(BaseModel):
     exam_id: int
     exam_name: str
     description: str
+    # NEW 2026-11-04. Needed HERE as well as on ExamResponse: GET /exams/{id}
+    # returns ExamResponse, but POST /exams and PUT /exams/{id} both return
+    # ExamListResponse. Omit it here and the form gets nothing back after a
+    # save, which looks exactly like the save having failed.
+    subject: Optional[str] = None
+    schedule: Optional[str] = None
     created_at: datetime
     model_config = {"from_attributes": True}
 

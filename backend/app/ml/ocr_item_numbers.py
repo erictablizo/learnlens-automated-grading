@@ -1,34 +1,3 @@
-"""
-app/ml/ocr_item_numbers.py — read the exam's own structure
-===========================================================
-NEW 2026-10-24.
-
-Every detector in this package answers "what is written here". None of them
-answers "which item is this". Until now the item number was the POSITION of a
-detection in the list: the first answer found is item 1, the second is item 2.
-That is why page 1 of Doc Rubrica's key produced nine answers and page 2 was
-then numbered 10-28 instead of 12-30 - two blanks nobody could read on page 1
-moved every item on page 2.
-
-The exam sheet already carries the answer. "1." , "2." , "13." , "26." are
-PRINTED, and printed digits are the one thing on these photographs Tesseract
-reads well. So this module reads the item numbers off the page and hands back
-{item_number: y}. A detector's job stays "what is written here"; this module
-says which item that line belongs to, and an item nobody could read stays an
-empty slot at its own number instead of shifting its neighbours.
-
-MEASURED 2026-10-24 on the two pages of exam 118:
-
-                                page 1 (items 1-11)   page 2 (items 12-30)
-    item numbers recovered           11 of 11              19 of 19
-    answers in the right slot         8 of 11              15 of 19
-    header phantoms discarded              3                     0
-
-For comparison on the same photographs: the current merge gives 9 answers on
-page 1 and numbers page 2 from 10; declared parts gives 8/11 and 16/19 but
-needs the teacher to state every range first.
-"""
-
 from __future__ import annotations
 
 import bisect

@@ -64,6 +64,18 @@ class Exam(Base):
     created_by  = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     exam_name   = Column(String(255), nullable=False)
     description = Column(Text, nullable=False, default="", server_default=text("''"))
+    # NEW 2026-11-04 (Doc Rubrica, consultation): "2 additional Fields in Exam
+    # Info Table". NULLABLE in the database because the existing exams predate
+    # them — a NOT NULL would make the migration fail on rows that cannot
+    # supply a value. Both forms REQUIRE them, so an exam acquires them the
+    # first time it is created or edited.
+    #
+    # schedule is free text, not two timestamps. Her own examples are
+    # "2pm to 3pm" and "1:00pm to 12pm"; a text column cannot be wrong about a
+    # range the teacher writes herself. Sortable schedules are a later
+    # migration if a panel ever asks for them.
+    subject     = Column(String(255))
+    schedule    = Column(String(255))
     created_at  = Column(UTCDateTime(), server_default=func.now(), nullable=False)
     updated_at  = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
 
