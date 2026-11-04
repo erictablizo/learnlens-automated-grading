@@ -60,11 +60,21 @@ async def create_paper(exam_id: int, data: PaperCreate, uid: int = Depends(_uid)
     # student_name is NOT passed from here. paper_service composes it from the
     # two parts, so exactly one place in the codebase knows the "Last, First"
     # format.
-    return await paper_service.create_paper(
-        db, exam_id,
+    #
+    # CHANGED 2026-11-04 (second pass): `uid` is passed and the result is
+    # checked. paper_service.create_paper takes user_id as of the same day -
+    # MEASURED with two teachers, without it ANY teacher could inject a paper
+    # into ANY exam by id - and it returns None when the exam is not this
+    # teacher's, which `return await ...` would hand to a PaperListResponse
+    # response_model as a 500.
+    paper = await paper_service.create_paper(
+        db, exam_id, uid,
         last_name=data.last_name,
         first_name=data.first_name,
     )
+    if not paper:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    return paper
 
 
 @router.get("/{paper_id}", response_model=PaperResponse)
@@ -94,8 +104,9 @@ async def update_paper_name(exam_id: int, paper_id: int, data: PaperUpdate, uid:
     # recomposing student_name is logic, this would otherwise be the second
     # place that knows the format, and the service is where an ownership check
     # belongs. The 404 shape matches delete_paper and grade_paper below.
+    # CHANGED 2026-11-04 (second pass): `uid`, same reason as create_paper.
     paper = await paper_service.rename_paper(
-        db, paper_id, exam_id,
+        db, paper_id, exam_id, uid,
         last_name=data.last_name,
         first_name=data.first_name,
     )
