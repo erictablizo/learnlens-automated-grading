@@ -21,10 +21,17 @@ from app.core.database import Base
 #   * PaperScore.verdict      — identification is not auto-graded, so a score
 #                               row needs correct/review/wrong, not a boolean.
 #
+# CHANGED 2026-11-04 — Doc Rubrica's consultation. Two edits:
+#   * Exam.subject / Exam.schedule        "2 additional Fields in Exam Info Table"
+#   * TestPaper.first_name / .last_name   "Split Name to Last Name & First Name",
+#                               plus the ix_test_papers_exam_lastname index the
+#                               schema already carried and this file did not.
+#
 # Everything else is untouched. Verified by diffing a database built by this
 # file's create_all() against one built by the original models plus
 # migrations/2026-10-23_parts_and_answer_length.sql: zero differences across
-# 119 columns, constraints and indexes.
+# 119 columns, constraints and indexes. The 2026-11-04 columns were re-verified
+# the same way against learnlens_schema.sql on PostgreSQL 16 — see TestPaper.
 
 
 class User(Base):
@@ -167,6 +174,30 @@ class AnswerKey(Base):
 
 class TestPaper(Base):
     __tablename__ = "test_papers"
+    # NEW 2026-11-04. This class had no __table_args__ at all, and
+    # learnlens_schema.sql already carried ix_test_papers_exam_lastname — so a
+    # database built by create_all() came out WITHOUT the index while every
+    # migrated one had it.
+    #
+    # "Sorted in order … Alphabetical, surname" (Doc Rubrica, page 2). Named
+    # explicitly and matching
+    # migrations/2026-11-04_subject_schedule_and_student_name.sql, for the
+    # reason ExamPagePart records above: a name SQLAlchemy invents for itself
+    # makes every future schema comparison report a phantom drift.
+    #
+    # lower() because PostgreSQL's default collation is case-sensitive, so a
+    # plain ORDER BY last_name puts "nono" and "Ñoño" at opposite ends of the
+    # list instead of next to each other.
+    #
+    # MEASURED on PostgreSQL 16: this produces, byte for byte,
+    #   CREATE INDEX ix_test_papers_exam_lastname ON public.test_papers
+    #     USING btree (exam_id, lower((last_name)::text), lower((first_name)::text))
+    # which is what learnlens_schema.sql already holds. SQLAlchemy emits
+    # lower(last_name); PostgreSQL stores the varchar->text cast. Same index.
+    __table_args__ = (
+        Index("ix_test_papers_exam_lastname", "exam_id",
+              text("lower(last_name)"), text("lower(first_name)")),
+    )
 
     paper_id     = Column(Integer, primary_key=True, autoincrement=True)
     exam_id      = Column(Integer, ForeignKey("exams.exam_id", ondelete="CASCADE"), nullable=False)
@@ -175,6 +206,28 @@ class TestPaper(Base):
     checked      = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     added_at     = Column(UTCDateTime(), server_default=func.now(), nullable=False)
     updated_at   = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
+    # NEW 2026-11-04 (Doc Rubrica, consultation, page 4): "Split Name to Last
+    # Name & First Name" / "Paper Table: [Last Name] [First Name]".
+    #
+    # DECLARED LAST, not beside student_name, and that is deliberate. A
+    # migrated database gets these from ALTER TABLE ADD COLUMN, which always
+    # APPENDS; a database built by create_all() gets them in declaration
+    # order. MEASURED on PostgreSQL 16: declaring them beside student_name
+    # puts them at ordinal positions 4 and 5 while every migrated database has
+    # them at 8 and 9 — the phantom drift ExamPagePart warns about above, in a
+    # new place.
+    #
+    # NULLABLE: the papers that predate the migration cannot supply a value.
+    # MEASURED 2026-11-04, 4 of 7 real student_name values split wrongly —
+    # "Midterm - Alcantara, Ben R." gives a last_name of "Midterm - Alcantara"
+    # — so the migration adds the columns and does NOT backfill. Required-ness
+    # lives in PaperCreate and in the two forms.
+    #
+    # student_name is KEPT, not dropped. paper_service composes it from these
+    # two on every write, so the six places that read it stay correct, and it
+    # is the rollback if a hand-split turns out wrong.
+    first_name   = Column(String(255))
+    last_name    = Column(String(255))
 
     exam         = relationship("Exam", back_populates="test_papers")
     paper_pages  = relationship("PaperPage", back_populates="paper", cascade="all, delete")
