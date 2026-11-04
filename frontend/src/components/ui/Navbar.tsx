@@ -26,6 +26,13 @@
  * comma at the end of the name and breaking the course mid-phrase. It now
  * renders the three lines profileLines() returns as three separate elements,
  * so the course can never run on from the name.
+ *
+ * CHANGED 2026-11-04 — Doc Rubrica, consultation, page 4: "Add Additional TAB
+ * for Summary Report". Her sketch gives the order explicitly:
+ *
+ *     Profile Info / [Edit] / Manage Exam / Summary Report / Sign out
+ *
+ * so the new entry sits BETWEEN Manage Exams and Sign out, not after it.
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -56,6 +63,14 @@ const IconLogout = () => (
 const IconPencil = () => (
   <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+// NEW 2026-11-04 — bars inside a sheet, so it reads as a report at 16px rather
+// than as another list beside IconList.
+const IconReport = () => (
+  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round"
+          d="M9 17v-5m3 5v-8m3 8v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
   </svg>
 );
 
@@ -100,6 +115,10 @@ export default function Navbar() {
   const lines       = profileLines(profile);
   const avatarSrc   = profile ? avatarUrl(profile.avatar_path, profile.updated_at) : null;
   const onProfile   = pathname.startsWith("/profile");
+  // NEW 2026-11-04. Separate consts rather than repeating the test in the
+  // className and the aria-current, which is how the two drift apart.
+  const onExams     = pathname.startsWith("/exams");
+  const onReports   = pathname.startsWith("/reports");
 
   // Initials fallback
   const initials = profile ? initialsOf(profile) : col?.initials ?? "?";
@@ -279,11 +298,26 @@ export default function Navbar() {
       {/* ── Nav links ── */}
       <Link
         href="/exams"
-        className={`sidebar-item${pathname.startsWith("/exams") ? " active" : ""}`}
-        aria-current={pathname.startsWith("/exams") ? "page" : undefined}
+        className={`sidebar-item${onExams ? " active" : ""}`}
+        aria-current={onExams ? "page" : undefined}
       >
         <IconList />
         Manage Exams
+      </Link>
+
+      {/* NEW 2026-11-04 (Doc Rubrica, page 4): "Add Additional TAB for Summary
+          Report". Between Manage Exams and Sign out, which is where her
+          "after" sketch puts it.
+
+          /reports does not collide with the /exams test above, so Manage Exams
+          does not light up on this screen. */}
+      <Link
+        href="/reports"
+        className={`sidebar-item${onReports ? " active" : ""}`}
+        aria-current={onReports ? "page" : undefined}
+      >
+        <IconReport />
+        Summary Report
       </Link>
 
       <button
