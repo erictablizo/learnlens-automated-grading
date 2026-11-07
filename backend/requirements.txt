@@ -13,3 +13,5 @@ pytesseract==0.3.10
 pillow>=10.4.0
 alembic==1.13.1
 python-dotenv==1.0.1
+asyncpg
+bcrypt==4.0.1
