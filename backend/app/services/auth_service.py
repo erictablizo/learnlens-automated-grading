@@ -1,24 +1,30 @@
+import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 import secrets
- 
-from passlib.context import CryptContext
+
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func
- 
+
 from app.core.config import settings
 from app.models.models import User, PasswordReset
- 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
- 
- 
+
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
- 
- 
+    # Use direct bcrypt: works reliably across all bcrypt versions and handles UTF-8
+    pw_bytes = password.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pw_bytes, salt).decode("utf-8")
+
+
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        pw_bytes = plain.encode("utf-8")[:72]
+        hashed_bytes = hashed.encode("utf-8")
+        return bcrypt.checkpw(pw_bytes, hashed_bytes)
+    except Exception:
+        return False
  
  
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
