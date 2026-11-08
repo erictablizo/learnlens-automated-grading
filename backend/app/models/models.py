@@ -5,6 +5,7 @@ from sqlalchemy import (
 from app.models.types import UTCDateTime
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.models.profile import UserProfile  # noqa: F401
 
 # CHANGED 2026-10-24 — Doc Rubrica's sixth comment. Four edits, all marked
 # "NEW 2026-10-24" or "WAS String(10)" below:
