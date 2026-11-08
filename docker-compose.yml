@@ -3,6 +3,8 @@ services:
     image: postgres:17-alpine
     container_name: learnlens_db
     restart: always
+    networks:
+      - learnlens_net
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learnlens123}
@@ -24,6 +26,8 @@ services:
       dockerfile: Dockerfile
     container_name: learnlens_backend
     restart: always
+    networks:
+      - learnlens_net
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-learnlens123}@postgres:5432/${POSTGRES_DB:-learnlens_automated_grading}
       SECRET_KEY: ${SECRET_KEY:-learnlens-super-secret-production-key-change-me}
@@ -54,6 +58,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     container_name: learnlens_frontend
     restart: always
+    networks:
+      - learnlens_net
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     depends_on:
@@ -63,6 +69,8 @@ services:
     image: nginx:alpine
     container_name: learnlens_nginx
     restart: always
+    networks:
+      - learnlens_net
     ports:
       - "80:80"
       - "443:443"
@@ -71,6 +79,10 @@ services:
     depends_on:
       - frontend
       - backend
+
+networks:
+  learnlens_net:
+    driver: bridge
 
 volumes:
   postgres_data:
