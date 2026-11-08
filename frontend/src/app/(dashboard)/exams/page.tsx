@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import ExamGrid from "@/components/exams/ExamGrid";
@@ -32,7 +32,7 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
   );
 }
  
-export default function ManageExamsPage() {
+function ManageExamsContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { exams, isLoading, error, usingDemo, fetchExams, deleteExam } = useExams();
@@ -174,5 +174,13 @@ export default function ManageExamsPage() {
         {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
       </main>
     </div>
+  );
+}
+
+export default function ManageExamsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ManageExamsContent />
+    </Suspense>
   );
 }
