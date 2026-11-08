@@ -2,9 +2,14 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: learnlens_db
+    hostname: postgres
     restart: always
     networks:
-      - learnlens_net
+      learnlens_net:
+        aliases:
+          - postgres
+          - db
+          - learnlens_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learnlens123}
@@ -12,8 +17,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgresql/learnlens_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-    ports:
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-learnlens_automated_grading}"]
       interval: 5s
