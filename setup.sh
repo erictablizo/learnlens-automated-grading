@@ -284,6 +284,7 @@ cat > requirements.txt << 'EOF'
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 sqlalchemy==2.0.30
+asyncpg>=0.29.0
 psycopg2-binary==2.9.11
 pydantic-settings==2.3.1
 python-jose[cryptography]==3.3.0
@@ -311,6 +312,7 @@ pip install \
   fastapi==0.111.0 \
   "uvicorn[standard]==0.30.1" \
   sqlalchemy==2.0.30 \
+  "asyncpg>=0.29.0" \
   pydantic-settings==2.3.1 \
   "python-jose[cryptography]==3.3.0" \
   "passlib[bcrypt]==1.7.4" \
