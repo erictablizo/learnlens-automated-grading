@@ -7,7 +7,7 @@ import { getToken, clearAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
  
 const DEMO_EXAMS: Exam[] = [
-  { exam_id: 1, exam_name: "Midterm", description: "", created_at: new Date().toISOString() }
+  { exam_id: 1, exam_name: "Midterm", description: "", created_at: new Date().toISOString(), subject: "", schedule: "" }
 ];
  
 export function useExams() {
