@@ -1,7 +1,9 @@
 import os, uuid
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+# CHANGED 2026-11-09: func, or_, and_ are NEW — find_paper_by_name() below
+# needs lower() on both sides of the comparison and a two-branch OR.
+from sqlalchemy import select, delete, func, or_, and_
 from sqlalchemy.orm import selectinload
 from fastapi import UploadFile
 
@@ -13,6 +15,34 @@ from app.services.ocr_service import grade_paper
 # knows the "Last, First" format - this one, imported from _text.py so the
 # browser's composeStudentName() can be held to the same string.
 from app.schemas._text import compose_student_name
+
+
+class DuplicatePaper(Exception):
+    """NEW 2026-11-09. Raised when this exam already has a paper for this name.
+
+    MEASURED 2026-11-04 against the real function bodies: four submissions of
+    the same Last/First through Add Paper produced four rows, all answered 201,
+    indistinguishable on screen except by paper_id, and the Summary Report
+    counted them as four students. Nothing stopped it - the migration creates
+
+        CREATE INDEX ix_test_papers_exam_lastname ...
+
+    which is an INDEX, not a UNIQUE INDEX, and create_paper() inserted blind.
+
+    This is an exception rather than a None return because create_paper()
+    already returns None for "not your exam" and the route turns that into a
+    404; a duplicate has to come back as a different status (409) with a
+    message the teacher can act on, so the two cannot share one return value.
+    """
+
+    def __init__(self, existing: TestPaper):
+        self.existing = existing
+        self.message = (
+            f"{existing.student_name} already has a paper in this exam. "
+            "If this is a different student with the same name, add a middle "
+            "initial to tell them apart."
+        )
+        super().__init__(self.message)
 
 
 async def _owned_exam(db: AsyncSession, exam_id: int, user_id: int) -> Optional[Exam]:
@@ -37,6 +67,71 @@ async def _owned_exam(db: AsyncSession, exam_id: int, user_id: int) -> Optional[
     return (await db.execute(
         select(Exam).where(Exam.exam_id == exam_id, Exam.created_by == user_id)
     )).scalar_one_or_none()
+
+
+async def find_paper_by_name(
+    db: AsyncSession,
+    exam_id: int,
+    *,
+    last_name: str,
+    first_name: str,
+    exclude_paper_id: Optional[int] = None,
+) -> Optional[TestPaper]:
+    """The existing paper for this name in this exam, or None.
+
+    NEW 2026-11-09. Case-insensitive on both parts: "alcantara, ben" and
+    "Alcantara, Ben" are the same student, so lower() goes on both sides.
+
+    Two branches, because of the 18 pre-migration rows:
+
+      1. last_name + first_name — the normal path for anything added since
+         2026-11-04.
+      2. student_name — the fallback. A row added before the migration has
+         last_name = NULL and first_name = NULL, and in SQL
+         lower(NULL) = 'alcantara' is NULL, never true, so branch 1 cannot
+         see those rows at all. Comparing against the composed "Last, First"
+         catches the ones whose student_name was already in that shape
+         ('Santos, Maria').
+
+    It does NOT catch a legacy row like 'Midterm - Cristobal, Mark R.' - that
+    string is not what compose_student_name() produces from any input. That
+    hole closes when the hand-split of the 18 rows is finished (item B), not
+    here; there is no string comparison that can repair free text.
+
+    MEASURED 2026-11-04, EXPLAIN QUERY PLAN on branch 1:
+
+        SEARCH test_papers USING INDEX ix_test_papers_exam_lastname
+
+    so the check costs an index seek, not a scan - it is free to run on every
+    Add Paper.
+
+    exclude_paper_id is for the rename: a paper is not its own duplicate.
+
+    .limit(1) / .scalars().first() and NOT .scalar_one_or_none(), which is
+    what the rest of this file uses. MEASURED 2026-11-09: with the four
+    duplicate 'Alcantara, Ben' rows already in the exam, scalar_one_or_none()
+    raises MultipleResultsFound, so the fifth Add Paper would have answered
+    500 instead of 409 - on exactly the database this validation is being
+    added to repair. The other lookups here are safe with it because they key
+    on paper_id or exam_id; a name is not unique by definition, which is the
+    whole point of the check.
+    """
+    composed = compose_student_name(last_name, first_name)
+    conditions = [
+        TestPaper.exam_id == exam_id,
+        or_(
+            and_(
+                func.lower(TestPaper.last_name) == last_name.lower(),
+                func.lower(TestPaper.first_name) == first_name.lower(),
+            ),
+            func.lower(TestPaper.student_name) == composed.lower(),
+        ),
+    ]
+    if exclude_paper_id is not None:
+        conditions.append(TestPaper.paper_id != exclude_paper_id)
+    return (await db.execute(
+        select(TestPaper).where(*conditions).limit(1)
+    )).scalars().first()
 
 
 async def get_papers(db: AsyncSession, exam_id: int, user_id: int) -> List[TestPaper]:
@@ -81,12 +176,22 @@ async def create_paper(
       2. user_id is NEW and so is the check. See _owned_exam() above for what
          was measured without it.
 
+    CHANGED 2026-11-09: raises DuplicatePaper when this exam already has a
+    paper for this name. The check is AFTER the ownership check on purpose -
+    a teacher who does not own the exam must not learn whether a name is in
+    it, so "not your exam" (404) has to win over "already added" (409).
+
     The two names arrive already tidied: check_name_part() in schemas/paper.py
     runs tidy_text() and returns the tidied value, and compose_student_name()
     tidies again, which is idempotent.
     """
     if not await _owned_exam(db, exam_id, user_id):
         return None
+    existing = await find_paper_by_name(
+        db, exam_id, last_name=last_name, first_name=first_name
+    )
+    if existing:
+        raise DuplicatePaper(existing)
     paper = TestPaper(
         exam_id=exam_id,
         last_name=last_name,
@@ -120,6 +225,13 @@ async def rename_paper(
     exam is not this teacher's - the route turns all three into one 404, which
     is deliberate: a 403 would confirm that someone else's paper_id exists.
 
+    CHANGED 2026-11-09: raises DuplicatePaper when the new name belongs to a
+    DIFFERENT paper in the same exam, so the rename cannot create the collision
+    Add Paper now refuses. The check sits AFTER the paper is fetched so that a
+    404 (no such paper here) still beats a 409, and it passes
+    exclude_paper_id=paper_id so re-saving a paper under its own name - or
+    changing only its capitalisation - is not a duplicate.
+
     The score is NOT reset. A name has nothing to do with grading, unlike
     add_paper_page() below, which replaces the photo the score came from.
     """
@@ -133,6 +245,14 @@ async def rename_paper(
     )).scalar_one_or_none()
     if not paper:
         return None
+    existing = await find_paper_by_name(
+        db, exam_id,
+        last_name=last_name,
+        first_name=first_name,
+        exclude_paper_id=paper_id,
+    )
+    if existing:
+        raise DuplicatePaper(existing)
     paper.last_name    = last_name
     paper.first_name   = first_name
     paper.student_name = compose_student_name(last_name, first_name)

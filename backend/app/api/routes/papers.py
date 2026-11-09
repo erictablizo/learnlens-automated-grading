@@ -67,11 +67,28 @@ async def create_paper(exam_id: int, data: PaperCreate, uid: int = Depends(_uid)
     # into ANY exam by id - and it returns None when the exam is not this
     # teacher's, which `return await ...` would hand to a PaperListResponse
     # response_model as a 500.
-    paper = await paper_service.create_paper(
-        db, exam_id, uid,
-        last_name=data.last_name,
-        first_name=data.first_name,
-    )
+    #
+    # CHANGED 2026-11-09: DuplicatePaper -> 409. MEASURED 2026-11-09, four
+    # submissions of the same Last/First produced four rows, all answered 201,
+    # indistinguishable in the list except by paper_id, and the Summary Report
+    # counted them as four students; the migration creates CREATE INDEX, not
+    # CREATE UNIQUE INDEX, so nothing refused them.
+    #
+    # 409 and not 422: the request is well-formed and every field is valid. It
+    # is the server's existing state that refuses it, and 422 would tell the
+    # teacher she typed something wrong when she did not.
+    #
+    # detail is a plain STRING, like every other validation message here, so
+    # api.ts's `body.detail ?? message` puts it on ApiError.message and the Add
+    # Paper modal shows it with NO frontend change.
+    try:
+        paper = await paper_service.create_paper(
+            db, exam_id, uid,
+            last_name=data.last_name,
+            first_name=data.first_name,
+        )
+    except paper_service.DuplicatePaper as dup:
+        raise HTTPException(status_code=409, detail=dup.message)
     if not paper:
         raise HTTPException(status_code=404, detail="Exam not found")
     return paper
@@ -105,11 +122,23 @@ async def update_paper_name(exam_id: int, paper_id: int, data: PaperUpdate, uid:
     # place that knows the format, and the service is where an ownership check
     # belongs. The 404 shape matches delete_paper and grade_paper below.
     # CHANGED 2026-11-04 (second pass): `uid`, same reason as create_paper.
-    paper = await paper_service.rename_paper(
-        db, paper_id, exam_id, uid,
-        last_name=data.last_name,
-        first_name=data.first_name,
-    )
+    #
+    # CHANGED 2026-11-09: the duplicate guard applies here too, or Edit Paper
+    # is a way round the Add Paper validation - renaming paper B onto paper A's
+    # name is the same collision by another route. The service excludes this
+    # paper_id, so re-saving a paper under its own name, or changing only its
+    # capitalisation, is not a duplicate.
+    #
+    # The service checks ownership, then fetches the paper, then looks for the
+    # duplicate, so a 404 ("no such paper in this exam") still beats the 409.
+    try:
+        paper = await paper_service.rename_paper(
+            db, paper_id, exam_id, uid,
+            last_name=data.last_name,
+            first_name=data.first_name,
+        )
+    except paper_service.DuplicatePaper as dup:
+        raise HTTPException(status_code=409, detail=dup.message)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
     return paper
