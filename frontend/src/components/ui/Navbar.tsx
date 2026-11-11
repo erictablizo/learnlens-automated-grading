@@ -33,6 +33,13 @@
  *     Profile Info / [Edit] / Manage Exam / Summary Report / Sign out
  *
  * so the new entry sits BETWEEN Manage Exams and Sign out, not after it.
+ *
+ * CHANGED 2026-11-11 — Doc Rubrica, post-UAT recommendations, page 1, first
+ * line: "Data Analytics - separate clickable option in the side bar".
+ *
+ * It goes AFTER Summary Report and still before Sign out, which stays last.
+ * The two report-shaped screens sit together, and the order her 2026-11-04
+ * sketch fixed is untouched.
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -71,6 +78,19 @@ const IconReport = () => (
   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round"
           d="M9 17v-5m3 5v-8m3 8v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+  </svg>
+);
+// NEW 2026-11-11 — a PIE, deliberately not a third set of bars.
+//
+// IconList is horizontal bars and IconReport is vertical bars in a sheet.
+// At 16px, in a column, a third bar-shaped glyph beneath them is a blur - the
+// same reasoning that gave Summary Report its own icon on 2026-11-04 rather
+// than reusing IconList. A wedge cut out of a circle is unmistakable even
+// when it is tiny and greyed out.
+const IconChart = () => (
+  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 3a9 9 0 109 9h-9V3z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14.5 3.5A9 9 0 0120.5 9.5H14.5V3.5z" />
   </svg>
 );
 
@@ -119,6 +139,15 @@ export default function Navbar() {
   // className and the aria-current, which is how the two drift apart.
   const onExams     = pathname.startsWith("/exams");
   const onReports   = pathname.startsWith("/reports");
+  // NEW 2026-11-11. Same pattern, same reason: one const read by both the
+  // className and the aria-current, so the highlight and the announced state
+  // cannot disagree.
+  //
+  // "/analytics" shares no prefix with "/exams" or "/reports", so exactly one
+  // tab lights up on each screen. If this route is ever moved under
+  // /reports/analytics, the onReports test above starts matching it too and
+  // both would highlight - tighten it then.
+  const onAnalytics = pathname.startsWith("/analytics");
 
   // Initials fallback
   const initials = profile ? initialsOf(profile) : col?.initials ?? "?";
@@ -318,6 +347,21 @@ export default function Navbar() {
       >
         <IconReport />
         Summary Report
+      </Link>
+
+      {/* NEW 2026-11-11 (Doc Rubrica, post-UAT page 1): "Data Analytics -
+          separate clickable option in the side bar".
+
+          It reads the same three Subject / Schedule / Exam Name boxes the
+          Summary Report does, so it belongs beside it rather than under
+          Manage Exams. Sign out stays last. */}
+      <Link
+        href="/analytics"
+        className={`sidebar-item${onAnalytics ? " active" : ""}`}
+        aria-current={onAnalytics ? "page" : undefined}
+      >
+        <IconChart />
+        Data Analytics
       </Link>
 
       <button
