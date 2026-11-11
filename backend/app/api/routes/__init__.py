@@ -3,9 +3,13 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.exams import router as exams_router
 from app.api.routes.papers import router as papers_router
 from app.api.routes.profile import router as profile_router
- 
+from app.api.routes.analytics import router as analytics_router        # NEW 2026-11-11
+from app.api.routes.answer_key import router as answer_key_router      # NEW 2026-11-11
+
 router = APIRouter()
 router.include_router(auth_router)
 router.include_router(profile_router)
 router.include_router(exams_router)
 router.include_router(papers_router)
+router.include_router(analytics_router)        # NEW 2026-11-11 — Data Analytics page
+router.include_router(answer_key_router)       # NEW 2026-11-11 — answer-key cascade
