@@ -16,11 +16,16 @@ from app.schemas.paper import (
     PaperCreate, PaperUpdate, PaperResponse, PaperListResponse, GradeResponse,
     # NEW 2026-10-24 — review queue (add these to app/schemas/paper.py)
     ReviewItemResponse, ReviewResolveRequest, ReviewResolveResponse,
+    # NEW 2026-11-11 — per-paper answer override
+    PaperAnswerUpdate, PaperAnswerUpdateResponse,
 )
 from app.services import paper_service
+from app.services import paper_answer_service          # NEW 2026-11-11
 from app.services.ocr_service import resolve_review
 from app.services.auth_service import get_current_user
-from app.models.models import TestPaper, PaperPage, PaperScore
+# CHANGED 2026-11-11: Exam is imported now. _owned_paper() below joins through
+# it, because ownership of a paper is ownership of the exam it belongs to.
+from app.models.models import TestPaper, PaperPage, PaperScore, Exam
 from sqlalchemy import select, delete
 
 router = APIRouter(prefix="/exams/{exam_id}/papers", tags=["papers"])
@@ -299,4 +304,89 @@ async def resolve_review_item(
     result = await resolve_review(db, paper_id, question_number, data.is_correct)
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("reason", "Could not resolve this item."))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# NEW 2026-11-11 — per-paper answer override (Alex Passion / Julius Bancud)
+#
+#     "Create an option to override the answers in each number to handle
+#      corrections on the OCR Reading" - on one Test Paper, that paper only.
+#
+# This is the gap resolve_review CANNOT cover. From the 2026-10-24 full-path
+# run (OCR-SERVICE-WIRED-2026-10-24.md):
+#
+#     Item 16 is the one OCR error (she wrote E, the detector read C) - and it
+#     is a *letter* item, which has no review state, so it is a silent lost
+#     mark.
+#
+#     resolve_review on a non-review item is refused:
+#        "Item 12 is not under review (it is marked correct)."
+#
+# Only identification items ever reach verdict='review'. A letter item that
+# Tesseract read confidently and wrongly was FINAL and uncorrectable by
+# anybody. This was the last place in the system where a score could be wrong
+# with no way to fix it.
+# ---------------------------------------------------------------------------
+
+async def _owned_paper(db: AsyncSession, paper_id: int, uid: int) -> TestPaper:
+    """This paper, or 404 - ownership by the exam's creator.
+
+    DELIBERATELY SELF-CONTAINED. The 2026-11-05 `_owned` helper is not in this
+    file: that change was delivered as a complete replacement file and never
+    installed, while the 2026-11-09 duplicate hunks were, which is why later
+    work sits on top of an unfixed base. See
+    PAPERS-AUTHZ-REGRESSION-2026-11-11.md.
+
+    The endpoint below WRITES - it changes a mark on a student's paper - so it
+    cannot wait for that to be sorted out. MEASURED with two teachers
+    (measure/2026-11-11_papers_authz.py): WITHOUT this helper Bob overrides an
+    answer on Alice's paper and gets 200 with the value stored; WITH it, 404
+    and her answer untouched.
+
+    404 and not 403: a teacher who does not own this paper should not learn
+    whether the id exists. Same shape as the `_owned` in the 2026-11-05 file,
+    so when that is finally installed this can be deleted and the single call
+    site swapped over.
+    """
+    paper = (await db.execute(
+        select(TestPaper)
+        .join(Exam, Exam.exam_id == TestPaper.exam_id)
+        .where(TestPaper.paper_id == paper_id, Exam.created_by == uid)
+    )).scalars().first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return paper
+
+
+@router.put("/{paper_id}/answers/{question_number}", response_model=PaperAnswerUpdateResponse)
+async def override_paper_answer(
+    exam_id:         int,
+    paper_id:        int,
+    question_number: int,
+    data: PaperAnswerUpdate,
+    uid: int = Depends(_uid),
+    db: AsyncSession = Depends(get_db),
+):
+    """Correct what ONE student wrote for ONE item. No other paper is touched.
+
+    The teacher types the ANSWER, not a verdict. A corrected answer survives a
+    later change to the answer key; a stamped verdict does not - MEASURED, see
+    PAPER-ANSWER-OVERRIDE-2026-11-11.md property 5.
+
+    422, not 404, when the item has no row on this paper: the paper exists and
+    the caller owns it, but the state does not allow the operation. The same
+    code resolve_review_item and grade_paper use for that.
+
+    The review queue is NOT replaced. It still handles the items OCR flags,
+    with the cropped handwriting beside them; this covers any item on the
+    paper, reviewed or not.
+    """
+    paper = await _owned_paper(db, paper_id, uid)
+
+    result = await paper_answer_service.override_answer(
+        db, paper, question_number, data.student_answer
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=422, detail=result.get("reason", "Could not correct this answer."))
     return result

@@ -227,3 +227,76 @@ class ReviewResolveResponse(BaseModel):
     review_items:    List[int] = []
     is_final:        bool
     message:         str
+
+# ---------------------------------------------------------------------------
+# NEW 2026-11-11 — per-paper answer override (Alex & Bancud, "that paper only")
+#
+# Separate from ReviewResolveRequest above, and deliberately so. That one
+# carries `is_correct: bool` — a decision about a comparison. This one carries
+# the ANSWER, because a corrected answer survives a later change to the key and
+# a stamped verdict does not. MEASURED in PAPER-ANSWER-OVERRIDE-2026-11-11.md:
+# correct item 16's read to 'E', then correct the KEY for 16 away and back, and
+# the answer-override lands on correct while the stamp lands on wrong.
+# ---------------------------------------------------------------------------
+
+def _check_student_answer(v: str) -> str:
+    """Length and whitespace only. Deliberately NOT check_name_part.
+
+    The 2026-10-22 character rules exist for exam names and name parts, which
+    are things a teacher types about a person. This field records what a
+    STUDENT wrote on paper, and the system cannot tell them they wrote it
+    wrong: an identification answer may hold any characters, and OCR already
+    stores reads like 'COMM UNICATION' and 'TROOFREADING' unchallenged.
+    Applying _STRICT_MARKS here would refuse answers that are on the page.
+
+    Whitespace collapses per the 2026-11-10 parity rule, so 'COMM   UNICATION'
+    and 'COMM UNICATION' are not two different answers. normalize_answer()
+    strips spaces entirely on the identification path anyway.
+
+    100 is MAX_ANSWER_LEN and the String(100) width of paper_scores.
+    student_answer. Checked AFTER collapsing, so trailing spaces never cause a
+    spurious refusal — and raised rather than truncated, because silently
+    dropping characters a teacher typed is the kind of thing nobody notices.
+    """
+    collapsed = " ".join((v or "").split())
+    if len(collapsed) > 100:
+        raise ValueError("An answer cannot be longer than 100 characters.")
+    return collapsed
+
+
+class PaperAnswerUpdate(BaseModel):
+    """What the student actually wrote for one item.
+
+    REQUIRED, with no default. An empty STRING is meaningful — it records that
+    the student left the item blank, which grades wrong — but an absent FIELD
+    must not mean the same thing. With a default, a malformed client sending
+    {} would silently blank a mark. It gives 422 instead.
+    """
+
+    student_answer: str
+
+    @field_validator("student_answer")
+    @classmethod
+    def _answer(cls, v: str) -> str:
+        return _check_student_answer(v)
+
+
+class PaperAnswerUpdateResponse(BaseModel):
+    success:           bool
+    question_number:   int
+    old_answer:        str      # what it was, so the toast can show the change
+    student_answer:    str      # what it is now ("—" when blank)
+    correct_answer:    str
+    verdict:           str      # correct | review | wrong
+    is_correct:        bool
+    is_identification: bool     # the grading mode this item took
+    # Same names GradeResponse and ReviewResolveResponse already use, so the
+    # X/Y work on the exam page reads one shape whether the numbers came from
+    # grading, from resolving a review, or from a correction.
+    correct:           int      # the FLOOR
+    max_possible:      int      # the ceiling: correct + needs_review
+    needs_review:      int
+    review_items:      List[int] = []
+    total_items:       int
+    is_final:          bool
+    message:           str

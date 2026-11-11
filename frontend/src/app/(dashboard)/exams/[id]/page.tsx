@@ -14,6 +14,13 @@ import QuestionTypeModal from "@/components/exams/QuestionTypeModal";
 // owns the grid, the inline edit and both button states; this page owns
 // the reload and the toast.
 import AnswerKeyPanel from "@/components/exams/AnswerKeyPanel";
+// NEW 2026-11-11 — the student's answers become editable in the right-hand
+// slot, mirroring what AnswerKeyPanel did for the key on the left. This is
+// where the panel's "override on one Test Paper" lives: ViewPaperModal is NOT
+// mounted on this page, so a table inside it would never be seen from here.
+import AnswerTable from "@/components/papers/AnswerTable";
+import type { PaperAnswerResult } from "@/types/paperAnswer";
+import { scoreFromGrade, formatScore, formatPercent } from "@/lib/scoreLabel";
 import { paperService } from "@/services/paperService";
 import { Exam, QuestionType } from "@/types/exam";
 import { Paper } from "@/types/paper";
@@ -221,10 +228,20 @@ export default function ViewExamPage() {
       setSelectedPaper(full); setSelectedPaperFull(full);
       // Commented on 2026-09-23:
       // setToast({ msg: `Graded: ${result.correct} / ${result.total_items} (${result.score_percent}%)`, type: "success" });
+      //
+      // CHANGED 2026-11-11. `${result.correct} / ${result.total_items}` is the
+      // FLOOR on a paper with items under review, announced as if it were the
+      // result. MEASURED on the 2026-10-24 paper: it said "Graded: 11 / 19
+      // (57.9%)" for a paper whose true score was 15, with four items pending
+      // and nothing on screen to say so. GradeResponse has carried
+      // max_possible / needs_review / is_final since that same day.
+      const r = scoreFromGrade(result);
+      const pct = formatPercent(r);
       setToast({
-        msg: `Graded: ${result.correct} / ${result.total_items} (${result.score_percent}%)`
+        msg: `Graded: ${formatScore(r)}${pct ? ` (${pct})` : ""}`
+             + (r.isFinal ? "" : ` — ${r.needsReview} item(s) need your review`)
              + (result.warning ? ` — ${result.warning}` : ""),
-        type: result.warning ? "error" : "success",
+        type: (result.warning || !r.isFinal) ? "error" : "success",
       });
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : "Something went wrong while checking the paper. Please try again.", type: "error" });
@@ -275,6 +292,31 @@ export default function ViewExamPage() {
     setToast({ msg: bits.join(" · "), type: backToReview > 0 ? "error" : "success" });
   }, [loadExam, fetchPapers, selectedPaper, examId]);
 
+  // ── One answer on ONE paper corrected ─────────────────────────────────────
+  // NEW 2026-11-11. The mirror of handleKeySaved above, and the other half of
+  // the same recommendation: that one cascades across every paper, this one
+  // touches nothing but the paper in front of her.
+  //
+  // The server has ALREADY re-graded the item and re-totalled this paper, so
+  // nothing is recomputed here - the numbers on screen are stale, they get
+  // reloaded, and then what happened is SAID. `result.message` is used rather
+  // than a sentence composed here, because the service already decides whether
+  // the paper went back to unfinished and that must not be worded twice.
+  const handleAnswerChanged = useCallback(async (result: PaperAnswerResult) => {
+    await fetchPapers();
+    const token = getToken();
+    if (token && selectedPaper) {
+      try {
+        const updated = await paperService.get(examId, selectedPaper.paper_id, token);
+        setSelectedPaper(updated); setSelectedPaperFull(updated);
+      } catch {}
+    }
+    // An override CAN send a finished paper back to unfinished - correcting an
+    // identification answer into the 0.40-1.0 band does exactly that - so the
+    // toast goes red when it does. Same rule as handleKeySaved.
+    setToast({ msg: result.message, type: result.is_final ? "success" : "error" });
+  }, [fetchPapers, selectedPaper, examId]);
+
   // Commented on 2026-09-4:
   // ── Generate answer key ───────────────────────────────────────────────────
   // const handleGenerateKey = async () => {
@@ -312,7 +354,7 @@ export default function ViewExamPage() {
   //     setToast({ msg: "The exam key has been successfully generated.", type: "success" });
   //   } catch {
   //     setToast({ msg: "We couldn't generate the exam key. Please try again.", type: "error" });
-  //   } finally { 
+  //   } finally {
   //     setGeneratingKey(false);
   //     setSelectedQuestionType(null);
   //   }
@@ -532,14 +574,24 @@ export default function ViewExamPage() {
               </div> */}
             <div className="page-viewer-slot" style={{ alignItems: selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? "flex-start" : "center", padding: selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? "1rem" : 0, overflowY: "auto" }}>
             {selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
-                {(selectedPaperFull.paper_scores ?? []).slice().sort((a, b) => a.question_number - b.question_number).map(s => (
-                  <div key={s.score_id} style={{ fontSize: "0.82rem", color: s.is_correct ? "var(--success)" : "var(--error)", padding: "0.1rem 0" }}>
-                    <span style={{ color: "var(--text-muted)", minWidth: 24, display: "inline-block" }}>{s.question_number}.</span>
-                    <span style={{ fontWeight: 600 }}>{s.student_answer}</span>
-                  </div>
-                ))}
-              </div>
+              /* CHANGED 2026-11-11. Two things this grid got wrong:
+                   1. the colour came from `s.is_correct`, which is FALSE for an
+                      item under REVIEW - so a pending item was painted the same
+                      red as a wrong one, and the teacher had no way to tell
+                      "the scanner is unsure" from "the student got it wrong";
+                   2. nothing here was editable, so a letter item the scanner
+                      read confidently and wrongly could not be corrected by
+                      anybody - the 2026-10-24 "silent lost mark".
+                 AnswerTable's grid layout renders the same two columns, the
+                 same gap and the same numbering; the answer is now a button
+                 and the colour comes from `verdict`. */
+              <AnswerTable
+                examId={examId}
+                paperId={selectedPaperFull.paper_id}
+                scores={selectedPaperFull.paper_scores ?? []}
+                onChanged={handleAnswerChanged}
+                layout="grid"
+              />
             ) : selectedPaper ? (
               <Button variant="primary" onClick={handleCheckPaper} loading={checking} disabled={checking} style={{ width: "auto", padding: "0.65rem 1.5rem" }}>
                 {checking ? "Checking…" : "Check Paper"}
@@ -558,12 +610,17 @@ export default function ViewExamPage() {
           </Button>
         </div>
 
+        {/* CHANGED 2026-11-11 - `totalItems` is the denominator for "score as
+            X/Y"; the alphabetical sort is on by default inside the table.
+            `exam` is non-null here: the `if (loadError || !exam)` guard above
+            returns before this point. */}
         <PapersTable
           papers={papers}
           selectedPaperId={selectedPaper?.paper_id ?? null}
           onSelect={handleSelectPaper}
           onEdit={handleEditPaper}
           onDelete={handleDeleteRequest}
+          totalItems={exam.answer_keys?.length ?? null}
         />
 
         {/* ── Delete confirm dialog ── */}
