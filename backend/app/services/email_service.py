@@ -20,8 +20,29 @@ class EmailSendError(Exception):
     """Raised when SMTP is configured but the email could not be sent."""
 
 
+# NEW 2026-11-11. One sentence, shown to whoever pressed the button. It names
+# no setting and no file, because the person reading it is a teacher who cannot
+# act on either - the operator detail goes to log.error instead. See
+# send_password_reset_email() below.
+SEND_FAILED_MESSAGE = (
+    "We could not send the reset email right now. Please try again in a few minutes."
+)
+
+
 def _smtp_configured() -> bool:
     return bool(settings.SMTP_HOST.strip() and settings.SMTP_USER.strip() and settings.SMTP_PASSWORD.strip())
+
+
+def smtp_configured() -> bool:
+    """Public name for _smtp_configured(), for callers outside this module.
+
+    NEW 2026-11-11. routes/auth.py needs to know whether mail can actually be
+    delivered, so that a request for an address with no account can be answered
+    identically to one that has an account - without that, /auth/forgot-password
+    reports who is registered. Importing the underscore name would work but
+    would say the opposite of what the underscore means.
+    """
+    return _smtp_configured()
 
 
 def _build_message(to_email: str, reset_url: str) -> EmailMessage:
@@ -83,10 +104,22 @@ async def send_password_reset_email(to_email: str, reset_url: str) -> bool:
     try:
         await asyncio.to_thread(_send_blocking, msg)
     except smtplib.SMTPAuthenticationError as e:
-        log.error("SMTP login failed: %s", e)
-        raise EmailSendError("The email server rejected the login. Check SMTP_USER / SMTP_PASSWORD "
-                             "(Gmail needs an App Password).") from e
+        # CHANGED 2026-11-11: this used to raise "Check SMTP_USER /
+        # SMTP_PASSWORD (Gmail needs an App Password)". routes/auth.py puts the
+        # EmailSendError text into a 503 detail and api.ts renders it, so that
+        # sentence was shown TO THE TEACHER - configuration advice aimed at
+        # whoever runs the server, in a modal belonging to someone who cannot
+        # open .env. The advice now goes to the log, where the operator is.
+        #
+        # The password is NOT logged. Host and user are, because they are what
+        # you check first, and neither is a secret.
+        log.error(
+            "SMTP login rejected by %s as %s - check SMTP_USER / SMTP_PASSWORD "
+            "(Gmail needs the 16-character App Password, not the account password): %s",
+            settings.SMTP_HOST.strip(), settings.SMTP_USER.strip(), e,
+        )
+        raise EmailSendError(SEND_FAILED_MESSAGE) from e
     except (smtplib.SMTPException, OSError) as e:
-        log.error("SMTP send failed: %s", e)
-        raise EmailSendError("We could not send the reset email right now. Please try again in a few minutes.") from e
+        log.error("SMTP send failed via %s: %s", settings.SMTP_HOST.strip(), e)
+        raise EmailSendError(SEND_FAILED_MESSAGE) from e
     return True

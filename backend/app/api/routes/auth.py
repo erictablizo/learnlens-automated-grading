@@ -21,20 +21,29 @@ from app.services.auth_service import (
     register_user, authenticate_user, create_access_token,
     get_current_user, create_password_reset_token, reset_password, verify_reset_token,
 )
-from app.services.email_service import send_password_reset_email, EmailSendError
+# CHANGED 2026-11-11: smtp_configured is NEW - forgot_password() below needs
+# to know whether mail can actually be delivered before deciding how to
+# answer a request for an address that has no account.
+from app.services.email_service import send_password_reset_email, smtp_configured, EmailSendError
 from app.models.profile import UserProfile
 from app.core.config import settings
- 
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 bearer = HTTPBearer()
- 
- 
+
+# NEW 2026-11-11. One string, used on BOTH branches of forgot_password() - the
+# address that has an account and the address that does not. Defined once so
+# the two can never drift apart; two sentences that differ by a word are as
+# good as a yes/no answer to someone probing for registered addresses.
+RESET_SENT_MESSAGE = "A password reset link has been sent to your email."
+
+
 async def _profile_complete(db: AsyncSession, user_id: int) -> bool:
     result = await db.execute(select(UserProfile).where(UserProfile.user_id == user_id))
     profile = result.scalar_one_or_none()
     return bool(profile and profile.profile_complete)
- 
- 
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     try:
@@ -47,8 +56,8 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
         user=UserResponse.model_validate(user),
         profile_complete=False,
     )
- 
- 
+
+
 @router.post("/login", response_model=Token)
 async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await authenticate_user(db, data.email, data.password)
@@ -61,13 +70,41 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
         user=UserResponse.model_validate(user),
         profile_complete=complete,
     )
- 
+
 # Commented on 2026-09-20 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     created = await create_password_reset_token(db, data.email)
+
     if not created:
+        # CHANGED 2026-11-11: this was an unconditional 404 reading "No
+        # LearnLens account is registered with that email address." Correct and
+        # friendly, and also an ACCOUNT ENUMERATION oracle: anyone could type
+        # addresses into this form and learn which ones have LearnLens
+        # accounts, with no login and no rate limit.
+        #
+        # With SMTP working there is no need to say: the honest answer and the
+        # protective one look identical from outside, because a real request
+        # produces an email the asker cannot see either way. So the response is
+        # the same sentence, the same status and the same shape.
+        #
+        # In DEV MODE the 404 is KEPT. Claiming "sent" when nothing can be sent
+        # would be a lie to the only person who sees that screen - you - and the
+        # banner directly below it says email is not configured. The oracle
+        # closes the moment SMTP is set up, which is the state that matters.
+        #
+        # NOT constant-time: the real path hashes nothing but does write a row,
+        # so it is measurably slower. Closing that needs a background task and
+        # is out of proportion here - this removes the plain-text answer, not
+        # every trace of one.
+        if smtp_configured():
+            return ForgotPasswordResponse(
+                message=RESET_SENT_MESSAGE,
+                email_sent=True,
+                dev_reset_url=None,
+            )
         raise HTTPException(status_code=404, detail="No LearnLens account is registered with that email address.")
+
     user, token = created
     # FIX 2026-09-23: the link now opens the Forgot Password page itself
     # (/login/forgot_password?token=…), which shows the "new password" form.
@@ -89,7 +126,10 @@ async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depend
     dev_url = None if sent else (reset_url if settings.SHOW_DEV_RESET_LINK else None)
 
     if sent:
-        message = "A password reset link has been sent to your email."
+        # CHANGED 2026-11-11: was this sentence written out here. It is the
+        # shared constant now, so the "account exists" and "account does not
+        # exist" replies stay byte-identical.
+        message = RESET_SENT_MESSAGE
     elif dev_url:
         message = "DEV MODE: email is not configured — use the reset link shown on screen."
     else:
@@ -108,15 +148,15 @@ async def validate_reset_token(token: str = Query(...), db: AsyncSession = Depen
     if not email:
         raise HTTPException(status_code=400, detail="This reset link is invalid or has expired. Please request a new one.")
     return {"valid": True, "email": email}
- 
+
 @router.post("/reset-password")
 async def reset_pwd(data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     success = await reset_password(db, data.token, data.new_password)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     return {"message": "Password reset successfully"}
- 
- 
+
+
 @router.get("/me", response_model=UserResponse)
 async def me(credentials: HTTPAuthorizationCredentials = Depends(bearer), db: AsyncSession = Depends(get_db)):
     user = await get_current_user(db, credentials.credentials)
