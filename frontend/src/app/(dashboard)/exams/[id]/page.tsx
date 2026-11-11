@@ -9,9 +9,15 @@ import AddEditPaperModal from "@/components/papers/AddEditPaperModal";
 import EditPaperModal from "@/components/papers/EditPaperModal";
 import { examService } from "@/services/examService";
 import QuestionTypeModal from "@/components/exams/QuestionTypeModal";
+// NEW 2026-11-11 — Alex Passion / Julius Bancud, post-UAT page 2:
+// "Can override or edit scanned answer in Answer Key (Column)". The panel
+// owns the grid, the inline edit and both button states; this page owns
+// the reload and the toast.
+import AnswerKeyPanel from "@/components/exams/AnswerKeyPanel";
 import { paperService } from "@/services/paperService";
 import { Exam, QuestionType } from "@/types/exam";
 import { Paper } from "@/types/paper";
+import { AnswerKeyUpdateResult } from "@/types/answerKey";
 import { usePapers } from "@/hooks/usePapers";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
@@ -230,6 +236,44 @@ export default function ViewExamPage() {
     await fetchPapers();
     setToast({ msg: "Paper added successfully.", type: "success" });
   };
+
+  // ── Answer key item corrected ─────────────────────────────────────────────
+  // NEW 2026-11-11. The server has ALREADY re-checked every paper against the
+  // new answer and re-totalled the affected students - that cascade is the
+  // whole recommendation. Nothing is recomputed here; the scores on screen are
+  // simply stale, so they are reloaded, and then what happened is SAID. A
+  // silent recount is the thing both reviewers were complaining about.
+  const handleKeySaved = useCallback(async (result: AnswerKeyUpdateResult) => {
+    await loadExam();
+    await fetchPapers();
+
+    // The open paper's score may have moved too.
+    if (selectedPaper) {
+      const token = getToken();
+      if (token) {
+        try {
+          const updated = await paperService.get(examId, selectedPaper.paper_id, token);
+          setSelectedPaper(updated); setSelectedPaperFull(updated);
+        } catch {}
+      }
+    }
+
+    const bits: string[] = [`Item ${result.question_number} is now "${result.correct_answer}".`];
+    if (result.papers_affected === 0) {
+      bits.push("No papers have been checked against it yet.");
+    } else {
+      bits.push(`${result.papers_affected} paper(s) re-checked`);
+      if (result.items_flipped > 0)      bits.push(`${result.items_flipped} answer(s) changed`);
+      if (result.papers_rescored.length) bits.push(`${result.papers_rescored.length} score(s) updated`);
+    }
+    // A corrected key can push an item back INTO the review band - that is the
+    // point of three-state grading - and a paper that was finished is then
+    // unfinished again. Never let that happen quietly.
+    const backToReview = result.papers_rescored.filter(p => p.was_checked && !p.now_checked).length;
+    if (backToReview > 0) bits.push(`${backToReview} paper(s) need your review again`);
+
+    setToast({ msg: bits.join(" · "), type: backToReview > 0 ? "error" : "success" });
+  }, [loadExam, fetchPapers, selectedPaper, examId]);
 
   // Commented on 2026-09-4:
   // ── Generate answer key ───────────────────────────────────────────────────
@@ -458,28 +502,21 @@ export default function ViewExamPage() {
         <p className="section-title">Answer Key</p>
         <div className="page-viewer" style={{ marginBottom: "1.5rem" }}>
             <div className="page-viewer-slot" style={{ alignItems: currentPageKeys.length ? "flex-start" : "center", padding: currentPageKeys.length ? "1rem" : 0, overflowY: "auto" }}>
-            {currentPageKeys.length > 0 ? (
-              <div style={{ width: "100%" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
-                  {currentPageKeys.map(ak => (
-                    <div key={ak.answer_key_id} style={{ fontSize: "0.82rem", color: "var(--navy)", padding: "0.1rem 0" }}>
-                      <span style={{ color: "var(--text-muted)", minWidth: 24, display: "inline-block" }}>{ak.question_number}.</span>
-                      <span style={{ fontWeight: 600 }}>{ak.correct_answer}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem", fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                  <span>{currentPageKeys.length} answer(s) on page {examPages[pageIdx]?.page_number ?? 1}</span>
-                  <Button variant="secondary" onClick={handleGenerateKey} loading={generatingKey} disabled={!currentExamPage} style={{ fontSize: "0.78rem", padding: "0.3rem 0.8rem" }}>
-                    Regenerate
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button variant="primary" onClick={handleGenerateKey} loading={generatingKey} disabled={!currentExamPage} style={{ width: "auto", padding: "0.65rem 1.25rem" }}>
-                {generatingKey ? "Generating…" : "Generate Answer Key"}
-              </Button>
-            )}
+            {/* CHANGED 2026-11-11. The grid, the "N answer(s) on page N" line,
+                Regenerate and the Generate fallback all moved into
+                AnswerKeyPanel, which adds the inline edit. Nothing about this
+                slot's layout changed - the panel renders the same two shapes
+                this block did. */}
+            <AnswerKeyPanel
+              examId={examId}
+              keys={currentPageKeys}
+              pageNumber={examPages[pageIdx]?.page_number ?? 1}
+              canGenerate={!!currentExamPage}
+              generating={generatingKey}
+              onGenerate={handleGenerateKey}
+              onSaved={handleKeySaved}
+              onError={msg => setToast({ msg, type: "error" })}
+            />
           </div>
           {/* <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.75rem" }}>
             {selectedPaperFull && (selectedPaperFull.paper_scores ?? []).length > 0 ? (
