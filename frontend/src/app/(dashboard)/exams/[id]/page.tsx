@@ -19,6 +19,10 @@ import AnswerKeyPanel from "@/components/exams/AnswerKeyPanel";
 // where the panel's "override on one Test Paper" lives: ViewPaperModal is NOT
 // mounted on this page, so a table inside it would never be seen from here.
 import AnswerTable from "@/components/papers/AnswerTable";
+// NEW 2026-11-12 — "Batch upload -> of Exam" (Alex Passion / Julius Bancud,
+// page 2 item 7). Lives here rather than on the Students page because a batch
+// belongs to ONE exam, and this screen already knows which.
+import BatchUploadModal from "@/components/papers/BatchUploadModal";
 import type { PaperAnswerResult } from "@/types/paperAnswer";
 import { scoreFromGrade, formatScore, formatPercent } from "@/lib/scoreLabel";
 import { paperService } from "@/services/paperService";
@@ -116,6 +120,7 @@ export default function ViewExamPage() {
 
   // Modals
   const [showAddPaper, setShowAddPaper] = useState(false);
+  const [showBatchUpload, setShowBatchUpload] = useState(false);   // NEW 2026-11-12
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
 
   // Toast
@@ -253,6 +258,19 @@ export default function ViewExamPage() {
     await fetchPapers();
     setToast({ msg: "Paper added successfully.", type: "success" });
   };
+
+  // ── A whole class uploaded ────────────────────────────────────────────────
+  // NEW 2026-11-12. The modal has already reported per student in its own
+  // table; this only reloads the list and repeats the one-line summary.
+  //
+  // `clean` is false when ANY paper failed or landed with only some of its
+  // pages - a half-uploaded paper is counted as a problem even though its row
+  // exists, because grading it would score against missing pages and report a
+  // wrong number rather than an error.
+  const handleBatchFinished = useCallback(async (summary: string, clean: boolean) => {
+    await fetchPapers();
+    setToast({ msg: summary, type: clean ? "success" : "error" });
+  }, [fetchPapers]);
 
   // ── Answer key item corrected ─────────────────────────────────────────────
   // NEW 2026-11-11. The server has ALREADY re-checked every paper against the
@@ -605,9 +623,18 @@ export default function ViewExamPage() {
         {/* ── Test Papers section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Test Papers</p>
-          <Button variant="secondary" onClick={() => setShowAddPaper(true)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem", borderColor: "var(--orange)", color: "var(--orange)" }}>
-            Add paper
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {/* NEW 2026-11-12 (Alex & Bancud, page 2 item 7). SECONDARY styling
+                and placed FIRST, so "Add paper" keeps the emphasis it has
+                today: the batch is the faster path for a whole section, but
+                adding one paper is still what a teacher reaches for most. */}
+            <Button variant="secondary" onClick={() => setShowBatchUpload(true)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+              Upload class papers
+            </Button>
+            <Button variant="secondary" onClick={() => setShowAddPaper(true)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem", borderColor: "var(--orange)", color: "var(--orange)" }}>
+              Add paper
+            </Button>
+          </div>
         </div>
 
         {/* CHANGED 2026-11-11 - `totalItems` is the denominator for "score as
@@ -643,6 +670,17 @@ export default function ViewExamPage() {
             examPages={examPages.length || 1}
             onClose={() => setShowAddPaper(false)}
             onSuccess={handlePaperAdded}
+          />
+        )}
+
+        {/* NEW 2026-11-12. Mounted only while open, so the roster and the
+            exam's paper list are fetched fresh each time rather than going
+            stale behind a hidden dialog. */}
+        {showBatchUpload && (
+          <BatchUploadModal
+            examId={examId}
+            onClose={() => setShowBatchUpload(false)}
+            onFinished={handleBatchFinished}
           />
         )}
 

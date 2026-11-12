@@ -31,6 +31,17 @@ export interface PaperScore {
 export interface Paper {
   paper_id:     number;
   exam_id:      number;
+  // NEW 2026-11-12 — the roster link (Alex & Bancud page 2 item 4).
+  //
+  // NOT optional with "?", for the same reason as last_name below: both
+  // PaperResponse and PaperListResponse declare it, so Pydantic always
+  // serialises the key. The VALUE is null for every paper that predates the
+  // roster, and for any paper added by name through Add Paper rather than by
+  // student number.
+  //
+  // The batch upload reads it off GET /exams/{id}/papers to know who already
+  // has a paper here before it sends anything.
+  student_id:   number | null;
   student_name: string;
   // NEW 2026-11-04 (Doc Rubrica, consultation, page 4): "Paper Table:
   // [Last Name] [First Name]".

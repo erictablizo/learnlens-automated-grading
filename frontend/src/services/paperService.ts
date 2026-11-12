@@ -5,6 +5,23 @@ import { api } from "@/lib/api";
 // student_name on either payload type.
 import { Paper, GradeResult, PaperCreatePayload, PaperUpdatePayload } from "@/types/paper";
 
+/**
+ * NEW 2026-11-12 — what POST /papers/by-student returns.
+ *
+ * Deliberately NOT `Paper`: the batch upload wants to confirm the link it just
+ * made, and this endpoint sends a narrower shape than PaperResponse. Mirrors
+ * PaperForStudentResponse in schemas/paper.py.
+ */
+export interface PaperForStudentResult {
+  paper_id:     number;
+  exam_id:      number;
+  student_id:   number;
+  student_name: string;
+  last_name:    string | null;
+  first_name:   string | null;
+  checked:      boolean;
+}
+
 export const paperService = {
   // KNOWN TYPE MISMATCH, 2026-11-04. These three say Paper, and the endpoints
   // behind them return PaperListResponse, which has no exam_id. MEASURED by
@@ -24,6 +41,11 @@ export const paperService = {
   //     class PaperListResponse(BaseModel):
   //         paper_id:  int
   //         exam_id:   int        # <- add this
+  //
+  // NOTE 2026-11-12: `student_id` was added to BOTH PaperResponse and
+  // PaperListResponse this day, precisely so it would NOT join exam_id on this
+  // list. The batch upload reads it off `list` below, so a field present on
+  // only one of the two models would have been the same lie in a new place.
   //
   // Typed Paper[] here deliberately rather than inventing a PaperListItem,
   // which would ripple through usePapers, PapersTable's props and the state
@@ -45,6 +67,31 @@ export const paperService = {
    */
   create: (examId: number, body: PaperCreatePayload, token: string) =>
     api.post<Paper>(`/exams/${examId}/papers`, body, token),
+
+  /**
+   * NEW 2026-11-12 — create this exam's paper for a student already on the
+   * roster (Alex & Bancud page 2 item 7, resting on item 4).
+   *
+   * Only the NUMBER is sent; the names come off the roster server-side, which
+   * is what makes a 35-student batch possible without typing 35 names.
+   *
+   * A SECOND create path rather than widening `create` above. schemas/paper.py
+   * records why: PaperCreate's own 2026-11-04 comment is "Pydantic ignores
+   * unknown keys by default... The frontend MUST ship in the same deploy as
+   * this file." A new endpoint and a new payload touch nothing that works.
+   *
+   * 404 when the number is not on this teacher's roster - the SAME 404 for
+   * another teacher's student, so this cannot be used to probe someone else's
+   * roster. 409 when that student already has a paper in this exam. Both
+   * arrive as a readable ApiError.message, because api.ts's readDetail()
+   * passes a string `detail` through unchanged.
+   */
+  createForStudent: (examId: number, studentNumber: string, token: string) =>
+    api.post<PaperForStudentResult>(
+      `/exams/${examId}/papers/by-student`,
+      { student_number: studentNumber },
+      token,
+    ),
 
   /**
    * Rename a paper - and, on one of the 18 papers that predate the
