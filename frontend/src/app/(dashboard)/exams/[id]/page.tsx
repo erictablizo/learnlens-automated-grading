@@ -124,11 +124,15 @@ export default function ViewExamPage() {
   const [showBatchUpload, setShowBatchUpload] = useState(false);   // NEW 2026-11-12
   const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
 
+  // NEW 2026-11-12 — Excel export (Alex & Bancud, page 2 item 6)
+  const [downloading,   setDownloading]   = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   // Toast
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   const { papers, fetchPapers, deletePaper } = usePapers(examId);
-  
+
 
   // ── Load exam ─────────────────────────────────────────────────────────────
   const loadExam = useCallback(async () => {
@@ -200,10 +204,14 @@ export default function ViewExamPage() {
     setToast({ msg, type: "success" });
   }, [fetchPapers, selectedPaper, examId]);
 
-    // NEW 2026-11-12 — Excel export (Alex & Bancud, page 2 item 6)
-  const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
+  // ── Download the results as .xlsx ─────────────────────────────────────────
+  // NEW 2026-11-12 (Alex & Bancud, page 2 item 6: "Results: Export -> to
+  // Excel"). The workbook is built server-side, so this only has to carry the
+  // token, hand the Blob to a synthetic anchor and say what went wrong.
+  //
+  // `finally`, not the end of `try`: an error must also clear the flag, or a
+  // failed download leaves the button disabled and reading "Preparing…"
+  // forever, with no way back except a page reload.
   const handleDownloadExcel = async () => {
     setDownloadError(null);
     setDownloading(true);
@@ -639,7 +647,14 @@ export default function ViewExamPage() {
         </div>
 
         {/* ── Test Papers section ── */}
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        {/* RESTORED 2026-11-12. The heading and this outer row were lost when
+            the Download button was pasted in: the inner button div replaced
+            the whole block, taking `<p>Test Papers</p>` and the
+            `justifyContent: "space-between"` with it, which is why the buttons
+            sat on the LEFT with no title above the table. */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+          <p className="section-title" style={{ marginBottom: 0 }}>Test Papers</p>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             {downloadError && (
               <span role="alert" style={{ fontSize: "0.75rem", color: "var(--error)", maxWidth: 280, lineHeight: 1.25 }}>
                 {downloadError}
@@ -664,6 +679,7 @@ export default function ViewExamPage() {
               Add paper
             </Button>
           </div>
+        </div>
 
         {/* CHANGED 2026-11-11 - `totalItems` is the denominator for "score as
             X/Y"; the alphabetical sort is on by default inside the table.
