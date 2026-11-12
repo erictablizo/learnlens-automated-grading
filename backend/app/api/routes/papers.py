@@ -46,6 +46,48 @@ async def _uid(
     return user.user_id
 
 
+async def _owned_paper(db: AsyncSession, paper_id: int, uid: int) -> TestPaper:
+    """This paper, or 404 - ownership is ownership of the exam it belongs to.
+
+    THE GUARD FOR EVERY ENDPOINT BELOW THAT TAKES A paper_id.
+
+    CHANGED 2026-11-12. Written on 2026-11-11 for the override endpoint alone,
+    with a note saying the 2026-11-05 `_owned` should replace it. It is now the
+    other way round: this IS the fix, applied as EDITS rather than as a file.
+    The 2026-11-05 version was delivered as a complete replacement, was never
+    installed, and the 2026-11-09 duplicate work then landed on the unfixed
+    base - so replacing the whole file now would delete that work and the
+    override endpoint with it. See PAPERS-AUTHZ-REGRESSION-2026-11-11.md.
+
+    MEASURED with two teachers, every handler body copied from this file. Bob
+    is a legitimate authenticated teacher who owns nothing of Alice's:
+
+        WITHOUT   Bob reads her paper              200
+                  Bob lists her review queue       200  -> uploads/papers/alice_ben_p1.jpg
+                  Bob deletes her scanned page     200  file removed from disk
+                  Bob wipes her marking            200  score 12 -> None, 0 score rows
+                  Bob deletes her paper            200  gone
+        WITH      all five                         404
+                  her paper afterwards    score=12 checked=True 1 page 1 row
+                  Alice's own access      unchanged
+
+    `paper.exam_id != exam_id` is NOT an access check - it tests that the URL
+    agrees with itself, and both ids are small sequential integers. Where it
+    already exists it is KEPT, because it catches a different mistake.
+
+    404 and not 403: a teacher who does not own this paper should not learn
+    whether the id exists.
+    """
+    paper = (await db.execute(
+        select(TestPaper)
+        .join(Exam, Exam.exam_id == TestPaper.exam_id)
+        .where(TestPaper.paper_id == paper_id, Exam.created_by == uid)
+    )).scalars().first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return paper
+
+
 # REMOVED 2026-11-04 — class PaperNameUpdate(BaseModel): student_name: str
 #
 # It had no validators of any kind, and schemas/paper.py already held a
@@ -105,8 +147,13 @@ async def create_paper(exam_id: int, data: PaperCreate, uid: int = Depends(_uid)
 
 @router.get("/{paper_id}", response_model=PaperResponse)
 async def get_paper(exam_id: int, paper_id: int, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
+    # GUARD 2026-11-12. `uid` was in this signature and used by NOTHING.
+    # MEASURED: without this line another teacher reads this paper by id, 200.
+    await _owned_paper(db, paper_id, uid)
     # FIX: look up by paper_id only — don't check exam_id here to avoid
-    # false 404s when exam_id in URL doesn't exactly match DB value
+    # false 404s when exam_id in URL doesn't exactly match DB value. The guard
+    # above does NOT constrain exam_id, so that behaviour is unchanged; what
+    # changed is that the paper must be yours.
     paper = await paper_service.get_paper(db, paper_id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -194,6 +241,9 @@ async def update_paper_name(exam_id: int, paper_id: int, data: PaperUpdate, uid:
 
 @router.delete("/{paper_id}", status_code=204)
 async def delete_paper(exam_id: int, paper_id: int, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
+    # GUARD 2026-11-12. MEASURED: without it another teacher DELETES this
+    # paper by id and gets 204.
+    await _owned_paper(db, paper_id, uid)
     ok = await paper_service.delete_paper(db, paper_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -208,6 +258,10 @@ async def upload_paper_page(
     uid: int = Depends(_uid),
     db: AsyncSession = Depends(get_db),
 ):
+    # GUARD 2026-11-12, FIRST - before the file is even inspected, so an
+    # unauthorised caller learns nothing from the error it gets back.
+    await _owned_paper(db, paper_id, uid)
+
     # FIX: Accept image/jpg and application/octet-stream (Windows browsers)
     ALLOWED_TYPES = {
         "image/jpeg", "image/jpg", "image/png",
@@ -226,6 +280,10 @@ async def upload_paper_page(
 
 @router.delete("/{paper_id}/pages/{page_id}", status_code=204)
 async def delete_paper_page(exam_id: int, paper_id: int, page_id: int, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
+    # GUARD 2026-11-12. page_id + paper_id only tested that the URL agrees
+    # with itself. MEASURED: another teacher deletes this scanned page, 204,
+    # and the image file is removed from disk - unrecoverable.
+    await _owned_paper(db, paper_id, uid)
     result = await db.execute(
         select(PaperPage).where(PaperPage.paper_page_id == page_id, PaperPage.paper_id == paper_id)
     )
@@ -243,10 +301,12 @@ async def delete_paper_page(exam_id: int, paper_id: int, page_id: int, uid: int 
 
 @router.post("/{paper_id}/reset", status_code=200)
 async def reset_paper_score(exam_id: int, paper_id: int, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(TestPaper).where(TestPaper.paper_id == paper_id))
-    paper  = result.scalar_one_or_none()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+    # GUARD 2026-11-12. The select below fetched the paper by id alone and
+    # 404'd only if it did not exist. MEASURED: another teacher wipes this
+    # paper's marking - score 12 becomes None, checked becomes False, every
+    # PaperScore row deleted - and gets 200. _owned_paper raises the same 404
+    # and returns the row, so this is one query instead of two.
+    paper = await _owned_paper(db, paper_id, uid)
     await db.execute(delete(PaperScore).where(PaperScore.paper_id == paper_id))
     paper.total_score = None
     paper.checked     = False
@@ -261,8 +321,13 @@ async def grade_paper(
     uid: int = Depends(_uid),
     db: AsyncSession = Depends(get_db),
 ):
+    # GUARD 2026-11-12. Grading REWRITES every PaperScore row on the paper
+    # and its total, so an unguarded caller could re-grade a stranger's paper.
+    await _owned_paper(db, paper_id, uid)
     # FIX: look up paper by paper_id only — the exam_id mismatch check
-    # caused false 404s when the URL exam_id differed from the stored value
+    # caused false 404s when the URL exam_id differed from the stored value.
+    # The check below is KEPT: it is not an access test (both ids are small
+    # sequential integers) but it does catch a URL that disagrees with itself.
     paper = await paper_service.get_paper(db, paper_id)
     if not paper or paper.exam_id != exam_id:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -301,8 +366,12 @@ async def list_review_items(
     teacher the handwriting instead of asking her to judge a string she cannot
     check. That is the whole point of the review state.
     """
-    paper = (await db.execute(select(TestPaper).where(TestPaper.paper_id == paper_id))).scalar_one_or_none()
-    if not paper or paper.exam_id != exam_id:
+    # GUARD 2026-11-12. THE WORST OF THE EIGHT: this response carries
+    # `image_path` for every item, so without the guard another teacher reads
+    # the filesystem path to a stranger's student's scanned handwriting.
+    # MEASURED: 200, returning 'uploads/papers/alice_ben_p1.jpg'.
+    paper = await _owned_paper(db, paper_id, uid)
+    if paper.exam_id != exam_id:
         raise HTTPException(status_code=404, detail="Paper not found")
 
     rows = (await db.execute(
@@ -340,8 +409,10 @@ async def resolve_review_item(
     client asked for something the current state does not allow - the same
     code the grade endpoint uses for that.
     """
-    paper = (await db.execute(select(TestPaper).where(TestPaper.paper_id == paper_id))).scalar_one_or_none()
-    if not paper or paper.exam_id != exam_id:
+    # GUARD 2026-11-12. This WRITES - it decides an item correct or wrong and
+    # re-totals the paper.
+    paper = await _owned_paper(db, paper_id, uid)
+    if paper.exam_id != exam_id:
         raise HTTPException(status_code=404, detail="Paper not found")
 
     result = await resolve_review(db, paper_id, question_number, data.is_correct)
@@ -371,36 +442,6 @@ async def resolve_review_item(
 # anybody. This was the last place in the system where a score could be wrong
 # with no way to fix it.
 # ---------------------------------------------------------------------------
-
-async def _owned_paper(db: AsyncSession, paper_id: int, uid: int) -> TestPaper:
-    """This paper, or 404 - ownership by the exam's creator.
-
-    DELIBERATELY SELF-CONTAINED. The 2026-11-05 `_owned` helper is not in this
-    file: that change was delivered as a complete replacement file and never
-    installed, while the 2026-11-09 duplicate hunks were, which is why later
-    work sits on top of an unfixed base. See
-    PAPERS-AUTHZ-REGRESSION-2026-11-11.md.
-
-    The endpoint below WRITES - it changes a mark on a student's paper - so it
-    cannot wait for that to be sorted out. MEASURED with two teachers
-    (measure/2026-11-11_papers_authz.py): WITHOUT this helper Bob overrides an
-    answer on Alice's paper and gets 200 with the value stored; WITH it, 404
-    and her answer untouched.
-
-    404 and not 403: a teacher who does not own this paper should not learn
-    whether the id exists. Same shape as the `_owned` in the 2026-11-05 file,
-    so when that is finally installed this can be deleted and the single call
-    site swapped over.
-    """
-    paper = (await db.execute(
-        select(TestPaper)
-        .join(Exam, Exam.exam_id == TestPaper.exam_id)
-        .where(TestPaper.paper_id == paper_id, Exam.created_by == uid)
-    )).scalars().first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
-    return paper
-
 
 @router.put("/{paper_id}/answers/{question_number}", response_model=PaperAnswerUpdateResponse)
 async def override_paper_answer(
