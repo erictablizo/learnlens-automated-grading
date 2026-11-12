@@ -40,6 +40,18 @@
  * It goes AFTER Summary Report and still before Sign out, which stays last.
  * The two report-shaped screens sit together, and the order her 2026-11-04
  * sketch fixed is untouched.
+ *
+ * CHANGED 2026-11-12 — Doc Rubrica's "Create List of Students per Section",
+ * and Alex Passion / Julius Bancud page 2 item 4, "ID Student # -> file of
+ * Test Exam / Primary Key -> Additional Table".
+ *
+ * Students goes BETWEEN Manage Exams and Summary Report, and the placement is
+ * the argument: it is a SETUP screen, not a report. The 2026-11-11 note above
+ * fixed that "the two report-shaped screens sit together", so dropping a
+ * roster between them would break the grouping that note established. Manage
+ * Exams stays first, as her 2026-11-04 sketch fixed, and Sign out stays last.
+ *
+ *     Manage Exams / Students / Summary Report / Data Analytics / Sign out
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -91,6 +103,20 @@ const IconChart = () => (
   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M11 3a9 9 0 109 9h-9V3z" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M14.5 3.5A9 9 0 0120.5 9.5H14.5V3.5z" />
+  </svg>
+);
+
+// NEW 2026-11-12 — two people, deliberately not a fourth bar-or-circle glyph.
+//
+// IconList is horizontal bars, IconReport is vertical bars in a sheet,
+// IconChart is a pie. The 2026-11-11 note above records why a third
+// bar-shaped glyph would blur at 16px in a column; a fourth abstract shape
+// would be worse. A head-and-shoulders pair reads as "people" instantly and
+// shares no silhouette with the other three.
+const IconStudents = () => (
+  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round"
+          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
   </svg>
 );
 
@@ -148,6 +174,14 @@ export default function Navbar() {
   // /reports/analytics, the onReports test above starts matching it too and
   // both would highlight - tighten it then.
   const onAnalytics = pathname.startsWith("/analytics");
+  // NEW 2026-11-12. Same one-const pattern as the three above.
+  //
+  // "/students" shares no prefix with "/exams", "/reports" or "/analytics", so
+  // exactly one tab lights up on each screen. The one to watch is a future
+  // /exams/[id]/students - that WOULD light both this and Manage Exams, and
+  // the roster is deliberately a top-level screen rather than a tab inside an
+  // exam, because a class list outlives any single exam.
+  const onStudents  = pathname.startsWith("/students");
 
   // Initials fallback
   const initials = profile ? initialsOf(profile) : col?.initials ?? "?";
@@ -332,6 +366,21 @@ export default function Navbar() {
       >
         <IconList />
         Manage Exams
+      </Link>
+
+      {/* NEW 2026-11-12 (Doc Rubrica): "Create List of Students per Section".
+
+          A SETUP screen, so it sits with Manage Exams rather than with the two
+          report screens below. The student number entered here is what links a
+          test paper to a student - the prerequisite for batch upload, Alex &
+          Bancud page 2 item 7. */}
+      <Link
+        href="/students"
+        className={`sidebar-item${onStudents ? " active" : ""}`}
+        aria-current={onStudents ? "page" : undefined}
+      >
+        <IconStudents />
+        Students
       </Link>
 
       {/* NEW 2026-11-04 (Doc Rubrica, page 4): "Add Additional TAB for Summary
