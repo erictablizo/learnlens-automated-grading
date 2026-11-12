@@ -185,6 +185,19 @@ def _check_sequence(res: ParseResult) -> None:
         seen.add(n)
     if dupes:
         res.problems.append("Item(s) read twice: " + ", ".join(map(str, sorted(set(dupes)))))
+        # MEASURED on the project's own encircled multiple-choice key: a
+        # QUESTIONNAIRE page read by this parser returns question words as
+        # answers ("If", "what", "Solve") and repeats most item numbers,
+        # because "1." appears in the question AND in the options. Heavy
+        # duplication is that signature, and the honest thing is to name the
+        # mistake rather than let a teacher correct 38 nonsense rows by hand.
+        if len(set(dupes)) >= max(3, len(set(nums)) // 5):
+            res.problems.append(
+                "This looks like a questionnaire page rather than a list of "
+                "answers. Upload a picture of the answers only - \"1. A\", "
+                "\"2. B\", one per line - or use Regenerate to read the "
+                "questionnaire instead."
+            )
     gaps = [n for n in range(1, max(nums) + 1) if n not in seen]
     if gaps:
         res.problems.append("Item(s) missing: " + ", ".join(map(str, gaps)))

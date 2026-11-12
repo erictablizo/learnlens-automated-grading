@@ -33,6 +33,7 @@ import { usePapers } from "@/hooks/usePapers";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { downloadExamXlsx, downloadErrorMessage } from "@/services/exportService";
+import type { KeyImageApplyResult } from "@/types/keyImage";
 
 // ── icons ─────────────────────────────────────────────────────────────────────
 const IconBack = () => (
@@ -336,6 +337,43 @@ export default function ViewExamPage() {
     setToast({ msg: bits.join(" · "), type: backToReview > 0 ? "error" : "success" });
   }, [loadExam, fetchPapers, selectedPaper, examId]);
 
+    // ── A key rebuilt from an image ───────────────────────────────────────────
+  // NEW 2026-11-12 (Alex, page 3). The server ran the SAME cascade as
+  // handleKeySaved, once per item the teacher confirmed, so this reloads and
+  // reports on exactly the same rules - including a paper going back to
+  // needing review, which must never happen quietly.
+  const handleKeyImported = useCallback(async (result: KeyImageApplyResult) => {
+    await loadExam();
+    await fetchPapers();
+
+    if (selectedPaper) {
+      const token = getToken();
+      if (token) {
+        try {
+          const updated = await paperService.get(examId, selectedPaper.paper_id, token);
+          setSelectedPaper(updated); setSelectedPaperFull(updated);
+        } catch {}
+      }
+    }
+
+    if (result.items_updated === 0) {
+      setToast({ msg: "Nothing changed — the key already matched that image.", type: "success" });
+      return;
+    }
+
+    const bits: string[] = [`${result.items_updated} answer(s) updated from the image.`];
+    if (result.items_flipped > 0)   bits.push(`${result.items_flipped} marking(s) changed`);
+    if (result.papers_rescored > 0) bits.push(`${result.papers_rescored} paper(s) re-scored`);
+    if (result.skipped.length)      bits.push(`${result.skipped.length} item(s) skipped`);
+
+    const backToReview = result.updated
+      .flatMap(u => u.papers_rescored)
+      .filter(p => p.was_checked && !p.now_checked).length;
+    if (backToReview > 0) bits.push(`${backToReview} paper(s) need your review again`);
+
+    setToast({ msg: bits.join(" · "), type: backToReview > 0 ? "error" : "success" });
+  }, [loadExam, fetchPapers, selectedPaper, examId]);
+
   // ── One answer on ONE paper corrected ─────────────────────────────────────
   // NEW 2026-11-11. The mirror of handleKeySaved above, and the other half of
   // the same recommendation: that one cascades across every paper, this one
@@ -597,10 +635,12 @@ export default function ViewExamPage() {
               examId={examId}
               keys={currentPageKeys}
               pageNumber={examPages[pageIdx]?.page_number ?? 1}
+              pageId={currentExamPage?.page_id ?? 0}
               canGenerate={!!currentExamPage}
               generating={generatingKey}
               onGenerate={handleGenerateKey}
               onSaved={handleKeySaved}
+              onImported={handleKeyImported}
               onError={msg => setToast({ msg, type: "error" })}
             />
           </div>

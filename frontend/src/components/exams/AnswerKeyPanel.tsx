@@ -24,11 +24,27 @@
  * is wrong, and the item is three characters long. A modal to change "A" to
  * "B" is more ceremony than the edit deserves, and it would hide the rest of
  * the key - which is what the teacher is comparing against.
+ *
+ * CHANGED 2026-11-12 — "Upload key image" sits beside Regenerate, which is
+ * where the comment at the foot of this file said it should go (Alex, page 3:
+ * "an option to upload image of enumerated List of answers only"). Both
+ * buttons mean "rebuild this key"; they differ only in what is read.
+ * Regenerate reads the QUESTIONNAIRE, this reads a picture of the ANSWERS.
+ *
+ * Reading is one call and writing is another. The image never writes straight
+ * through - KeyImagePreviewModal shows what was read, lets the teacher fix it,
+ * and only then applies. MEASURED: the OCR is 100% on five printed layouts and
+ * on the project's own handwritten True/False key read whole, but a wrong key
+ * item silently re-scores every paper in the exam, so "usually right" is not a
+ * licence to write unattended.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Button from "@/components/ui/Button";
+import KeyImagePreviewModal from "@/components/exams/KeyImagePreviewModal";
 import { answerKeyService } from "@/services/answerKeyService";
+import { keyImageService } from "@/services/keyImageService";
 import { AnswerKeyUpdateResult } from "@/types/answerKey";
+import type { KeyImageApplyResult, KeyImagePreview } from "@/types/keyImage";
 import { AnswerKey } from "@/types/exam";
 import { getToken } from "@/lib/auth";
 
@@ -37,17 +53,26 @@ export interface AnswerKeyPanelProps {
   /** Already filtered to the page on screen and sorted by question number. */
   keys:        AnswerKey[];
   pageNumber:  number;
+  /**
+   * The page_id of the exam page on screen. NEW 2026-11-12 — the key image
+   * rebuilds the key for ONE page, and page_number is not an identifier.
+   * 0 when no page is selected, which disables the upload.
+   */
+  pageId:      number;
   /** False while no exam page is selected — Generate has nothing to read. */
   canGenerate: boolean;
   generating:  boolean;
   onGenerate:  () => void;
   /** Fired after a successful save, so the page can reload and toast. */
   onSaved:     (result: AnswerKeyUpdateResult) => void;
+  /** NEW 2026-11-12 — fired after a key image is applied. */
+  onImported:  (result: KeyImageApplyResult) => void;
   onError:     (message: string) => void;
 }
 
 export default function AnswerKeyPanel({
-  examId, keys, pageNumber, canGenerate, generating, onGenerate, onSaved, onError,
+  examId, keys, pageNumber, pageId, canGenerate, generating,
+  onGenerate, onSaved, onImported, onError,
 }: AnswerKeyPanelProps) {
   // The question number being edited, or null. Question number rather than
   // index, so a re-render that reorders or refilters the list cannot move the
@@ -55,6 +80,11 @@ export default function AnswerKeyPanel({
   const [editing, setEditing] = useState<number | null>(null);
   const [draft,   setDraft]   = useState("");
   const [saving,  setSaving]  = useState(false);
+
+  // NEW 2026-11-12 — the key-image flow.
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [reading, setReading] = useState(false);
+  const [preview, setPreview] = useState<KeyImagePreview | null>(null);
 
   const begin = (ak: AnswerKey) => {
     if (saving) return;
@@ -90,19 +120,78 @@ export default function AnswerKeyPanel({
     }
   };
 
+  /** Read the chosen image. Writes nothing — the modal does that, on confirm. */
+  const pickImage = async (file: File | null) => {
+    if (!file) return;
+    const token = getToken();
+    if (!token) { onError("Your session has expired. Please sign in again."); return; }
+    setReading(true);
+    try {
+      setPreview(await keyImageService.preview(examId, pageId, file, token));
+    } catch (e: unknown) {
+      onError(e instanceof Error ? e.message : "Could not read that image.");
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const applied = (result: KeyImageApplyResult) => {
+    setPreview(null);
+    onImported(result);
+  };
+
+  // The hidden input is rendered in BOTH branches below, because the empty-key
+  // branch returns early and a teacher with no key yet is exactly the one who
+  // wants to upload one.
+  const filePicker = (
+    <input
+      ref={fileRef}
+      type="file"
+      accept="image/*"
+      style={{ display: "none" }}
+      onChange={e => { void pickImage(e.target.files?.[0] ?? null); e.target.value = ""; }}
+    />
+  );
+
+  const uploadButton = (
+    <Button
+      variant="secondary"
+      onClick={() => fileRef.current?.click()}
+      loading={reading}
+      disabled={reading || !pageId}
+      title={pageId
+        ? "Upload a photo of the answers only — 1. A, 2. B, one per line"
+        : "Select an exam page first"}
+      style={{ fontSize: "0.78rem", padding: "0.3rem 0.8rem" }}
+    >
+      {reading ? "Reading…" : "Upload key image"}
+    </Button>
+  );
+
   if (keys.length === 0) {
     return (
-      <Button
-        variant="primary" onClick={onGenerate} loading={generating} disabled={!canGenerate}
-        style={{ width: "auto", padding: "0.65rem 1.25rem" }}
-      >
-        {generating ? "Generating…" : "Generate Answer Key"}
-      </Button>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.6rem" }}>
+        {filePicker}
+        <Button
+          variant="primary" onClick={onGenerate} loading={generating} disabled={!canGenerate}
+          style={{ width: "auto", padding: "0.65rem 1.25rem" }}
+        >
+          {generating ? "Generating…" : "Generate Answer Key"}
+        </Button>
+        {uploadButton}
+        {preview && (
+          <KeyImagePreviewModal
+            examId={examId} preview={preview}
+            onClose={() => setPreview(null)} onApplied={applied} onError={onError}
+          />
+        )}
+      </div>
     );
   }
 
   return (
     <div style={{ width: "100%" }}>
+      {filePicker}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.1rem 2rem", width: "100%" }}>
         {keys.map(ak => {
           const isEditing = editing === ak.question_number;
@@ -185,18 +274,27 @@ export default function AnswerKeyPanel({
           {keys.length} answer(s) on page {pageNumber}
           <span style={{ marginLeft: "0.5rem" }}>· click an answer to correct it</span>
         </span>
-        {/* Alex's page 3 asks where an "upload image of enumerated List of
+        {/* Alex's page 3 asked where an "upload image of enumerated List of
             answers only" option should live. HERE, beside Regenerate: both
-            mean "rebuild this key", differing only in what is read. Not added
-            yet — there is no endpoint behind it, and a button that does
-            nothing is worse than no button. */}
-        <Button
-          variant="secondary" onClick={onGenerate} loading={generating} disabled={!canGenerate}
-          style={{ fontSize: "0.78rem", padding: "0.3rem 0.8rem" }}
-        >
-          Regenerate
-        </Button>
+            mean "rebuild this key", differing only in what is read.
+            ADDED 2026-11-12 — the endpoint behind it now exists. */}
+        <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+          {uploadButton}
+          <Button
+            variant="secondary" onClick={onGenerate} loading={generating} disabled={!canGenerate}
+            style={{ fontSize: "0.78rem", padding: "0.3rem 0.8rem" }}
+          >
+            Regenerate
+          </Button>
+        </span>
       </div>
+
+      {preview && (
+        <KeyImagePreviewModal
+          examId={examId} preview={preview}
+          onClose={() => setPreview(null)} onApplied={applied} onError={onError}
+        />
+      )}
     </div>
   );
 }
