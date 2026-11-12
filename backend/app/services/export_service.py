@@ -94,7 +94,8 @@ def build_workbook(
     papers  - student_number, last_name, first_name, total_score, checked
               ALREADY SORTED by the caller, so the file matches the screen
     items   - question_number, correct_answer, answered, correct, wrong,
-              review, key_mismatch
+              blank, review, key_mismatch
+              (the field names of schemas.analytics.ItemAnalytics)
     """
     total_items = int(exam.get("total_items") or 0)
     mark = passing_mark(total_items, passing_pct)
@@ -137,8 +138,8 @@ def build_workbook(
     # Doc Rubrica, page 1: "Provide also info of number that students did not
     # get the correct answer."
     ws2 = wb.create_sheet("Item Analysis")
-    ws2.append(["Item", "Correct Answer", "Answered", "Correct",
-                "Wrong", "For Review", "% Correct", "Note"])
+    ws2.append(["Item", "Correct Answer", "Answered", "Correct", "Wrong",
+                "of which blank", "For Review", "% Correct", "Note"])
     _style_header(ws2)
 
     for it in items:
@@ -149,6 +150,11 @@ def build_workbook(
             answered,
             it.get("correct") or 0,
             it.get("wrong") or 0,
+            # A SUBSET of `wrong`, not a fourth category - the column is
+            # headed "of which blank" so the three cannot be read as summing
+            # to `answered`. A high blank count on one item usually means the
+            # scanner missed that row, not that the class did not know it.
+            it.get("blank") or 0,
             it.get("review") or 0,
             _ratio(it.get("correct"), answered),
             # Same flag the analytics page marks with a warning: MIN and MAX of
@@ -159,9 +165,9 @@ def build_workbook(
         ])
 
     for r in range(2, ws2.max_row + 1):
-        ws2.cell(r, 7).number_format = PERCENT_FORMAT
+        ws2.cell(r, 8).number_format = PERCENT_FORMAT
     ws2.freeze_panes = "A2"
-    _set_widths(ws2, [7, 15, 11, 9, 8, 11, 11, 56])
+    _set_widths(ws2, [7, 15, 11, 9, 8, 15, 11, 11, 56])
 
     # ----------------------------------------------------------- Summary
     counted = [p for p in papers
