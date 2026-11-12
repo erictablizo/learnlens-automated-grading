@@ -102,10 +102,22 @@ def build_workbook(
     wb = Workbook()
 
     # ------------------------------------------------------------ Scores
+    # The Student No. column is DROPPED ENTIRELY when not one paper carries a
+    # number. Papers added before the student roster existed have
+    # test_papers.student_id = NULL, so on those exams every cell is blank -
+    # and 36 empty cells read as a fault in the export rather than as "these
+    # papers were never linked to a roster student". The column returns on its
+    # own as soon as one paper has a number, so nothing needs changing later.
+    has_numbers = any((p.get("student_number") or "").strip() for p in papers)
+
     ws = wb.active
     ws.title = "Scores"
-    ws.append(["#", "Student No.", "Last Name", "First Name",
-               "Score", "Total Items", "Percentage", "Status"])
+    header = ["#"]
+    if has_numbers:
+        header.append("Student No.")
+    header += ["Last Name", "First Name", "Score", "Total Items",
+               "Percentage", "Status"]
+    ws.append(header)
     _style_header(ws)
 
     for n, p in enumerate(papers, start=1):
@@ -117,22 +129,30 @@ def build_workbook(
             status = "Under review"
         else:
             status = "Not checked"
-        ws.append([
-            n,
-            p.get("student_number") or "",
+        row: list[Any] = [n]
+        if has_numbers:
+            row.append(p.get("student_number") or "")
+        row += [
             p.get("last_name") or "",
             p.get("first_name") or "",
             score,
             total_items,
             _ratio(score, total_items) if final else None,
             status,
-        ])
+        ]
+        ws.append(row)
 
+    # Found by NAME, not by a hardcoded index: the column moves by one when
+    # Student No. is dropped, and a fixed 7 would format the Total Items
+    # column as a percentage on exactly the exams that drop it.
+    pct_col = header.index("Percentage") + 1
     for r in range(2, ws.max_row + 1):
-        ws.cell(r, 7).number_format = PERCENT_FORMAT
+        ws.cell(r, pct_col).number_format = PERCENT_FORMAT
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:H{max(ws.max_row, 1)}"
-    _set_widths(ws, [5, 14, 20, 18, 8, 11, 12, 14])
+    ws.auto_filter.ref = (
+        f"A1:{get_column_letter(len(header))}{max(ws.max_row, 1)}"
+    )
+    _set_widths(ws, [5] + ([14] if has_numbers else []) + [20, 18, 8, 11, 12, 14])
 
     # ----------------------------------------------------- Item Analysis
     # Doc Rubrica, page 1: "Provide also info of number that students did not
@@ -167,6 +187,10 @@ def build_workbook(
     for r in range(2, ws2.max_row + 1):
         ws2.cell(r, 8).number_format = PERCENT_FORMAT
     ws2.freeze_panes = "A2"
+    # NEW: the Scores sheet has had one from the start. Sorting this sheet by
+    # "% Correct" is how a teacher finds the questions the class actually
+    # struggled with, which is the whole point of the sheet.
+    ws2.auto_filter.ref = f"A1:I{max(ws2.max_row, 1)}"
     _set_widths(ws2, [7, 15, 11, 9, 8, 15, 11, 11, 56])
 
     # ----------------------------------------------------------- Summary
