@@ -32,6 +32,7 @@ import { AnswerKeyUpdateResult } from "@/types/answerKey";
 import { usePapers } from "@/hooks/usePapers";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
+import { downloadExamXlsx, downloadErrorMessage } from "@/services/exportService";
 
 // ── icons ─────────────────────────────────────────────────────────────────────
 const IconBack = () => (
@@ -127,6 +128,7 @@ export default function ViewExamPage() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   const { papers, fetchPapers, deletePaper } = usePapers(examId);
+  
 
   // ── Load exam ─────────────────────────────────────────────────────────────
   const loadExam = useCallback(async () => {
@@ -197,6 +199,22 @@ export default function ViewExamPage() {
     }
     setToast({ msg, type: "success" });
   }, [fetchPapers, selectedPaper, examId]);
+
+    // NEW 2026-11-12 — Excel export (Alex & Bancud, page 2 item 6)
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const handleDownloadExcel = async () => {
+    setDownloadError(null);
+    setDownloading(true);
+    try {
+      await downloadExamXlsx(examId);
+    } catch (e) {
+      setDownloadError(downloadErrorMessage(e));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   // ── Delete paper — step 1: show confirm dialog ────────────────────────────
   const handleDeleteRequest = useCallback((paper: Paper) => {
@@ -621,9 +639,20 @@ export default function ViewExamPage() {
         </div>
 
         {/* ── Test Papers section ── */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
-          <p className="section-title" style={{ marginBottom: 0 }}>Test Papers</p>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            {downloadError && (
+              <span role="alert" style={{ fontSize: "0.75rem", color: "var(--error)", maxWidth: 280, lineHeight: 1.25 }}>
+                {downloadError}
+              </span>
+            )}
+            {/* NEW 2026-11-12 (Alex & Bancud, page 2 item 6: "Results: Export ->
+                to Excel"). Leftmost and SECONDARY so the two paper-adding
+                buttons keep their order and "Add paper" keeps the rightmost,
+                orange, most-reached-for slot it has today. */}
+            <Button variant="secondary" onClick={handleDownloadExcel} disabled={downloading}
+                    style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+              {downloading ? "Preparing…" : "Download Excel"}
+            </Button>
             {/* NEW 2026-11-12 (Alex & Bancud, page 2 item 7). SECONDARY styling
                 and placed FIRST, so "Add paper" keeps the emphasis it has
                 today: the batch is the faster path for a whole section, but
@@ -635,7 +664,6 @@ export default function ViewExamPage() {
               Add paper
             </Button>
           </div>
-        </div>
 
         {/* CHANGED 2026-11-11 - `totalItems` is the denominator for "score as
             X/Y"; the alphabetical sort is on by default inside the table.
