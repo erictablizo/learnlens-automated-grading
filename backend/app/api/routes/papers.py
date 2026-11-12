@@ -18,9 +18,13 @@ from app.schemas.paper import (
     ReviewItemResponse, ReviewResolveRequest, ReviewResolveResponse,
     # NEW 2026-11-11 — per-paper answer override
     PaperAnswerUpdate, PaperAnswerUpdateResponse,
+    # NEW 2026-11-12 — batch upload, by student number
+    PaperForStudentCreate, PaperForStudentResponse,
 )
 from app.services import paper_service
 from app.services import paper_answer_service          # NEW 2026-11-11
+from app.services import batch_paper_service           # NEW 2026-11-12
+from app.services import student_service               # NEW 2026-11-12
 from app.services.ocr_service import resolve_review
 from app.services.auth_service import get_current_user
 # CHANGED 2026-11-11: Exam is imported now. _owned_paper() below joins through
@@ -108,6 +112,45 @@ async def get_paper(exam_id: int, paper_id: int, uid: int = Depends(_uid), db: A
         raise HTTPException(status_code=404, detail="Paper not found")
     return paper
 
+# ---------------------------------------------------------------------------
+# NEW 2026-11-12 — batch upload (Alex Passion / Julius Bancud, page 2 item 7)
+#
+# "ID Student # -> file of Test Exam". The browser names each photo after the
+# student number, matches it against the roster, and calls this once per
+# student. The upload loop is in the BROWSER, one student at a time: 35 files
+# at ~2 MB is a 70 MB request, and a per-student loop gives progress and keeps
+# one failure from losing the other 34.
+# ---------------------------------------------------------------------------
+
+@router.post("/by-student", response_model=PaperForStudentResponse, status_code=201)
+async def create_paper_for_student(
+    exam_id: int,
+    data: PaperForStudentCreate,
+    uid: int = Depends(_uid),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create this exam's paper for a student already on the roster.
+
+    The NAMES come from the roster, not from the request - that is what makes
+    the batch upload possible without typing 35 names.
+
+    404 on an unknown number, and the SAME 404 for another teacher's student,
+    so the endpoint cannot be used to discover whether a number exists on
+    somebody else's roster. 409 when that student already has a paper here.
+    """
+    student = await student_service.by_number(db, uid, data.student_number)
+    if not student:
+        raise HTTPException(status_code=404, detail=(
+            f"No student with number {data.student_number} is on your roster. "
+            "Add them on the Students page first."))
+
+    try:
+        paper = await batch_paper_service.create_for_student(db, exam_id, uid, student)
+    except batch_paper_service.PaperExistsForStudent as dup:
+        raise HTTPException(status_code=409, detail=dup.message)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    return paper
 
 @router.put("/{paper_id}", response_model=PaperListResponse)
 async def update_paper_name(exam_id: int, paper_id: int, data: PaperUpdate, uid: int = Depends(_uid), db: AsyncSession = Depends(get_db)):

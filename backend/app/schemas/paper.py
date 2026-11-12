@@ -117,6 +117,11 @@ class PaperUpdate(BaseModel):
 class PaperResponse(BaseModel):
     paper_id:     int
     exam_id:      int
+    # NEW 2026-11-12 — declared HERE as well as on PaperListResponse, so the
+    # key is always serialised and types/paper.ts can declare it required with
+    # a null value, per that file's own rule. Putting it on only one of the two
+    # would reproduce the exam_id type lie PAPER-SERVICE-TS-2026-11-04 found.
+    student_id:   Optional[int] = None
     student_name: str
     # NEW 2026-11-04. Optional because the 18 papers that predate the migration
     # have NULL in both until someone opens Edit Paper and splits them. The
@@ -134,6 +139,24 @@ class PaperResponse(BaseModel):
 
 class PaperListResponse(BaseModel):
     paper_id:     int
+    # NEW 2026-11-12 — which roster student this paper belongs to, or null for
+    # the papers that predate the roster (all of them today) and for any paper
+    # added by name rather than by student number.
+    #
+    # The batch upload reads it to know who ALREADY has a paper in this exam
+    # before it starts, so a clash is a line in the preview table instead of a
+    # 409 half-way through a 35-student run.
+    #
+    # Additive and Optional, so every existing caller is unaffected — the same
+    # shape PAPER-SERVICE-TS-2026-11-04 recommended for exam_id.
+    #
+    # Position here is COSMETIC, unlike in models.py. That file's 2026-11-04
+    # comment — "a migrated database gets these from ALTER TABLE ADD COLUMN,
+    # which always APPENDS" — is about column ordinals in PostgreSQL. A Pydantic
+    # response model has no such constraint; field order only sets the order of
+    # keys in the JSON. So it sits beside paper_id, where the other identifier
+    # is, rather than being appended to keep a diff small.
+    student_id:   Optional[int] = None
     student_name: str
     # NEW 2026-11-04 — PapersTable shows "Last Name" and "First Name" as two
     # columns (her page 4), and this is the model behind that table. It is also
@@ -300,3 +323,58 @@ class PaperAnswerUpdateResponse(BaseModel):
     total_items:       int
     is_final:          bool
     message:           str
+
+# ---------------------------------------------------------------------------
+# NEW 2026-11-12 — a paper created FOR A ROSTER STUDENT (batch upload, item 7)
+#
+# Separate from PaperCreate, which takes the two name parts. This one takes the
+# student NUMBER, and the names come off the roster - that is the whole point
+# of item 4: "ID Student # -> file of Test Exam".
+#
+# PaperCreate is deliberately NOT widened to accept an optional student_number.
+# Its own 2026-11-04 comment records what happens when that model changes:
+# "Pydantic ignores unknown keys by default, so the old frontend payload does
+# not error on the extra key - it fails with 422 on the two MISSING ones
+# instead... The frontend MUST ship in the same deploy as this file." A new
+# model touches nothing that is already working.
+# ---------------------------------------------------------------------------
+
+class PaperForStudentCreate(BaseModel):
+    """The roster number written on the paper and used as the image's name."""
+
+    student_number: str
+
+    @field_validator("student_number")
+    @classmethod
+    def _n(cls, v: str) -> str:
+        s = " ".join((v or "").split())
+        if not s:
+            raise ValueError("Student number is required.")
+        if len(s) > 50:
+            raise ValueError("Student number must be 50 characters or fewer.")
+        return s
+
+
+class PaperForStudentResponse(BaseModel):
+    """What the batch upload needs back, and nothing else.
+
+    The batch modal needs `paper_id` to upload pages against, and the name
+    fields to show in its progress table. It does NOT need pages, scores or
+    answers — those are separate calls, and a 35-student run would fetch them
+    35 times for nothing.
+
+    Dict form rather than ConfigDict(...) deliberately: this file's import line
+    is `from pydantic import BaseModel, field_validator, model_validator`, and
+    PaperPageResponse / PaperScoreResponse / PaperResponse / PaperListResponse
+    all already use the dict form. One style per file, and no import to touch.
+    """
+
+    model_config = {"from_attributes": True}
+
+    paper_id:       int
+    exam_id:        int
+    student_id:     int
+    student_name:   str
+    last_name:      Optional[str] = None
+    first_name:     Optional[str] = None
+    checked:        bool
