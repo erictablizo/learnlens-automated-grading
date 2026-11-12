@@ -7,33 +7,6 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.profile import UserProfile  # noqa: F401
 
-# CHANGED 2026-10-24 — Doc Rubrica's sixth comment. Four edits, all marked
-# "NEW 2026-10-24" or "WAS String(10)" below:
-#   * ExamPagePart            — the declared item ranges of a page must survive,
-#                               or a paper cannot be read the way its key was.
-#   * Exam.page_parts / ExamPage.parts
-#   * AnswerKey.correct_answer and PaperScore.student_answer/correct_answer
-#                               String(10) -> String(100). varchar(10) cannot
-#                               hold COMMUNICATION (13), PROOFREADING (12) or
-#                               THESIS STATEMENT (16) - PostgreSQL rejects the
-#                               insert outright, and exam_service's old
-#                               `a.letter[:10]` was hiding that as a silent
-#                               wrong answer.
-#   * PaperScore.verdict      — identification is not auto-graded, so a score
-#                               row needs correct/review/wrong, not a boolean.
-#
-# CHANGED 2026-11-04 — Doc Rubrica's consultation. Two edits:
-#   * Exam.subject / Exam.schedule        "2 additional Fields in Exam Info Table"
-#   * TestPaper.first_name / .last_name   "Split Name to Last Name & First Name",
-#                               plus the ix_test_papers_exam_lastname index the
-#                               schema already carried and this file did not.
-#
-# Everything else is untouched. Verified by diffing a database built by this
-# file's create_all() against one built by the original models plus
-# migrations/2026-10-23_parts_and_answer_length.sql: zero differences across
-# 119 columns, constraints and indexes. The 2026-11-04 columns were re-verified
-# the same way against learnlens_schema.sql on PostgreSQL 16 — see TestPaper.
-
 
 class User(Base):
     __tablename__ = "users"
@@ -46,6 +19,7 @@ class User(Base):
 
     profile         = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete")
     exams           = relationship("Exam", back_populates="creator", cascade="all, delete")
+    students        = relationship("Student", back_populates="creator", cascade="all, delete")   # NEW 2026-11-12
     password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete")
 
 
@@ -72,16 +46,6 @@ class Exam(Base):
     created_by  = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     exam_name   = Column(String(255), nullable=False)
     description = Column(Text, nullable=False, default="", server_default=text("''"))
-    # NEW 2026-11-04 (Doc Rubrica, consultation): "2 additional Fields in Exam
-    # Info Table". NULLABLE in the database because the existing exams predate
-    # them — a NOT NULL would make the migration fail on rows that cannot
-    # supply a value. Both forms REQUIRE them, so an exam acquires them the
-    # first time it is created or edited.
-    #
-    # schedule is free text, not two timestamps. Her own examples are
-    # "2pm to 3pm" and "1:00pm to 12pm"; a text column cannot be wrong about a
-    # range the teacher writes herself. Sortable schedules are a later
-    # migration if a panel ever asks for them.
     subject     = Column(String(255))
     schedule    = Column(String(255))
     created_at  = Column(UTCDateTime(), server_default=func.now(), nullable=False)
@@ -107,15 +71,6 @@ class ExamPage(Base):
     page_number = Column(SmallInteger, nullable=False)
     image_path  = Column(String(500), nullable=False)
     uploaded_at = Column(UTCDateTime(), server_default=func.now(), nullable=False)
-    # NEW 2026-10-26. The question type this page's ANSWER KEY was generated
-    # with. NULL means "never generated, or generated before this column
-    # existed", and the old inference is used then.
-    #
-    # This exists because infer_question_type() cannot recover it. `encircled`
-    # and `written_letter` both store a bare letter, so a page whose key was
-    # built as "mixed" was re-read as "encircled" when checking a paper, and
-    # Part I came back empty for every student. A page declared with parts
-    # does not need it: exam_page_parts already says what each range is.
     question_type = Column(String(32), nullable=True)
 
     exam        = relationship("Exam", back_populates="pages")
@@ -132,10 +87,6 @@ class ExamPagePart(Base):
         UniqueConstraint("page_id", "first_item", name="exam_page_parts_page_id_first_item_key"),
         CheckConstraint("last_item >= first_item", name="exam_page_parts_range_check"),
         CheckConstraint("first_item >= 1 AND last_item <= 500", name="exam_page_parts_bounds_check"),
-        # Named explicitly rather than index=True: SQLAlchemy would call them
-        # ix_public_exam_page_parts_exam_id for a schema-qualified table, and
-        # the migration creates ix_exam_page_parts_exam_id. Both sides must
-        # agree or every future schema comparison reports a phantom drift.
         Index("ix_exam_page_parts_exam_id", "exam_id"),
         Index("ix_exam_page_parts_page_id", "page_id"),
     )
@@ -173,31 +124,72 @@ class AnswerKey(Base):
     paper_scores = relationship("PaperScore", back_populates="answer_key", cascade="all, delete")
 
 
+# NEW 2026-11-12 — the student roster. Alex Passion / Julius Bancud, post-UAT
+# page 2, item 4: "Test Paper -> ID # Student / ID Student # -> file of Test
+# Exam / Primary Key -> Additional Table", and Doc Rubrica's "Create List of
+# Students per Section". See migrations/2026-11-12_students.sql.
+#
+# It is the prerequisite for "Batch upload of Exam": the blocker
+# MULTI-PAGE-UPLOAD-2026-10-23.md recorded was "the system cannot know whose
+# paper is whose", and a student number written on the paper and used as the
+# image's file name is what answers it.
+class Student(Base):
+    __tablename__ = "students"
+    __table_args__ = (
+        # UNIQUE PER TEACHER, not globally: two teachers at one school may hold
+        # the same student, and a global unique makes the second roster
+        # impossible to fill.
+        #
+        # lower(trim(...)) for the reason ux_users_lower_email exists
+        # (2026-11-11): "2021-A123" and "2021-a123" are one student, and
+        # finding that out from a duplicate paper at grading time is finding
+        # out too late. Written with text() and named explicitly, the same way
+        # ix_test_papers_exam_lastname is below - an index name SQLAlchemy
+        # invents for itself makes every future schema comparison report a
+        # phantom drift.
+        #
+        # trim and not btrim: identical in PostgreSQL, SQL-standard, and it
+        # lets the test harness run the real expression on SQLite too.
+        Index("ux_students_owner_number", "created_by",
+              text("lower(trim(student_number))"), unique=True),
+        Index("ix_students_owner_section", "created_by", "section"),
+        CheckConstraint("trim(student_number) <> ''",
+                        name="students_student_number_not_blank"),
+    )
+
+    student_id     = Column(Integer, primary_key=True, autoincrement=True)
+    created_by     = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    # varchar, NOT integer: real student numbers carry hyphens and leading
+    # zeros - "2021-00123", "04512" - and an integer column eats both.
+    student_number = Column(String(50), nullable=False)
+    last_name      = Column(String(255), nullable=False)
+    first_name     = Column(String(255), nullable=False)
+    # Free text, for the reason Exam.schedule is free text: her sections are
+    # written however her school writes them.
+    section        = Column(String(255))
+    created_at     = Column(UTCDateTime(), server_default=func.now(), nullable=False)
+    updated_at     = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
+
+    creator     = relationship("User", back_populates="students")
+    test_papers = relationship("TestPaper", back_populates="student")
+
+
 class TestPaper(Base):
     __tablename__ = "test_papers"
-    # NEW 2026-11-04. This class had no __table_args__ at all, and
-    # learnlens_schema.sql already carried ix_test_papers_exam_lastname — so a
-    # database built by create_all() came out WITHOUT the index while every
-    # migrated one had it.
-    #
-    # "Sorted in order … Alphabetical, surname" (Doc Rubrica, page 2). Named
-    # explicitly and matching
-    # migrations/2026-11-04_subject_schedule_and_student_name.sql, for the
-    # reason ExamPagePart records above: a name SQLAlchemy invents for itself
-    # makes every future schema comparison report a phantom drift.
-    #
-    # lower() because PostgreSQL's default collation is case-sensitive, so a
-    # plain ORDER BY last_name puts "nono" and "Ñoño" at opposite ends of the
-    # list instead of next to each other.
-    #
-    # MEASURED on PostgreSQL 16: this produces, byte for byte,
-    #   CREATE INDEX ix_test_papers_exam_lastname ON public.test_papers
-    #     USING btree (exam_id, lower((last_name)::text), lower((first_name)::text))
-    # which is what learnlens_schema.sql already holds. SQLAlchemy emits
-    # lower(last_name); PostgreSQL stores the varchar->text cast. Same index.
     __table_args__ = (
         Index("ix_test_papers_exam_lastname", "exam_id",
               text("lower(last_name)"), text("lower(first_name)")),
+        # NEW 2026-11-12. One paper per student per exam - the rule the
+        # 2026-11-09 duplicate guard enforces on NAMES, now enforceable exactly
+        # rather than by string comparison, which is the whole point of having
+        # an ID.
+        #
+        # PARTIAL: every paper that exists today has student_id NULL, and
+        # without the WHERE clause the second such paper would collide with the
+        # first. postgresql_where, so SQLAlchemy emits the same WHERE the
+        # migration does.
+        Index("ux_test_papers_exam_student", "exam_id", "student_id",
+              unique=True, postgresql_where=text("student_id IS NOT NULL")),
     )
 
     paper_id     = Column(Integer, primary_key=True, autoincrement=True)
@@ -207,30 +199,27 @@ class TestPaper(Base):
     checked      = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     added_at     = Column(UTCDateTime(), server_default=func.now(), nullable=False)
     updated_at   = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
-    # NEW 2026-11-04 (Doc Rubrica, consultation, page 4): "Split Name to Last
-    # Name & First Name" / "Paper Table: [Last Name] [First Name]".
-    #
-    # DECLARED LAST, not beside student_name, and that is deliberate. A
-    # migrated database gets these from ALTER TABLE ADD COLUMN, which always
-    # APPENDS; a database built by create_all() gets them in declaration
-    # order. MEASURED on PostgreSQL 16: declaring them beside student_name
-    # puts them at ordinal positions 4 and 5 while every migrated database has
-    # them at 8 and 9 — the phantom drift ExamPagePart warns about above, in a
-    # new place.
-    #
-    # NULLABLE: the papers that predate the migration cannot supply a value.
-    # MEASURED 2026-11-04, 4 of 7 real student_name values split wrongly —
-    # "Midterm - Alcantara, Ben R." gives a last_name of "Midterm - Alcantara"
-    # — so the migration adds the columns and does NOT backfill. Required-ness
-    # lives in PaperCreate and in the two forms.
-    #
-    # student_name is KEPT, not dropped. paper_service composes it from these
-    # two on every write, so the six places that read it stay correct, and it
-    # is the rollback if a hand-split turns out wrong.
     first_name   = Column(String(255))
     last_name    = Column(String(255))
+    # NEW 2026-11-12. DECLARED LAST, for exactly the reason first_name and
+    # last_name are declared last above: the migration adds it with ALTER TABLE
+    # ADD COLUMN, which APPENDS, so a database built by create_all() only
+    # agrees with a migrated one if this is the final column.
+    #
+    # NULLABLE because every paper that exists today has no student row - the
+    # same decision, unbackfilled, as the 2026-11-04 name parts.
+    #
+    # ON DELETE SET NULL, NEVER CASCADE. paper_scores CASCADEs off this table,
+    # so a CASCADE here would mean: remove a student from a class list ->
+    # delete their test paper -> delete every marked answer on it. A teacher
+    # tidying a roster would silently erase a graded exam. MEASURED with
+    # PRAGMA foreign_keys=ON - STUDENT-ROSTER-2026-11-12.md, property 1: the
+    # paper survives with its score, its checked flag, its own name and its
+    # PaperScore rows, and student_id is NULLed rather than left dangling.
+    student_id   = Column(Integer, ForeignKey("students.student_id", ondelete="SET NULL"))
 
     exam         = relationship("Exam", back_populates="test_papers")
+    student      = relationship("Student", back_populates="test_papers")   # NEW 2026-11-12
     paper_pages  = relationship("PaperPage", back_populates="paper", cascade="all, delete")
     paper_scores = relationship("PaperScore", back_populates="paper", cascade="all, delete")
 
