@@ -114,4 +114,41 @@ export const api = {
     }
     return res.json() as Promise<T>;
   },
+    /**
+   * NEW 2026-11-12 — a GET whose body is a FILE, not JSON.
+   *
+   * The mirror of postForm: that one sends bytes, this one receives them.
+   * Both exist because `request<T>()` ends in `res.json()`, which is right
+   * for every other call and wrong for a spreadsheet.
+   *
+   * Everything up to the body is shared on purpose - doFetch for a backend
+   * that is down, readDetail for a FastAPI `detail` that may be a string OR
+   * the Pydantic array, ApiError carrying the status. A download that wrote
+   * its own error handling would be the 2026-09-22 bug a second time, in a
+   * second place.
+   *
+   * The Content-Disposition header is returned RAW rather than parsed here,
+   * so this stays a transport function with no opinion about filenames.
+   */
+  getBlob: async (
+    path: string,
+    token?: string,
+  ): Promise<{ blob: Blob; disposition: string | null }> => {
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await doFetch(`${BASE_URL}${path}`, { method: "GET", headers });
+    if (!res.ok) {
+      let message = "Download failed";
+      try {
+        message = readDetail(await res.json(), message);
+      } catch {
+        // same as request(): a non-JSON body (nginx 502) keeps the fallback
+      }
+      throw new ApiError(res.status, message);
+    }
+    return {
+      blob: await res.blob(),
+      disposition: res.headers.get("Content-Disposition"),
+    };
+  },
 };
