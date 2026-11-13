@@ -17,6 +17,18 @@
  *
  * — `admin` should sit beside `exams`, `reports`, `analytics` and `students`.
  *
+ * CORRECTED 2026-11-13, after it was seen on learnlens.tech: THIS PAGE MUST
+ * RENDER THE SIDEBAR ITSELF. The first version returned a bare <main> on the
+ * assumption that `(dashboard)` supplies a layout. It does not - there is no
+ * `(dashboard)/layout.tsx`, and every screen in the group wraps itself in
+ *
+ *     <div className="dashboard-layout"> <Navbar /> <main className="main-content">
+ *
+ * which the Edit Profile page states outright: "the sidebar is rendered per
+ * page, not by a layout". Being inside the route group was necessary and not
+ * sufficient, and `npm run build` cannot see the difference - the page
+ * compiled, deployed and rendered, with no nav on it.
+ *
  * READ-ONLY, deliberately, and the schema file says why: an administrator who
  * can delete across accounts has a blast radius nothing in that note asks
  * for, and the ownership guards installed on 2026-11-12 exist precisely to
@@ -38,10 +50,29 @@
  * `_admin` answers 403 and not 404.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Navbar from "@/components/ui/Navbar";
 import { ApiError } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { getToken, isAuthenticated } from "@/lib/auth";
 import { adminService } from "@/services/adminService";
 import type { AdminExam, AdminOverview, AdminTeacher } from "@/types/admin";
+
+/**
+ * The dashboard shell every screen in this group renders for itself.
+ *
+ * One component rather than four copies, because this page returns from four
+ * different branches (loading, denied, error, loaded) and the first version
+ * shipped with the sidebar missing from ALL of them. A wrapper that cannot be
+ * forgotten in one branch is the point.
+ */
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="dashboard-layout">
+      <Navbar />
+      <main className="main-content">{children}</main>
+    </div>
+  );
+}
 
 /** The one-line totals, as five tiles. */
 function Tile({ label, value, muted }: { label: string; value: number; muted?: boolean }) {
@@ -106,6 +137,12 @@ export default function AdminPage() {
   const [denied,   setDenied]   = useState(false);
   const [q,        setQ]        = useState("");
 
+  // Same guard every other screen in this group uses. Without it an expired
+  // session lands on "You are not signed in." instead of the login page, which
+  // is a dead end rather than a route back.
+  const router = useRouter();
+  useEffect(() => { if (!isAuthenticated()) router.replace("/login"); }, [router]);
+
   const load = useCallback(() => {
     const token = getToken();
     if (!token) { setError("You are not signed in."); setLoading(false); return; }
@@ -158,12 +195,13 @@ export default function AdminPage() {
     [exams, needle]);
 
   if (loading) {
-    return <main style={{ padding: "1.5rem" }}><p style={{ color: "var(--text-muted)" }}>Loading…</p></main>;
+    return <Shell><p style={{ color: "var(--text-muted)" }}>Loading…</p></Shell>;
   }
 
   if (denied) {
     return (
-      <main style={{ padding: "1.5rem", maxWidth: 640 }}>
+      <Shell>
+        <div style={{ maxWidth: 640 }}>
         <h1 style={{ fontFamily: "var(--font-heading)", color: "var(--navy)", marginBottom: "0.6rem" }}>
           Administrator
         </h1>
@@ -175,19 +213,22 @@ export default function AdminPage() {
           is limited to administrator accounts. Your own exams, papers and students
           are unaffected and are where they always were.
         </p>
-      </main>
+        </div>
+      </Shell>
     );
   }
 
   if (error) {
     return (
-      <main style={{ padding: "1.5rem", maxWidth: 680 }}>
-        <h1 style={{ fontFamily: "var(--font-heading)", color: "var(--navy)", marginBottom: "0.6rem" }}>
-          Administrator
-        </h1>
-        <p style={{ fontSize: "0.9rem", lineHeight: 1.6, color: "var(--danger, #b42318)" }}>{error}</p>
-        <button className="btn" onClick={load} style={{ marginTop: "0.9rem" }}>Try again</button>
-      </main>
+      <Shell>
+        <div style={{ maxWidth: 680 }}>
+          <h1 style={{ fontFamily: "var(--font-heading)", color: "var(--navy)", marginBottom: "0.6rem" }}>
+            Administrator
+          </h1>
+          <p style={{ fontSize: "0.9rem", lineHeight: 1.6, color: "var(--danger, #b42318)" }}>{error}</p>
+          <button className="btn" onClick={load} style={{ marginTop: "0.9rem" }}>Try again</button>
+        </div>
+      </Shell>
     );
   }
 
@@ -197,7 +238,8 @@ export default function AdminPage() {
   const keyless = exams.filter(x => x.items === 0 && x.papers > 0).length;
 
   return (
-    <main style={{ padding: "1.5rem", maxWidth: 1100 }}>
+    <Shell>
+      <div style={{ maxWidth: 1100 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
         <h1 style={{ fontFamily: "var(--font-heading)", color: "var(--navy)", margin: 0 }}>
           Administrator
@@ -383,6 +425,7 @@ export default function AdminPage() {
           </tbody>
         </table>
       </div>
-    </main>
+      </div>
+    </Shell>
   );
 }
