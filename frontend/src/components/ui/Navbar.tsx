@@ -52,6 +52,30 @@
  * Exams stays first, as her 2026-11-04 sketch fixed, and Sign out stays last.
  *
  *     Manage Exams / Students / Summary Report / Data Analytics / Sign out
+ *
+ * CHANGED 2026-11-13 - Alex Passion / Julius Bancud, post-UAT page 2, item 1:
+ * "(*) Admin -> ID -> to handle maintenance".
+ *
+ * Administrator goes LAST of the links, immediately above Sign out, and it is
+ * drawn only for an administrator. It is deliberately not grouped with the
+ * four teacher screens: those five entries are one person's own work, and
+ * this one is every person's. Sign out stays last, as every note above fixed.
+ *
+ *     Manage Exams / Students / Summary Report / Data Analytics /
+ *         [Administrator, admins only] / Sign out
+ *
+ * WHETHER TO DRAW IT IS ASKED OF THE SERVER, not read from a role field.
+ * GET /api/profile does not carry `role`: ProfileResponse serialises the
+ * user_profiles row and `role` lives on `users`. Rather than edit the profile
+ * route - the file that was silently dropping year_level until 2026-11-04 -
+ * the sidebar calls GET /api/admin/overview once per mount and draws the link
+ * if it answers. `_admin` rejects a teacher BEFORE any query runs, so a
+ * teacher's probe costs one 403 and no database work, and the link can never
+ * disagree with what the endpoints behind it would actually do.
+ *
+ * This is a NAVIGATION HINT, not an authorisation decision. The real decision
+ * is made on the server on every request, which is why a wrong guess here is
+ * cosmetic and not a security fault.
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -64,6 +88,10 @@ import { profileService } from "@/services/profileService";
 // CHANGED 2026-10-22: profileLines replaces buildDisplayName here. The export
 // itself is KEPT in lib/profileDisplay.ts because the college picker uses it.
 import { avatarUrl, initialsOf, profileLines } from "@/lib/profileDisplay";
+// NEW 2026-11-13: only isAdmin() is used here. It never throws - a 401, a 403,
+// a dead backend and an unregistered router all return false - so the sidebar
+// cannot be broken by this call. See services/adminService.ts.
+import { adminService } from "@/services/adminService";
 
 /** Fired by the Edit Profile page after a successful save. */
 export const PROFILE_UPDATED_EVENT = "learnlens:profile-updated";
@@ -120,12 +148,33 @@ const IconStudents = () => (
   </svg>
 );
 
+// NEW 2026-11-13 - a SHIELD with a tick, deliberately not a fifth bar, circle
+// or pair of people.
+//
+// IconList is horizontal bars, IconReport is vertical bars in a sheet,
+// IconChart is a pie and IconStudents is two heads. The 2026-11-11 and
+// 2026-11-12 notes above record why each new entry needs a silhouette the
+// others do not already own: at 16px, greyed out, in a narrow column, two
+// glyphs of the same outline are indistinguishable. A shield is the only
+// shape in this set with a point at the bottom.
+const IconShield = () => (
+  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round"
+          d="M12 3l7 3v6c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-3z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.5 12.2l1.8 1.8 3.4-3.6" />
+  </svg>
+);
+
 export default function Navbar() {
   const pathname = usePathname();
   const router   = useRouter();
 
   const [profile,     setProfile]     = useState<UserProfile | null>(null);
   const [imgError,    setImgError]    = useState(false);
+  // NEW 2026-11-13. Starts FALSE, so the link is absent until the server has
+  // said otherwise. The other way round would flash an Administrator link at
+  // every teacher on every page load.
+  const [isAdmin,     setIsAdmin]     = useState(false);
 
   const loadProfile = useCallback(() => {
     const token = getToken();
@@ -146,6 +195,24 @@ export default function Navbar() {
     window.addEventListener(PROFILE_UPDATED_EVENT, onUpdated);
     return () => window.removeEventListener(PROFILE_UPDATED_EVENT, onUpdated);
   }, [loadProfile]);
+
+  // NEW 2026-11-13. ONCE PER MOUNT, deliberately - not in the [pathname]
+  // effect above that reloads the profile on every navigation. A role does not
+  // change while someone is clicking around, and asking on every screen would
+  // put one request per navigation on every teacher's session for an answer
+  // that cannot have moved.
+  //
+  // Removing an administrator DOES take effect on their next request, because
+  // _admin reads the role from the database rather than from the token - they
+  // would simply still see a link that now answers 403, until a reload. That
+  // is the right trade: the endpoints are what is actually guarded.
+  const probeAdmin = useCallback(() => {
+    const token = getToken();
+    if (!token) { setIsAdmin(false); return; }
+    adminService.isAdmin(token).then(setIsAdmin);
+  }, []);
+
+  useEffect(() => { probeAdmin(); }, [probeAdmin]);
 
   const handleSignOut = () => {
     clearAuth();
@@ -182,6 +249,13 @@ export default function Navbar() {
   // the roster is deliberately a top-level screen rather than a tab inside an
   // exam, because a class list outlives any single exam.
   const onStudents  = pathname.startsWith("/students");
+  // NEW 2026-11-13. Same one-const pattern as the four above, same reason:
+  // the className and the aria-current read one value, so the highlight and
+  // the announced state cannot drift apart.
+  //
+  // "/admin" shares no prefix with "/exams", "/reports", "/analytics" or
+  // "/students", so exactly one tab lights up on each screen.
+  const onAdmin     = pathname.startsWith("/admin");
 
   // Initials fallback
   const initials = profile ? initialsOf(profile) : col?.initials ?? "?";
@@ -412,6 +486,27 @@ export default function Navbar() {
         <IconChart />
         Data Analytics
       </Link>
+
+      {/* NEW 2026-11-13 (Alex Passion / Julius Bancud, post-UAT page 2, item 1):
+          "(*) Admin -> ID -> to handle maintenance".
+
+          Drawn ONLY for an administrator, and last of the links - the five
+          above are a teacher's own work, this one is everybody's. Sign out
+          stays last overall.
+
+          `isAdmin` is false until GET /api/admin/overview has answered, so
+          nothing flashes for a teacher. The screen behind this link is
+          read-only; it lists accounts and exams and changes nothing. */}
+      {isAdmin && (
+        <Link
+          href="/admin"
+          className={`sidebar-item${onAdmin ? " active" : ""}`}
+          aria-current={onAdmin ? "page" : undefined}
+        >
+          <IconShield />
+          Administrator
+        </Link>
+      )}
 
       <button
         className="sidebar-item signout"
