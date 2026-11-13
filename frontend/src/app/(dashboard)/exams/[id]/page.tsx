@@ -146,7 +146,7 @@ export default function ViewExamPage() {
       setExam(data);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) { router.replace("/login"); return; }
-      setLoadError("Could not load exam.");
+      setLoadError("Could not load exam. Create one from Manage Exams, and its answer key and test papers will appear here.");
     } finally { setLoading(false); }
   }, [examId, router]);
 
