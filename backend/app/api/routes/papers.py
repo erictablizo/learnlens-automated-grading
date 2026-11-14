@@ -137,6 +137,10 @@ async def create_paper(exam_id: int, data: PaperCreate, uid: int = Depends(_uid)
             db, exam_id, uid,
             last_name=data.last_name,
             first_name=data.first_name,
+            # NEW 2026-11-14. create_paper has taken middle_name since
+            # apply_2026-11-14_middle_name.py; until this line it was never given one, so
+            # a paper typed in by name could not have a middle initial at all.
+            middle_name=data.middle_name,
         )
     except paper_service.DuplicatePaper as dup:
         raise HTTPException(status_code=409, detail=dup.message)
@@ -231,6 +235,11 @@ async def update_paper_name(exam_id: int, paper_id: int, data: PaperUpdate, uid:
             db, paper_id, exam_id, uid,
             last_name=data.last_name,
             first_name=data.first_name,
+            # NEW 2026-11-14 - AND THIS IS A FIX, not a feature. rename_paper writes
+            # paper.middle_name = middle_name unconditionally, so every rename since
+            # apply_2026-11-14_middle_name.py ran has been setting the column to NULL and
+            # recomposing student_name without the initial. Edit Paper was erasing it.
+            middle_name=data.middle_name,
         )
     except paper_service.DuplicatePaper as dup:
         raise HTTPException(status_code=409, detail=dup.message)
