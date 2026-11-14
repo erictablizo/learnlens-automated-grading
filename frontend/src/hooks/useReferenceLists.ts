@@ -43,17 +43,29 @@ export interface ReferenceLists {
   error: string | null;
   /** Same shape COLLEGE_OPTIONS had: { value, label }, in sort_order. */
   collegeOptions: { value: string; label: string }[];
-  coursesFor: (code: string) => string[];
-  yearLevelsFor: (code: string) => number[];
+  /**
+   * `null | undefined` is accepted because the screens hold the college as
+   * `College | ""` and call these as `coursesFor(college || null)`. Matching
+   * the OLD signatures exactly is what keeps each screen a one-expression
+   * swap instead of a rewrite.
+   */
+  coursesFor: (code: string | null | undefined) => string[];
+  yearLevelsFor: (code: string | null | undefined) => number[];
   /** "3rd Year". Falls back to "Nth Year" if the level is not listed, so a
    *  profile holding a year that was later switched off still renders as
    *  words rather than as a blank. */
-  yearLabel: (code: string, level: number) => string;
-  isValidYear: (code: string, level: number | null | undefined) => boolean;
+  yearLabel: (code: string | null | undefined, level: number) => string;
+  /**
+   * A TYPE GUARD, like the `isValidYear` it replaces — `year is number`, not
+   * `boolean`. The screens do `setYear(y => isValidYear(c, y) ? y : "")`,
+   * where `y` is `YearLevel | ""`; without the predicate that expression stops
+   * narrowing and no longer compiles.
+   */
+  isValidYear: (code: string | null | undefined, year: unknown) => year is number;
   /** Sidebar badge colours, which used to be the hardcoded COLLEGE_COLORS map
    *  in lib/college.ts. A college an administrator added had no entry there
    *  and so rendered no badge at all. */
-  badge: (code: string) => { bg: string; color: string } | null;
+  badge: (code: string | null | undefined) => { bg: string; color: string } | null;
   reload: () => void;
 }
 
@@ -90,16 +102,17 @@ export function useReferenceLists(): ReferenceLists {
     loading,
     error,
     collegeOptions: data.map(c => ({ value: c.code, label: c.name })),
-    coursesFor: (code) => (byCode.get(code)?.courses ?? []).map(x => x.name),
-    yearLevelsFor: (code) => (byCode.get(code)?.year_levels ?? []).map(y => y.level),
+    coursesFor: (code) => (code ? byCode.get(code)?.courses ?? [] : []).map(x => x.name),
+    yearLevelsFor: (code) => (code ? byCode.get(code)?.year_levels ?? [] : []).map(y => y.level),
     yearLabel: (code, level) =>
-      byCode.get(code)?.year_levels.find(y => y.level === level)?.label
+      (code ? byCode.get(code)?.year_levels.find(y => y.level === level)?.label : undefined)
       ?? `${level}${["th","st","nd","rd"][(level % 100 - level % 10 !== 10 && level % 10 < 4) ? level % 10 : 0]} Year`,
-    isValidYear: (code, level) =>
-      level !== null && level !== undefined
-      && (byCode.get(code)?.year_levels ?? []).some(y => y.level === level),
+    isValidYear: ((code: string | null | undefined, year: unknown): year is number =>
+      typeof year === "number" && Number.isInteger(year) && !!code
+      && (byCode.get(code)?.year_levels ?? []).some(y => y.level === year)
+    ) as ReferenceLists["isValidYear"],
     badge: (code) => {
-      const c = byCode.get(code);
+      const c = code ? byCode.get(code) : undefined;
       return c ? { bg: c.badge_bg, color: c.badge_color } : null;
     },
     reload: load,
