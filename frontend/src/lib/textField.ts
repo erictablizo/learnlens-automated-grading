@@ -289,8 +289,56 @@ export function checkNamePart(raw: string, label: string): string | null {
  * This copy exists so the browser can show the composed value before the round
  * trip. Matches compose_student_name() in _text.py.
  */
-export function composeStudentName(lastName: string, firstName: string): string {
-  return `${tidyText(lastName)}, ${tidyText(firstName)}`;
+/**
+ * NEW 2026-11-14 (Alex Passion / Julius Bancud, Recommendations page 1).
+ *
+ * The cap matches students.middle_name / test_papers.middle_name, which are
+ * varchar(100), and MAX_MIDDLE_NAME_LENGTH in backend/app/schemas/_text.py.
+ */
+export const MAX_MIDDLE_NAME_LENGTH = 100;
+
+/**
+ * The middle name as it is WRITTEN inside a composed name: "R." or "Reyes".
+ *
+ * A single LETTER gains a period - that is how a teacher writes an initial,
+ * and NOT_IN_LABEL_STRICT already allows the period in student_name for
+ * exactly this. Anything longer, and anything already ending in one, is left
+ * as typed: this adds punctuation, it never rewrites a name.
+ *
+ * Matches middle_initial() in backend/app/schemas/_text.py - measured over 14
+ * cases with 0 disagreements, including accented single letters.
+ */
+export function middleInitial(v: string | null | undefined): string {
+  const s = tidyText(v ?? "");
+  if (!s) return "";
+  return s.length === 1 && /^\p{L}$/u.test(s) ? `${s}.` : s;
+}
+
+/**
+ * The middle name rule. Returns an error message, or null when it is fine.
+ *
+ * OPTIONAL: blank is not an error. It DELEGATES the character rule to
+ * checkNamePart rather than repeating it, because a middle name is a name
+ * part and two copies of one rule drift apart - which is why the 2026-11-10
+ * parity bench exists.
+ */
+export function checkMiddleName(raw: string): string | null {
+  const v = tidyText(raw);
+  if (!v) return null;
+  if (v.length > MAX_MIDDLE_NAME_LENGTH) {
+    return `Middle name must be at most ${MAX_MIDDLE_NAME_LENGTH} characters.`;
+  }
+  return checkNamePart(v, "Middle name");
+}
+
+export function composeStudentName(lastName: string, firstName: string,
+                                   middleName?: string | null): string {
+  // CHANGED 2026-11-14: an optional THIRD part - "Alcantara, Ben R."
+  // The parameter has a default, so every existing two-argument call site
+  // produces byte-for-byte the string it produced before.
+  const base = `${tidyText(lastName)}, ${tidyText(firstName)}`;
+  const mid = middleInitial(middleName);
+  return mid ? `${base} ${mid}` : base;
 }
  
 /**
