@@ -21,7 +21,7 @@ from typing import Optional, List
 # input path would mean O'Brien is a surname Add Paper accepts and the API then
 # rejects. Widening _STRICT_MARKS instead would let an apostrophe into exam
 # names and descriptions, which is what the 2026-10-22 rule was aimed at.
-from app.schemas._text import check_name_part
+from app.schemas._text import check_name_part, check_middle_name
 
 
 class PaperPageResponse(BaseModel):
@@ -73,6 +73,22 @@ class PaperCreate(BaseModel):
     # The frontend MUST ship in the same deploy as this file.
     last_name:  str
     first_name: str
+    
+    # NEW 2026-11-14 (Alex Passion / Julius Bancud, Recommendations page 1).
+    #
+    # OPTIONAL WITH A DEFAULT, which is what makes this unlike the 2026-11-04
+    # change recorded above. That one made two fields REQUIRED, so the old
+    # payload failed 422 and the frontend had to ship in the same deploy. This
+    # one cannot fail that way: an old payload that omits the key is valid, and
+    # a new payload sent to an old backend has the key ignored. The deploy
+    # order still matters, but the cost of getting it wrong is a dropped
+    # middle name, not a broken screen.
+    #
+    # check_middle_name is called DIRECTLY rather than through a local
+    # _check_middle_name wrapper. The wrappers above exist because last and
+    # first take a LABEL argument ("Last name" / "First name") that has to be
+    # spelled the same here and in student.py; this one takes no label.
+    middle_name: Optional[str] = None
 
     @field_validator("last_name")
     @classmethod
@@ -83,6 +99,10 @@ class PaperCreate(BaseModel):
     @classmethod
     def _first(cls, v: str) -> str:
         return _check_first_name(v)
+    @field_validator("middle_name")
+    @classmethod
+    def _middle(cls, v: Optional[str]) -> Optional[str]:
+        return check_middle_name(v)
 
 
 class PaperUpdate(BaseModel):
@@ -102,6 +122,7 @@ class PaperUpdate(BaseModel):
 
     last_name:  str
     first_name: str
+    middle_name: Optional[str] = None
 
     @field_validator("last_name")
     @classmethod
@@ -112,6 +133,11 @@ class PaperUpdate(BaseModel):
     @classmethod
     def _first(cls, v: str) -> str:
         return _check_first_name(v)
+
+    @field_validator("middle_name")
+    @classmethod
+    def _middle(cls, v: Optional[str]) -> Optional[str]:
+        return check_middle_name(v)
 
 
 class PaperResponse(BaseModel):
@@ -129,6 +155,7 @@ class PaperResponse(BaseModel):
     # split wrongly, e.g. "Midterm - Alcantara, Ben R." -> "Midterm - Alcantara".
     last_name:    Optional[str] = None
     first_name:   Optional[str] = None
+    middle_name: Optional[str] = None
     total_score:  Optional[int] = None
     checked:      bool
     added_at:     datetime
@@ -164,6 +191,7 @@ class PaperListResponse(BaseModel):
     # paths hand the new values straight back to the browser.
     last_name:    Optional[str] = None
     first_name:   Optional[str] = None
+    middle_name: Optional[str] = None
     total_score:  Optional[int] = None
     checked:      bool
     added_at:     datetime

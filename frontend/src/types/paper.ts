@@ -72,12 +72,22 @@ export interface Paper {
 export interface PaperCreatePayload {
   last_name:  string;
   first_name: string;
+  /** NEW 2026-11-14. Optional, and sent as `null` rather than `""` when the
+   *  box is empty — the column must not hold two different spellings of
+   *  "no middle name". `?` as well as `| null` so the batch and by-student
+   *  paths, which never set it, still typecheck. */
+  middle_name?: string | null;
 }
 
 /** The rename, and the hand-split of the 18 pre-migration papers. */
 export interface PaperUpdatePayload {
   last_name:  string;
   first_name: string;
+  /** NEW 2026-11-14 — and REQUIRED in practice even though it is optional
+   *  here. rename_paper writes `paper.middle_name = middle_name`
+   *  unconditionally, so a PUT that omits this sets the column to NULL. Edit
+   *  Paper must always send it, exactly as it always sends both name parts. */
+  middle_name?: string | null;
 }
 
 export interface GradeResult {
