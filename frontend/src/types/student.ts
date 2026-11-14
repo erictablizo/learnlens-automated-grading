@@ -8,6 +8,9 @@
  * silent drifts between types/paper.ts and the backend went unnoticed for
  * weeks (TYPES-PAPER-TS-2026-11-04). One file, one Pydantic module, nothing
  * else to keep in step.
+ *
+ * CHANGED 2026-11-14 — `middle_name` (Alex Passion / Julius Bancud,
+ * Recommendations page 1: "Student Middle Name").
  */
 
 export interface Student {
@@ -15,6 +18,13 @@ export interface Student {
   student_number: string;
   last_name: string;
   first_name: string;
+  /**
+   * NEW 2026-11-14. Stored as a NAME (varchar(100)) and shown on screen as
+   * "Middle Initial" — so "R." is what a teacher types and "Reyes" is still
+   * accepted. `null`, never `""`: a student with no middle name and one with
+   * an empty middle name must not be two different things.
+   */
+  middle_name: string | null;
   section: string | null;
   created_at: string;
 }
@@ -28,6 +38,8 @@ export interface StudentPayload {
   student_number: string;
   last_name: string;
   first_name: string;
+  /** OPTIONAL. Omitted or null both mean "not stated". */
+  middle_name?: string | null;
   section?: string | null;
 }
 

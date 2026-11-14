@@ -14,6 +14,12 @@
  * parser guessing wrong silently across 35 rows.
  *
  * Nothing is sent until she presses Add.
+ *
+ * CHANGED 2026-11-14 — a MIDDLE NAME column (Alex Passion / Julius Bancud,
+ * Recommendations page 1), and `knownSections` is now passed to the parser.
+ * That second part is not cosmetic: it is what stops a list pasted LAST WEEK
+ * as "number, last, first, BSCS 3A" from reading "BSCS 3A" as a middle name.
+ * See pickColumns() in lib/studentPaste.ts.
  */
 import { useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
@@ -34,8 +40,8 @@ interface Props {
   onAdded: (result: StudentBulkResult) => void;
 }
 
-const EXAMPLE = `2021-00123, Cruz, Ana
-2021-00124, Dela Cruz, Jose
+const EXAMPLE = `2021-00123, Cruz, Ana, R
+2021-00124, Dela Cruz, Jose, P
 2021-00125, Santos, Maria`;
 
 export default function PasteStudentsModal({
@@ -50,9 +56,12 @@ export default function PasteStudentsModal({
   // Re-parsed on every keystroke. Cheap - it is a split over at most a few
   // hundred short lines - and it means the table reacts as she types rather
   // than behind a "Preview" button she might not press.
+  //
+  // CHANGED 2026-11-14: knownSections goes in. It is only used to decide what
+  // a FOURTH column means when there is no header row - see studentPaste.ts.
   const parsed = useMemo(
-    () => parseStudentPaste(text, section),
-    [text, section],
+    () => parseStudentPaste(text, section, knownSections),
+    [text, section, knownSections],
   );
 
   // `edited` holds her corrections once she has made any; until then the table
@@ -88,6 +97,9 @@ export default function PasteStudentsModal({
           student_number: r.student_number,
           last_name: r.last_name,
           first_name: r.first_name,
+          // null, not "", for a blank one - the server stores NULL and the
+          // two must not become different values in the column.
+          middle_name: r.middle_name || null,
           section: r.section || null,
         })),
         section.trim() || undefined,
@@ -127,7 +139,7 @@ export default function PasteStudentsModal({
       </p>
 
       <label className="form-label" htmlFor="paste-box">
-        One student per line — student number, last name, first name
+        One student per line — student number, last name, first name, middle initial
       </label>
       <textarea
         id="paste-box"
@@ -140,8 +152,10 @@ export default function PasteStudentsModal({
       />
       <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0.2rem 0 0.9rem" }}>
         You can paste straight from a spreadsheet — a header row is skipped
-        automatically. Check the table below before adding; names with a comma
-        in them, like “Smith, Jr.”, may need a correction.
+        automatically, and when it names its columns they are matched by name
+        rather than by position. The middle initial is optional. Check the
+        table below before adding; names with a comma in them, like “Smith,
+        Jr.”, may need a correction.
       </p>
 
       {rows.length > 0 && (
@@ -149,6 +163,8 @@ export default function PasteStudentsModal({
           <p className="section-title" style={{ marginBottom: "0.3rem" }}>
             Preview
           </p>
+          {/* The summary now also says how the FOURTH column was read, which is
+              the one thing about this parse that changed on 2026-11-14. */}
           <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
             {parseSummary({ ...parsed, rows })}
           </p>
@@ -161,6 +177,7 @@ export default function PasteStudentsModal({
                   <th style={{ width: 130 }}>Student No.</th>
                   <th>Last Name</th>
                   <th>First Name</th>
+                  <th style={{ width: 90 }}>M.I.</th>
                   <th style={{ width: 120 }}>Section</th>
                 </tr>
               </thead>
@@ -173,7 +190,8 @@ export default function PasteStudentsModal({
                       <td style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
                         {r.line}
                       </td>
-                      {(["student_number", "last_name", "first_name", "section"] as const)
+                      {(["student_number", "last_name", "first_name",
+                         "middle_name", "section"] as const)
                         .map(field => (
                           <td key={field}>
                             <input

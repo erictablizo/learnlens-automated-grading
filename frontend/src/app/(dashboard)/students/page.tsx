@@ -10,6 +10,12 @@
  *
  * This is the prerequisite for item 7, "Batch upload of Exam": once a student
  * number names the image file, the upload knows whose paper is whose.
+ *
+ * CHANGED 2026-11-14 — a MIDDLE INITIAL box and column (Recommendations
+ * page 1: "Student Middle Name"). Stored as a name, labelled as an initial,
+ * optional everywhere: a blank one is never an error and is sent as null
+ * rather than "", so the column holds NULL and "not stated" stays
+ * distinguishable from "deliberately empty".
  */
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -54,7 +60,8 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
   );
 }
 
-const BLANK = { student_number: "", last_name: "", first_name: "", section: "" };
+// CHANGED 2026-11-14: middle_name joins the blank form.
+const BLANK = { student_number: "", last_name: "", first_name: "", middle_name: "", section: "" };
 
 export default function StudentsPage() {
   const router = useRouter();
@@ -109,6 +116,10 @@ export default function StudentsPage() {
       student_number: form.student_number,
       last_name: form.last_name,
       first_name: form.first_name,
+      // CHANGED 2026-11-14. `|| null`, not the raw "": the server stores NULL
+      // for a blank middle name, and sending "" would put an empty string in a
+      // column where "not stated" is supposed to be NULL.
+      middle_name: form.middle_name || null,
       section: form.section || null,
     };
     try {
@@ -133,7 +144,8 @@ export default function StudentsPage() {
     setEditingId(s.student_id);
     setForm({
       student_number: s.student_number, last_name: s.last_name,
-      first_name: s.first_name, section: s.section ?? "",
+      first_name: s.first_name, middle_name: s.middle_name ?? "",
+      section: s.section ?? "",
     });
     setFormError(null);
   };
@@ -227,10 +239,14 @@ export default function StudentsPage() {
         )}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap",
                       alignItems: "flex-end", marginBottom: "1.5rem" }}>
+          {/* CHANGED 2026-11-14: Middle Initial sits AFTER First Name, which is
+              where the panel's class list puts it and where a teacher reading
+              a paper expects it. It is the only box here that is optional. */}
           {([
             ["student_number", "Student No.", "2021-00123", 150],
-            ["last_name", "Last Name", "Cruz", 180],
-            ["first_name", "First Name", "Ana", 180],
+            ["last_name", "Last Name", "Cruz", 170],
+            ["first_name", "First Name", "Ana", 170],
+            ["middle_name", "Middle Initial", "R.", 110],
             ["section", "Section", "BSCS 3A", 150],
           ] as const).map(([field, label, placeholder, width]) => (
             <div key={field} style={{ flex: `0 1 ${width}px` }}>
@@ -281,16 +297,17 @@ export default function StudentsPage() {
                 <th style={{ width: 140 }}>Student No.</th>
                 <th>Last Name</th>
                 <th>First Name</th>
+                <th style={{ width: 80 }}>M.I.</th>
                 <th style={{ width: 140 }}>Section</th>
                 <th style={{ width: 90 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem",
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: "2rem",
                                              color: "var(--text-muted)" }}>Loading…</td></tr>
               ) : students.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem",
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: "2rem",
                                              color: "var(--text-muted)" }}>
                   {section || query
                     ? "No students match that."
@@ -302,6 +319,9 @@ export default function StudentsPage() {
                   <td style={{ fontWeight: 600, color: "var(--navy)" }}>{s.student_number}</td>
                   <td>{s.last_name}</td>
                   <td>{s.first_name}</td>
+                  {/* An em dash, like Section, so an absent middle name reads as
+                      "none" rather than as a rendering fault. */}
+                  <td style={{ color: "var(--text-muted)" }}>{s.middle_name ?? "—"}</td>
                   <td style={{ color: "var(--text-muted)" }}>{s.section ?? "—"}</td>
                   <td>
                     <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
