@@ -29,12 +29,21 @@
  * sufficient, and `npm run build` cannot see the difference - the page
  * compiled, deployed and rendered, with no nav on it.
  *
- * READ-ONLY, deliberately, and the schema file says why: an administrator who
- * can delete across accounts has a blast radius nothing in that note asks
- * for, and the ownership guards installed on 2026-11-12 exist precisely to
- * keep one teacher out of another's papers. Widening that is a separate
- * decision taken on purpose, not a side effect of adding a list screen. So
- * this page has no buttons that change anything.
+ * READ-ONLY ABOUT TEACHERS' WORK, and the schema file says why: an
+ * administrator who can delete across accounts has a blast radius nothing in
+ * that note asks for, and the ownership guards installed on 2026-11-12 exist
+ * precisely to keep one teacher out of another's papers. Widening that is a
+ * separate decision taken on purpose, not a side effect of adding a list
+ * screen. Nothing on the two tables below changes anything.
+ *
+ * CHANGED 2026-11-14 - that promise is now stated precisely rather than
+ * loosely, because the page gained a third section that DOES write.
+ * `ReferenceLists` maintains the College, Course / Program and Year Level
+ * dropdowns, which is Recommendations page 1 and the reason the panel asked
+ * for an admin page at all. Reference data belongs to the school, not to any
+ * teacher; the one place the two meet - a row some profile is standing on -
+ * cannot be deleted or re-coded, only switched off, and the backend counts
+ * and refuses rather than trusting the screen.
  *
  * WHAT AN ADMINISTRATOR IS ACTUALLY LOOKING FOR, and why the columns are
  * these columns:
@@ -52,6 +61,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
+// NEW 2026-11-14 (Alex & Bancud, Recommendations page 1): the three dropdown
+// lists. Its own component because it is the ONLY part of this screen that
+// changes anything - see its header.
+import ReferenceLists from "@/components/admin/ReferenceLists";
 import { ApiError } from "@/lib/api";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { adminService } from "@/services/adminService";
@@ -425,6 +438,11 @@ export default function AdminPage() {
           </tbody>
         </table>
       </div>
+
+      {/* NEW 2026-11-14. Below the two read-only tables, deliberately: an
+          administrator arrives looking at the state of the installation, and
+          maintenance is the thing they do second. */}
+      <ReferenceLists />
       </div>
     </Shell>
   );
