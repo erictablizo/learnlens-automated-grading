@@ -6,6 +6,10 @@ from sqlalchemy import func
 from fastapi import UploadFile
  
 from app.models.profile import UserProfile
+# NEW 2026-11-14. Imported as a module rather than by name so the call site
+# below reads `reference_service.validate_selection(...)` - at a glance, in a
+# file about profiles, it is obvious the rule lives elsewhere.
+from app.services import reference_service
 from app.core.config import settings
  
  
@@ -32,6 +36,20 @@ async def update_profile(
 ) -> UserProfile:
     profile = await get_or_create_profile(db, user_id)
  
+    # NEW 2026-11-14 - and this call is where a database constraint used to be.
+    #
+    # migrations/2026-11-14_reference_lists.sql DROPPED
+    # `user_profiles_college_check`, because a CHECK cannot reference another
+    # table and the colleges are a table now. So the column itself will accept any
+    # 20-character string. THIS LINE is what refuses one.
+    #
+    # Placed after get_or_create_profile() - which only ensures a row exists, as
+    # every GET of the profile already does - and BEFORE the first field is
+    # written, so a 422 leaves every stored value exactly as it was. Each field is
+    # checked only when it is being set, the same rule the assignments below
+    # follow: a PUT that omits a field leaves it alone (2026-11-03).
+    await reference_service.validate_selection(db, college, course, year_level)
+
     if first_name is not None: profile.first_name = first_name.strip() or None
     if last_name  is not None: profile.last_name  = last_name.strip()  or None
     if college    is not None: profile.college    = college

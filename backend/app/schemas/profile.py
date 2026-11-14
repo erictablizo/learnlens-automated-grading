@@ -6,6 +6,25 @@ from datetime import datetime
 from enum import Enum
  
  
+# NO LONGER THE GATE, as of 2026-11-14.
+#
+# The colleges live in the `colleges` table and are validated against it by
+# reference_service.validate_selection(). This enum is KEPT only because other
+# modules may still import the name, and removing it would break them at
+# import time rather than visibly.
+#
+# DO NOT reintroduce it as a type on ProfileSetup.college: that re-freezes the
+# list at these four values and silently breaks every college an administrator
+# has added since. Check what still needs it with
+#
+#     grep -rn "CollegeEnum" backend/app
+#
+# and if the only hit is this file, delete the class.
+#
+# The cap below is user_profiles.college's own varchar(20).
+MAX_COLLEGE_CODE_LENGTH = 20
+
+
 class CollegeEnum(str, Enum):
     CVMAS = "CVMAS"
     CBMA  = "CBMA"
@@ -142,7 +161,19 @@ def _check_position(v: Optional[str]) -> Optional[str]:
 class ProfileSetup(BaseModel):
     first_name: Optional[str] = None
     last_name:  Optional[str] = None
-    college:    Optional[CollegeEnum] = None
+    # CHANGED 2026-11-14 - was Optional[CollegeEnum].
+    #
+    # The colleges are a TABLE now (migrations/2026-11-14_reference_lists.sql),
+    # maintained by an administrator on the Admin page. An enum frozen in
+    # September cannot express that: a college added this morning would be
+    # refused here, by pydantic, with a 422 - before any of the new code ran.
+    #
+    # The real check has not gone away, it has MOVED. update_profile() calls
+    # reference_service.validate_selection(), which asks the database whether this
+    # college exists and is active, and does the same for the course and the year
+    # level. That is strictly stronger than the enum: it also catches a course
+    # that is not listed under the chosen college, which the enum never looked at.
+    college:    Optional[str] = None
     course:     Optional[str] = None     # ← new
     position:   Optional[str] = None
     year_level: Optional[int] = None     # Added on 2026-10-04
@@ -153,6 +184,29 @@ class ProfileSetup(BaseModel):
         return _check_year_level(v)
 
     # Added on 2026-10-22 — the first rules these three fields have ever had.
+
+
+    # NEW 2026-11-14. Shape only - "is this a plausible code at all" - not
+    # membership, which needs the database and happens in update_profile().
+    #
+    # The cap is 20 because user_profiles.college is varchar(20). Without it a
+    # longer code reaches PostgreSQL and comes back as a driver error instead of a
+    # sentence a teacher can read. Blank becomes None, the same rule the three
+    # text fields follow, so "Skip for now" on /setup keeps working.
+    @field_validator("college")
+    @classmethod
+    def _college(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = " ".join(str(v).split())
+        if not s:
+            return None
+        if len(s) > MAX_COLLEGE_CODE_LENGTH:
+            raise ValueError(
+                f"College code must be at most {MAX_COLLEGE_CODE_LENGTH} characters.")
+        return s
+
+
     @field_validator("first_name")
     @classmethod
     def _first(cls, v: Optional[str]) -> Optional[str]:

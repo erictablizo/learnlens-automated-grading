@@ -9,6 +9,8 @@ from app.api.routes.students import router as students_router          # NEW 202
 from app.api.routes.export import router as export_router        # NEW 2026-11-12
 from app.api.routes.key_image import router as key_image_router    # NEW 2026-11-12
 from app.api.routes.admin import router as admin_router    # NEW 2026-11-13
+from app.api.routes.reference import router as reference_router    # NEW 2026-11-14
+from app.api.routes.admin_reference import router as admin_reference_router    # NEW 2026-11-14
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -21,3 +23,5 @@ router.include_router(students_router)         # NEW 2026-11-12 — student rost
 router.include_router(export_router)        # NEW 2026-11-12 — Excel export
 router.include_router(key_image_router)      # NEW 2026-11-12 — answer key from an image
 router.include_router(admin_router)       # NEW 2026-11-13 — administrator view
+router.include_router(reference_router)        # NEW 2026-11-14 — the three dropdown lists, read by any teacher
+router.include_router(admin_reference_router)  # NEW 2026-11-14 — maintaining them, administrators only
