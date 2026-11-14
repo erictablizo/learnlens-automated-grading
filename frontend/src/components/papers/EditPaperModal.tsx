@@ -7,7 +7,9 @@ import { paperService } from "@/services/paperService";
 import { getToken } from "@/lib/auth";
 // CHANGED 2026-11-04: checkNamePart replaces checkStudentName, and the three
 // display helpers are what pre-fill the two boxes for a legacy paper.
-import { checkNamePart, tidyText, paperLastName, paperFirstName, needsNameSplit }
+// CHANGED 2026-11-14: checkMiddleName joins them. See legacyNameParts() below
+// for why paperFirstName alone is no longer enough.
+import { checkNamePart, checkMiddleName, tidyText, paperLastName, paperFirstName, needsNameSplit }
   from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles } from "@/lib/pageFiles";
@@ -33,6 +35,47 @@ interface Props {
   examPages: number;
   onClose:   () => void;
   onSuccess: (msg: string) => void;
+}
+
+/**
+ * NEW 2026-11-14 — the given name and the middle initial, for the PRE-FILL.
+ *
+ * A MODERN paper has all three columns and this is three reads. A LEGACY
+ * paper has last_name and first_name NULL, and paperFirstName() hands back
+ * everything after the comma - so
+ *
+ *     "Midterm - Alcantara, Ben R."   ->  First Name: "Ben R."
+ *
+ * and pressing Save would write "Ben R." INTO the given name, where it is
+ * then wrong for good and no longer separable. That is not hypothetical:
+ * that exact value is in this project's data and is quoted in
+ * textField.ts's own comment and in PAPER-MODALS-2026-11-04.
+ *
+ * So on a legacy row ONLY, a trailing single letter is peeled off the guess
+ * and offered as the middle initial instead.
+ *
+ * TWO TOKENS ARE REQUIRED before anything is peeled. "Cruz, A" is a person
+ * whose given name is A, not a given name and an initial, and peeling it
+ * would leave the First Name box empty and the form unsaveable - the worst
+ * possible outcome on a screen whose whole job is to make the 18 old rows
+ * saveable.
+ *
+ * DISPLAY ONLY, exactly like paperLastName / paperFirstName, and it runs once
+ * when the dialog opens. Nothing writes it back until the teacher presses
+ * Save, which is the point of the hand-split screen: she sees the guess and
+ * corrects it.
+ */
+function legacyNameParts(p: Paper): { first: string; middle: string } {
+  const first = paperFirstName(p);
+  // A row that HAS the column is not a guess. Nothing to peel.
+  if ((p.first_name ?? "").trim()) return { first, middle: "" };
+  const tokens = first.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return { first, middle: "" };
+  const tail = tokens[tokens.length - 1];
+  // One letter, optionally with the period a teacher writes after it. "Ma."
+  // and "Jr." are two and three letters and are left exactly where they are.
+  if (!/^[A-Za-z]\.?$/.test(tail)) return { first, middle: "" };
+  return { first: tokens.slice(0, -1).join(" "), middle: tail };
 }
 
 // ── Confirmation dialog for already-checked papers ────────────────────────────
@@ -103,9 +146,20 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
   // them. "Midterm - Alcantara" with an ASCII hyphen does NOT get blocked, so
   // PapersTable carries a "needs split" badge as the backstop.
   const [lastName,  setLastName]  = useState(() => paperLastName(paper));
-  const [firstName, setFirstName] = useState(() => paperFirstName(paper));
-  const [lastNameError,  setLastNameError]  = useState<string | null>(null);
-  const [firstNameError, setFirstNameError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState(() => legacyNameParts(paper).first);
+  // NEW 2026-11-14. Pre-filled from the COLUMN on a modern paper and from the
+  // peeled guess on a legacy one. See legacyNameParts above.
+  //
+  // THIS BOX IS WHY THIS CHANGE IS URGENT, not cosmetic: rename_paper writes
+  // paper.middle_name unconditionally, so a save that does not send one sets
+  // the column to NULL. Between apply_2026-11-14_middle_name.py and this file,
+  // Edit Paper ERASED the middle name of every paper it touched.
+  const [middleName, setMiddleName] = useState(() =>
+    (paper.middle_name ?? "").trim() || legacyNameParts(paper).middle
+  );
+  const [lastNameError,   setLastNameError]   = useState<string | null>(null);
+  const [firstNameError,  setFirstNameError]  = useState<string | null>(null);
+  const [middleNameError, setMiddleNameError] = useState<string | null>(null);
   const [pages,       setPages]       = useState<ExistingPage[]>([]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
@@ -242,10 +296,17 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
     // and same order as check_name_part() in backend/app/schemas/_text.py.
     setLastNameError(null);
     setFirstNameError(null);
+    setMiddleNameError(null);
     const lastMsg = checkNamePart(lastName, "Last name");
     if (lastMsg) { setLastNameError(lastMsg); setError(lastMsg); return; }
     const firstMsg = checkNamePart(firstName, "First name");
     if (firstMsg) { setFirstNameError(firstMsg); setError(firstMsg); return; }
+    // NEW 2026-11-14. Blank is NOT an error here either - checkMiddleName
+    // returns null for an empty box, matching check_middle_name() on the
+    // server. Most of the 18 legacy papers have no middle name at all and
+    // must stay saveable.
+    const midMsg = checkMiddleName(middleName);
+    if (midMsg) { setMiddleNameError(midMsg); setError(midMsg); return; }
 
     const token = getToken();
     if (!token) return;
@@ -261,10 +322,22 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
     try {
       // 1. Update the name. One object, not positional strings - see the note
       //    in AddEditPaperModal. The server recomposes student_name from the
-      //    pair, so every screen that reads student_name stays correct.
+      //    parts, so every screen that reads student_name stays correct.
+      //
+      //    CHANGED 2026-11-14: middle_name is sent on EVERY save, exactly as
+      //    both other parts always have been. It is not conditional and it is
+      //    not omitted when empty, because rename_paper writes the column
+      //    unconditionally - an omitted key is pydantic's default None, which
+      //    is a deliberate "clear it" the teacher never asked for. `|| null`
+      //    rather than "" for the same reason the server coerces: the column
+      //    must not hold two spellings of "no middle name".
       await paperService.updateName(
         examId, paper.paper_id,
-        { last_name: tidyText(lastName), first_name: tidyText(firstName) },
+        {
+          last_name:   tidyText(lastName),
+          first_name:  tidyText(firstName),
+          middle_name: tidyText(middleName) || null,
+        },
         token,
       );
 
@@ -331,20 +404,23 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
 
       {/* NEW 2026-11-04. Says WHY the two boxes are pre-filled with a guess,
           so the teacher checks them instead of trusting them. Shown only on a
-          paper that still needs splitting. */}
+          paper that still needs splitting.
+
+          CHANGED 2026-11-14: "three" and "fields", because the middle initial
+          is pre-filled from the same guess. */}
       {unsplit && (
         <div role="status" style={{
           marginBottom: "1rem", padding: "0.6rem 0.8rem", fontSize: "0.8rem",
           lineHeight: 1.5, color: "var(--navy)", background: "var(--orange-light)",
           border: "1px solid var(--orange)", borderRadius: "var(--radius-sm)",
         }}>
-          This paper was saved before Last Name and First Name were separate
-          fields. They have been filled in from <strong>{paper.student_name}</strong> as
+          This paper was saved before Last Name, First Name and Middle Initial
+          were separate fields. They have been filled in from <strong>{paper.student_name}</strong> as
           a best guess — please check them before saving.
         </div>
       )}
 
-      {/* Name — two fields as of 2026-11-04 */}
+      {/* Name — two fields as of 2026-11-04, three as of 2026-11-14 */}
       <label className="form-label" htmlFor="edit-last-name">Last Name</label>
       <input
         id="edit-last-name"
@@ -372,6 +448,24 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
         style={firstNameError ? { borderBottomColor: "var(--error)" } : undefined}
       />
       {nameErr(firstNameError)}
+
+      {/* NEW 2026-11-14. No required marker and no aria-required: the column
+          is nullable and check_middle_name() treats blank as "not stated". */}
+      <label className="form-label" htmlFor="edit-middle-name">
+        Middle Initial{" "}
+        <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
+      </label>
+      <input
+        id="edit-middle-name"
+        className="form-input"
+        value={middleName}
+        onChange={e => { setMiddleName(e.target.value); setMiddleNameError(null); setError(null); }}
+        placeholder="e.g. R."
+        aria-invalid={!!middleNameError}
+        disabled={saving}
+        style={middleNameError ? { borderBottomColor: "var(--error)" } : undefined}
+      />
+      {nameErr(middleNameError)}
 
       {/* Page count */}
       <div style={{ marginBottom: "1rem" }}>

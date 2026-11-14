@@ -55,6 +55,17 @@ export interface Paper {
   // existing read site still works untouched.
   last_name:    string | null;
   first_name:   string | null;
+  // NEW 2026-11-14 (Alex & Bancud, Recommendations page 1, "Student Middle
+  // Name"). The THIRD part, and the same rule as the two above: NOT optional
+  // with "?", because PaperResponse:158 and PaperListResponse:194 both declare
+  // it and Pydantic therefore always serialises the key. The VALUE is null for
+  // every paper that predates 2026-11-14, and for any paper whose student has
+  // no middle name.
+  //
+  // EditPaperModal reads this to pre-fill its box. It has to: rename_paper
+  // writes paper.middle_name unconditionally, so a save that does not send the
+  // current value CLEARS the column.
+  middle_name:  string | null;
   total_score:  number | null;
   checked:      boolean;
   added_at:     string;

@@ -22,13 +22,6 @@
  * the point of item 4, and the difference between a paper that merely SAYS a
  * name and one that is LINKED to a student by id.
  *
- * NO BACKEND CHANGE. `POST /exams/{id}/papers/by-student` has existed since
- * 2026-11-12 for the batch upload; this screen simply calls it too, through
- * the same `paperService.createForStudent`. In particular `PaperCreate` is NOT
- * widened to take an optional number - schemas/paper.py records why: when that
- * model changed on 2026-11-04 the old frontend failed with 422 on the fields
- * it no longer sent. A second create path touches nothing that works.
- *
  * THE ROSTER IS FETCHED ONCE AND MATCHED IN THE BROWSER, rather than asking
  * the server on every keystroke. It is one class list; the match is instant
  * and works while typing, there is no debounce to get wrong, and it is the
@@ -42,6 +35,23 @@
  * they did yesterday: the paper is created by name and simply has no roster
  * link. The 2026-11-12 migration was written for that case on purpose -
  * "A paper can also be added by name alone and linked later."
+ *
+ * CHANGED 2026-11-14, SECOND PASS (Alex & Bancud, Recommendations page 1,
+ * "Student Middle Name"): a MIDDLE INITIAL box, matching the Students page.
+ *
+ * THE TWO PATHS GET IT DIFFERENTLY, and that is not an inconsistency:
+ *
+ *   MATCHED   the server already copies students.middle_name in
+ *             batch_paper_service.create_for_student - it has since
+ *             apply_2026-11-14_middle_name.py - so the box is filled from the
+ *             roster and shown read-only, like the two names beside it. This
+ *             screen is DISPLAYING what will be stored, not sending it.
+ *
+ *   UNMATCHED the box is typed and sent, which needed PaperCreate to gain the
+ *             field - apply_2026-11-14_paper_middle.py. Unlike the 2026-11-04
+ *             change this one is NOT deploy-coupled: middle_name has a
+ *             default, so an old payload still validates and a new payload
+ *             against an old backend merely has the key ignored.
  */
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
@@ -55,7 +65,12 @@ import { PageUploadState, GradeResult } from "@/types/paper";
 // no longer typed by the teacher, so validating it as user input is now wrong -
 // the apostrophe is legal in a name part and illegal under the label rule, so
 // "O'Brien" would be accepted here and refused by the API.
-import { checkNamePart, tidyText } from "@/lib/textField";
+//
+// CHANGED 2026-11-14: checkMiddleName and middleInitial. Both are the browser
+// copies of the functions in backend/app/schemas/_text.py, which is the point
+// of that module existing - the screen and the server must agree on what a
+// middle name may contain and on how "R" is written inside a composed name.
+import { checkNamePart, checkMiddleName, middleInitial, tidyText } from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
@@ -77,6 +92,9 @@ interface RosterStudent {
   student_number: string;
   last_name:      string;
   first_name:     string;
+  // NEW 2026-11-14. Nullable, like the column - a student with no middle name
+  // and a student with an empty one must not be two different things.
+  middle_name:    string | null;
   section:        string | null;
 }
 
@@ -96,8 +114,11 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   // CHANGED 2026-11-04: one studentName state becomes two.
   const [lastName,  setLastName]  = useState("");
   const [firstName, setFirstName] = useState("");
-  const [lastNameError,  setLastNameError]  = useState<string | null>(null);
-  const [firstNameError, setFirstNameError] = useState<string | null>(null);
+  // NEW 2026-11-14 — the third, OPTIONAL part.
+  const [middleName, setMiddleName] = useState("");
+  const [lastNameError,   setLastNameError]   = useState<string | null>(null);
+  const [firstNameError,  setFirstNameError]  = useState<string | null>(null);
+  const [middleNameError, setMiddleNameError] = useState<string | null>(null);
   const [pageCount,   setPageCount]   = useState(Math.max(1, examPages));
   const [pages,       setPages]       = useState<PageUploadState[]>(() => blankPages(Math.max(1, examPages)));
   const [step,        setStep]        = useState<"form" | "uploading" | "grading" | "done">("form");
@@ -122,6 +143,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
         student_number: s.student_number,
         last_name:      s.last_name,
         first_name:     s.first_name,
+        middle_name:    s.middle_name ?? null,
         section:        s.section ?? null,
       }))))
       .catch(() => { setRoster([]); setRosterError("Your student list could not be loaded, so numbers cannot be looked up. You can still type the names."); });
@@ -136,12 +158,19 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   // When a number matches, the names come off the roster. They are NOT merely
   // suggested: the save path sends the number, and the server reads the names
   // itself, so what is shown here has to be what will be stored.
+  //
+  // CHANGED 2026-11-14: the middle name too. It is filled from the roster
+  // rather than left blank because the server WILL store it - it is copied in
+  // batch_paper_service.create_for_student - and a box that stays empty while
+  // the saved paper gains an initial would be a screen that lies.
   useEffect(() => {
     if (!matched) return;
     setLastName(matched.last_name);
     setFirstName(matched.first_name);
+    setMiddleName(matched.middle_name ?? "");
     setLastNameError(null);
     setFirstNameError(null);
+    setMiddleNameError(null);
   }, [matched]);
 
   /** Clear the number and unlock the names, KEEPING what the roster filled in.
@@ -183,6 +212,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setGlobalError(null);
     setLastNameError(null);
     setFirstNameError(null);
+    setMiddleNameError(null);
     // CHANGED 2026-11-14: the two name rules are SKIPPED when a roster student
     // is matched, because those names are then never sent - the server reads
     // them from the roster row. Checking them here would let a name the
@@ -197,6 +227,12 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       if (lastMsg) { setLastNameError(lastMsg); ok = false; }
       const firstMsg = checkNamePart(firstName, "First name");
       if (firstMsg) { setFirstNameError(firstMsg); ok = false; }
+      // NEW 2026-11-14. BLANK IS NOT AN ERROR - checkMiddleName returns null
+      // for an empty box, exactly as check_middle_name() does on the server.
+      // A red row for a student who has no middle name would make the
+      // ordinary case look broken.
+      const midMsg = checkMiddleName(middleName);
+      if (midMsg) { setMiddleNameError(midMsg); ok = false; }
     }
     const checked = pages.map(p => ({
       ...p,
@@ -226,27 +262,35 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       // student is matched.
       //
       // MATCHED: send the NUMBER. The server looks the student up and writes
-      // student_id as well as the names, which is what makes the paper linked
-      // rather than merely similarly spelled. It answers 404 if the roster
-      // changed since this dialog opened, and 409 if that student already has
-      // a paper on this exam - a rule the database enforces with
+      // student_id as well as the names - and, since
+      // apply_2026-11-14_middle_name.py, the middle name - which is what makes
+      // the paper linked rather than merely similarly spelled. It answers 404
+      // if the roster changed since this dialog opened, and 409 if that student
+      // already has a paper on this exam - a rule the database enforces with
       // ux_test_papers_exam_student, so it cannot be worked around from here.
       //
-      // UNMATCHED: the 2026-11-04 call, unchanged. One object, not two
-      // positional strings. Both parts are `string`, so TypeScript cannot
-      // catch them being swapped either way - what the object DOES catch is an
+      // UNMATCHED: the 2026-11-04 call, with the middle name added. One object,
+      // not positional strings. All three parts are strings, so TypeScript
+      // cannot catch them being swapped - what the object DOES catch is an
       // omitted field (TS2741), and it names each value at the call site so a
       // reader can see which is which.
       //
       // tidyText, not trim - the server collapses runs of whitespace, so send
-      // what it would have stored anyway.
+      // what it would have stored anyway. `|| null` rather than "" because the
+      // column must not hold two spellings of "no middle name"; the server
+      // does the same coercion, and agreeing with it here means the value
+      // round-trips unchanged.
       if (matched) {
         const paper = await paperService.createForStudent(examId, matched.student_number, token);
         paperId = paper.paper_id;
       } else {
         const paper = await paperService.create(
           examId,
-          { last_name: tidyText(lastName), first_name: tidyText(firstName) },
+          {
+            last_name:   tidyText(lastName),
+            first_name:  tidyText(firstName),
+            middle_name: tidyText(middleName) || null,
+          },
           token,
         );
         paperId = paper.paper_id;
@@ -325,7 +369,14 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               ? rosterError
               : matched
               ? <>
-                  Linked to <strong>{matched.last_name}, {matched.first_name}</strong>
+                  {/* CHANGED 2026-11-14: the initial is shown here through
+                      middleInitial(), the same function the server composes
+                      student_name with - so this line reads exactly as the
+                      stored name will. */}
+                  Linked to <strong>
+                    {matched.last_name}, {matched.first_name}
+                    {middleInitial(matched.middle_name) ? ` ${middleInitial(matched.middle_name)}` : ""}
+                  </strong>
                   {matched.section ? ` — ${matched.section}` : ""}.{" "}
                   <button type="button" onClick={unlink}
                     style={{ background: "none", border: "none", padding: 0, font: "inherit",
@@ -367,6 +418,28 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
             readOnly={!!matched}
             style={firstNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
           {nameErr(firstNameError)}
+
+          {/* NEW 2026-11-14 (Alex & Bancud, Recommendations page 1, "Student
+              Middle Name"). AFTER First Name, matching both the panel's own
+              order on that page and the Students page.
+
+              NO RED ASTERISK, and that is deliberate: the column is nullable,
+              check_middle_name() treats blank as "not stated" rather than as
+              an error, and a required marker here would contradict the server.
+
+              Labelled "Middle Initial" and stored as a NAME, so "Reyes" is
+              accepted too. Matching the panel's "Middle Name" wording later is
+              a label change, not a migration. */}
+          <label className="form-label" htmlFor="middle-name">
+            Middle Initial{" "}
+            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
+          </label>
+          <input id="middle-name" className="form-input" value={middleName}
+            onChange={e => { setMiddleName(e.target.value); setMiddleNameError(null); }}
+            placeholder="e.g. R." aria-invalid={!!middleNameError}
+            readOnly={!!matched}
+            style={middleNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
+          {nameErr(middleNameError)}
 
           <div style={{ marginBottom: "1rem" }}>
             <label className="form-label" htmlFor="page-count">Pages</label>
