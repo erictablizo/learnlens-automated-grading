@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Student, TestPaper
-from app.schemas._text import check_name_part
+from app.schemas._text import check_name_part, check_middle_name
 
 MAX_NUMBER_LEN = 50
 MAX_BULK_ROWS = 300
@@ -134,6 +134,10 @@ async def list_students(
         stmt = stmt.where(
             func.lower(Student.last_name).like(q)
             | func.lower(Student.first_name).like(q)
+            # NEW 2026-11-14 - coalesce, because middle_name is NULL on every row that
+            # predates today and `NULL LIKE '%x%'` is NULL, never false, which would drop
+            # every one of those students out of every search.
+            | func.lower(func.coalesce(Student.middle_name, "")).like(q)
             | func.lower(Student.student_number).like(q)
         )
     stmt = stmt.order_by(
@@ -162,6 +166,7 @@ async def create_student(
     student_number: str,
     last_name: str,
     first_name: str,
+    middle_name: Optional[str] = None,
     section: Optional[str] = None,
 ) -> Student:
     """One student. Raises DuplicateStudent, or ValueError from the name rules.
@@ -175,6 +180,9 @@ async def create_student(
     number = check_number(student_number)
     last = check_name_part(last_name, "Last name")
     first = check_name_part(first_name, "First name")
+    # NEW 2026-11-14. check_middle_name returns None for blank, so an empty box
+    # stores NULL rather than "" - see schemas/_text.py.
+    middle = check_middle_name(middle_name)
     sect = " ".join((section or "").split()) or None
 
     existing = await by_number(db, owner_id, number)
@@ -183,7 +191,7 @@ async def create_student(
 
     student = Student(
         created_by=owner_id, student_number=number,
-        last_name=last, first_name=first, section=sect,
+        last_name=last, first_name=first, middle_name=middle, section=sect,
     )
     db.add(student)
     await db.commit()
@@ -198,12 +206,14 @@ async def update_student(
     student_number: str,
     last_name: str,
     first_name: str,
+    middle_name: Optional[str] = None,
     section: Optional[str] = None,
 ) -> Optional[Student]:
     """Returns None when the row is not this teacher's — the 404 shape."""
     number = check_number(student_number)
     last = check_name_part(last_name, "Last name")
     first = check_name_part(first_name, "First name")
+    middle = check_middle_name(middle_name)
     sect = " ".join((section or "").split()) or None
 
     student = await get_student(db, owner_id, student_id)
@@ -219,6 +229,7 @@ async def update_student(
     student.student_number = number
     student.last_name = last
     student.first_name = first
+    student.middle_name = middle
     student.section = sect
     await db.commit()
     await db.refresh(student)
@@ -298,6 +309,7 @@ async def bulk_create(
             number = check_number(str(raw.get("student_number", "")))
             last = check_name_part(str(raw.get("last_name", "")), "Last name")
             first = check_name_part(str(raw.get("first_name", "")), "First name")
+            middle = check_middle_name(str(raw.get("middle_name", "") or ""))
         except ValueError as e:
             failed.append({"line": line, "student_number":
                            tidy_number(str(raw.get("student_number", ""))),
@@ -326,7 +338,7 @@ async def bulk_create(
         row_section = " ".join(str(raw.get("section", "") or "").split()) or sect_default
         student = Student(
             created_by=owner_id, student_number=number,
-            last_name=last, first_name=first, section=row_section,
+            last_name=last, first_name=first, middle_name=middle, section=row_section,
         )
         db.add(student)
         created.append(student)

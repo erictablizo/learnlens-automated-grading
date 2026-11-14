@@ -25,7 +25,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.schemas._text import check_name_part
+from app.schemas._text import check_name_part, check_middle_name
 from app.services.student_service import check_number
 
 
@@ -35,6 +35,16 @@ def _last(v: str) -> str:
 
 def _first(v: str) -> str:
     return check_name_part(v, "First name")
+
+
+def _middle(v: Optional[str]) -> Optional[str]:
+    """NEW 2026-11-14. OPTIONAL - blank becomes None, not "".
+
+    Shown on the screens as "Middle Initial" but stored as a name, so a
+    teacher who types "Reyes" is not refused. See check_middle_name().
+    """
+    return check_middle_name(v)
+
 
 
 def _section(v: Optional[str]) -> Optional[str]:
@@ -56,6 +66,9 @@ class StudentCreate(BaseModel):
     student_number: str
     last_name: str
     first_name: str
+    # NEW 2026-11-14. Optional, and LAST of the name parts so an existing caller
+    # that sends only the three required fields is unaffected.
+    middle_name: Optional[str] = None
     section: Optional[str] = None
 
     @field_validator("student_number")
@@ -72,6 +85,12 @@ class StudentCreate(BaseModel):
     @classmethod
     def _f(cls, v: str) -> str:
         return _first(v)
+
+    @field_validator("middle_name")
+    @classmethod
+    def _m(cls, v: Optional[str]) -> Optional[str]:
+        return _middle(v)
+
 
     @field_validator("section")
     @classmethod
@@ -95,6 +114,7 @@ class StudentResponse(BaseModel):
     student_number: str
     last_name: str
     first_name: str
+    middle_name: Optional[str] = None
     section: Optional[str] = None
     created_at: datetime
 
@@ -130,6 +150,7 @@ class StudentBulkRow(BaseModel):
     student_number: str = ""
     last_name: str = ""
     first_name: str = ""
+    middle_name: Optional[str] = None
     section: Optional[str] = None
 
 

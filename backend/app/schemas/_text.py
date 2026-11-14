@@ -291,7 +291,67 @@ def check_name_part(v: Optional[str], label: str) -> str:
     return v
 
 
-def compose_student_name(last_name: Optional[str], first_name: Optional[str]) -> str:
+# ── NEW 2026-11-14 (Alex Passion / Julius Bancud, Recommendations page 1) ────
+# "Student Middle Name" on the class list, shown on the screens as Middle
+# Initial.
+#
+# IT REUSES _NAME_PART_MARKS, not a fourth set. A middle name IS a name part -
+# "Reyes", "R.", "Dela Cruz" - and every argument recorded above for that set
+# applies unchanged: letters, space, period, apostrophe, hyphen; no digits, no
+# comma, no parentheses.
+#
+# TWO THINGS DIFFER FROM check_name_part, and both are deliberate:
+#
+#   1. IT IS OPTIONAL. Blank is not an error, it is "not stated" - and it
+#      returns None rather than "", so a student with no middle name and a
+#      student with an empty one cannot both exist in the column. The same
+#      distinction _section() keeps in schemas/student.py.
+#
+#   2. THE CAP IS 100, not 255, because students.middle_name and
+#      test_papers.middle_name are varchar(100). A limit the API states as a
+#      sentence beats one PostgreSQL refuses as a driver error.
+MAX_MIDDLE_NAME_LENGTH = 100
+
+
+def check_middle_name(v: Optional[str]) -> Optional[str]:
+    """The middle name, or None. Blank is NOT an error."""
+    v = tidy_text(v)
+    if not v:
+        return None
+    if len(v) > MAX_MIDDLE_NAME_LENGTH:
+        raise ValueError(
+            f"Middle name must be at most {MAX_MIDDLE_NAME_LENGTH} characters.")
+    if not any(c.isalpha() for c in v):
+        raise ValueError("Middle name must contain at least one letter.")
+    bad = _name_part_bad(v)
+    if bad:
+        tail = NAME_PART_COMMA_HINT if "," in bad else NAME_PART_SENTENCE
+        raise ValueError(f"Middle name cannot contain {_shown(bad)}. {tail}")
+    return v
+
+
+def middle_initial(v: Optional[str]) -> str:
+    """How a middle name is WRITTEN inside a composed name: "R." or "Reyes".
+
+    A SINGLE LETTER gains a period, because that is how a teacher writes an
+    initial and because _STRICT_MARKS already allows the period in
+    student_name for exactly this case - "Midterm - Alcantara, Ben R." is in
+    the comment at the top of this file.
+
+    Anything longer, and anything already ending in a period, is left exactly
+    as typed. This function ADDS punctuation; it never rewrites a name.
+    "Dela Cruz" stays "Dela Cruz".
+
+    Matches middleInitial() in frontend/src/lib/textField.ts.
+    """
+    s = tidy_text(v)
+    if not s:
+        return ""
+    return f"{s}." if len(s) == 1 and s.isalpha() else s
+
+
+def compose_student_name(last_name: Optional[str], first_name: Optional[str],
+                         middle_name: Optional[str] = None) -> str:
     """student_name is KEPT, not dropped, and written from the two parts.
 
     It is read in at least six places - the paper label under the image, the
@@ -301,4 +361,12 @@ def compose_student_name(last_name: Optional[str], first_name: Optional[str]) ->
     It is also the rollback the 2026-11-04 migration comment promises.
 
     Matches composeStudentName() in frontend/src/lib/textField.ts."""
-    return f"{tidy_text(last_name)}, {tidy_text(first_name)}"
+    # CHANGED 2026-11-14: a THIRD, OPTIONAL part, appended after the given
+    # name - "Alcantara, Ben R."
+    #
+    # The parameter has a default, so every existing two-argument call site keeps
+    # working AND keeps producing exactly the string it produced before. A paper
+    # or student with no middle name composes byte-for-byte as it did.
+    base = f"{tidy_text(last_name)}, {tidy_text(first_name)}"
+    mid = middle_initial(middle_name)
+    return f"{base} {mid}" if mid else base

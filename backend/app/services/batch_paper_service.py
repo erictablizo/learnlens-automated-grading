@@ -100,9 +100,11 @@ async def create_for_student(
         student_id=student.student_id,
         last_name=student.last_name,
         first_name=student.first_name,
+        middle_name=student.middle_name,
         # Composed by the same function paper_service uses, so exactly one
         # place in the codebase knows the "Last, First" format.
-        student_name=compose_student_name(student.last_name, student.first_name),
+        student_name=compose_student_name(
+        student.last_name, student.first_name, student.middle_name),
         checked=False,
     )
     db.add(paper)

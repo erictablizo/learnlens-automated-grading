@@ -75,6 +75,12 @@ async def find_paper_by_name(
     *,
     last_name: str,
     first_name: str,
+    # NEW 2026-11-14 - and this is what makes DuplicatePaper's own advice true.
+    # Its message has said since 2026-11-09: "If this is a different student with
+    # the same name, add a middle initial to tell them apart." Until now this
+    # function compared only last+first, so adding one changed nothing and the
+    # second student was still refused. Now it is part of the comparison.
+    middle_name: Optional[str] = None,
     exclude_paper_id: Optional[int] = None,
 ) -> Optional[TestPaper]:
     """The existing paper for this name in this exam, or None.
@@ -116,13 +122,18 @@ async def find_paper_by_name(
     on paper_id or exam_id; a name is not unique by definition, which is the
     whole point of the check.
     """
-    composed = compose_student_name(last_name, first_name)
+    composed = compose_student_name(last_name, first_name, middle_name)
     conditions = [
         TestPaper.exam_id == exam_id,
         or_(
             and_(
                 func.lower(TestPaper.last_name) == last_name.lower(),
                 func.lower(TestPaper.first_name) == first_name.lower(),
+                # coalesce: middle_name is NULL on every row that predates today, and
+                # `NULL = ''` is NULL, never true - so without this no existing paper would
+                # ever match and every one of them would look like a non-duplicate.
+                func.lower(func.coalesce(TestPaper.middle_name, ""))
+                    == (middle_name or "").lower(),
             ),
             func.lower(TestPaper.student_name) == composed.lower(),
         ),
@@ -162,6 +173,7 @@ async def create_paper(
     *,
     last_name: str,
     first_name: str,
+    middle_name: Optional[str] = None,
 ) -> Optional[TestPaper]:
     """Add a paper. Returns None when the exam is not this teacher's.
 
@@ -188,7 +200,8 @@ async def create_paper(
     if not await _owned_exam(db, exam_id, user_id):
         return None
     existing = await find_paper_by_name(
-        db, exam_id, last_name=last_name, first_name=first_name
+        db, exam_id, last_name=last_name, first_name=first_name,
+        middle_name=middle_name,
     )
     if existing:
         raise DuplicatePaper(existing)
@@ -196,7 +209,8 @@ async def create_paper(
         exam_id=exam_id,
         last_name=last_name,
         first_name=first_name,
-        student_name=compose_student_name(last_name, first_name),
+        middle_name=middle_name,
+        student_name=compose_student_name(last_name, first_name, middle_name),
     )
     db.add(paper)
     await db.commit()
@@ -212,6 +226,7 @@ async def rename_paper(
     *,
     last_name: str,
     first_name: str,
+    middle_name: Optional[str] = None,
 ) -> Optional[TestPaper]:
     """NEW 2026-11-04 — the rename, and the HAND-SPLIT of the 18 old papers.
 
@@ -249,13 +264,15 @@ async def rename_paper(
         db, exam_id,
         last_name=last_name,
         first_name=first_name,
+        middle_name=middle_name,
         exclude_paper_id=paper_id,
     )
     if existing:
         raise DuplicatePaper(existing)
     paper.last_name    = last_name
     paper.first_name   = first_name
-    paper.student_name = compose_student_name(last_name, first_name)
+    paper.middle_name  = middle_name
+    paper.student_name = compose_student_name(last_name, first_name, middle_name)
     await db.commit()
     await db.refresh(paper)
     return paper
