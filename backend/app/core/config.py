@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import List
- 
- 
+
+
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:learnlens123@localhost:5432/learnlens_automated_grading"
     SECRET_KEY: str = "learnlens-secret-key-change-in-production"
@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     UPLOAD_DIR: str = "uploads"
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
- 
+
     # Tesseract OCR executable path (Windows only — leave empty on Linux/Mac)
     # Example: C:\Program Files\Tesseract-OCR\tesseract.exe
     TESSERACT_CMD: str = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
@@ -19,15 +19,23 @@ class Settings(BaseSettings):
     # Where the reset link in the email should point (your Next.js app).
     FRONTEND_URL: str = "http://localhost:3000"
     RESET_TOKEN_EXPIRE_MINUTES: int = 60
- 
+
     # SMTP. Leave SMTP_HOST empty = DEV MODE (link is printed in the uvicorn terminal).
-    # Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USER=you@gmail.com,
-    #        SMTP_PASSWORD=<16-char App Password, NOT your normal password>
-    SMTP_HOST: str = "smtp-relay.brevo.com"
+    #
+    # THESE DEFAULTS STAY EMPTY, 2026-11-14. This file is in git; backend/.env
+    # is not. Real credentials go in .env on the server and nowhere else —
+    # every value here is overridden by it.
+    #
+    #   Brevo:  SMTP_HOST=smtp-relay.brevo.com, SMTP_PORT=587,
+    #           SMTP_USER=<SMTP login from the Brevo SMTP page>,
+    #           SMTP_PASSWORD=<SMTP key, not the account password, not an API key>
+    #   Gmail:  SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USER=you@gmail.com,
+    #           SMTP_PASSWORD=<16-char App Password, NOT your normal password>
+    SMTP_HOST: str = ""
     SMTP_PORT: int = 587
-    SMTP_USER: str = "<the SMTP login shown on your Brevo SMTP page>"
-    SMTP_PASSWORD: str = "<your SMTP key — NOT your account password, NOT an API key>"
-    SMTP_FROM: str = "<the sender address you set up in Brevo>"          # defaults to SMTP_USER when empty
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""          # defaults to SMTP_USER when empty
     SMTP_FROM_NAME: str = "LearnLens"
     SMTP_USE_SSL: bool = False   # True only for port 465
 
@@ -38,11 +46,14 @@ class Settings(BaseSettings):
     # SECURITY: this returns a one-use password-reset token in the HTTP
     # response, so anyone who can call /auth/forgot-password with a registered
     # email could reset that account's password. It is only ever included when
-    # SMTP is NOT configured (there is no other way to deliver the link), but
-    # put SHOW_DEV_RESET_LINK=False in backend/.env — or configure SMTP —
-    # before the system is reachable by anyone but you. With SMTP configured
-    # the link is never returned, whatever this is set to.
-    SHOW_DEV_RESET_LINK: bool = True
- 
+    # SMTP is NOT configured (there is no other way to deliver the link). With
+    # SMTP configured the link is never returned, whatever this is set to.
+    #
+    # DEFAULT CHANGED TO False, 2026-11-14. It shipped True, and a default that
+    # hands out account takeover is the wrong way round — see 2026-10-01.
+    SHOW_DEV_RESET_LINK: bool = False
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+
 settings = Settings()
