@@ -12,11 +12,43 @@
  * CHANGED 2026-11-04 (Doc Rubrica, consultation, page 4): she struck out
  * "Student Name" and wrote "Name: [First Name] -> Split Name to Last Name &
  * First Name". One box becomes two, and student_name is composed server-side.
+ *
+ * CHANGED 2026-11-14 (Alex Passion / Julius Bancud, post-UAT page 2, item 4):
+ * "Test Paper -> ID # Student / ID Student # -> file of Test Exam / Primary
+ * Key -> Additional Table".
+ *
+ * A STUDENT NO. BOX ABOVE THE TWO NAMES. Type the number, and the surname and
+ * given name arrive from the roster instead of being typed again - which is
+ * the point of item 4, and the difference between a paper that merely SAYS a
+ * name and one that is LINKED to a student by id.
+ *
+ * NO BACKEND CHANGE. `POST /exams/{id}/papers/by-student` has existed since
+ * 2026-11-12 for the batch upload; this screen simply calls it too, through
+ * the same `paperService.createForStudent`. In particular `PaperCreate` is NOT
+ * widened to take an optional number - schemas/paper.py records why: when that
+ * model changed on 2026-11-04 the old frontend failed with 422 on the fields
+ * it no longer sent. A second create path touches nothing that works.
+ *
+ * THE ROSTER IS FETCHED ONCE AND MATCHED IN THE BROWSER, rather than asking
+ * the server on every keystroke. It is one class list; the match is instant
+ * and works while typing, there is no debounce to get wrong, and it is the
+ * same approach BatchUploadModal already takes. Matching is on
+ * lower(trim(number)), which is exactly what the database's
+ * ux_students_owner_number index uses - so this screen and the server agree on
+ * what "the same number" means.
+ *
+ * NOT FOUND IS NOT AN ERROR. The number box is optional. Leave it empty, or
+ * type one that is not on the roster, and the two name boxes behave exactly as
+ * they did yesterday: the paper is created by name and simply has no roster
+ * link. The 2026-11-12 migration was written for that case on purpose -
+ * "A paper can also be added by name alone and linked later."
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { paperService } from "@/services/paperService";
+// NEW 2026-11-14 — the roster, for the Student No. lookup.
+import { studentService } from "@/services/studentService";
 import { getToken } from "@/lib/auth";
 import { PageUploadState, GradeResult } from "@/types/paper";
 // CHANGED 2026-11-04: checkNamePart replaces checkStudentName. student_name is
@@ -39,10 +71,28 @@ const MAX_PAGES = 10;
 // check now lives in lib/pageFiles.ts as isImageFile, so the multi-file
 // picker and validate() cannot disagree about what counts as an image.
 
+/** One roster entry, trimmed to what this dialog shows. */
+interface RosterStudent {
+  student_id:     number;
+  student_number: string;
+  last_name:      string;
+  first_name:     string;
+  section:        string | null;
+}
+
+/** The same key the database's unique index uses: lower(trim(number)).
+ *  Anything else and the screen would call "2021-A123" and "2021-a123"
+ *  different students while the server calls them the same one. */
+const numberKey = (s: string) => s.trim().toLowerCase();
+
 const blankPages = (n: number): PageUploadState[] =>
   Array.from({ length: n }, (_, i) => ({ pageNumber: i + 1, file: null, uploaded: false, uploading: false, error: null }));
 
 export default function AddEditPaperModal({ examId, examPages, onClose, onSuccess }: Props) {
+  // NEW 2026-11-14 — the roster lookup.
+  const [studentNumber, setStudentNumber] = useState("");
+  const [roster,        setRoster]        = useState<RosterStudent[] | null>(null);
+  const [rosterError,   setRosterError]   = useState<string | null>(null);
   // CHANGED 2026-11-04: one studentName state becomes two.
   const [lastName,  setLastName]  = useState("");
   const [firstName, setFirstName] = useState("");
@@ -58,6 +108,46 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   const [gradeResult, setGradeResult] = useState<GradeResult | null>(null);
   const [gradeError,  setGradeError]  = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
+
+  // NEW 2026-11-14. Once, on open. A failure here is NOT fatal and is not even
+  // shown as an error: the dialog still works exactly as it did before, by
+  // name. It would be wrong to block adding a paper because a roster this
+  // teacher may never have filled in could not be read.
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    studentService.list(token)
+      .then(list => setRoster(list.map(s => ({
+        student_id:     s.student_id,
+        student_number: s.student_number,
+        last_name:      s.last_name,
+        first_name:     s.first_name,
+        section:        s.section ?? null,
+      }))))
+      .catch(() => { setRoster([]); setRosterError("Your student list could not be loaded, so numbers cannot be looked up. You can still type the names."); });
+  }, []);
+
+  const matched = useMemo<RosterStudent | null>(() => {
+    const key = numberKey(studentNumber);
+    if (!key || !roster) return null;
+    return roster.find(s => numberKey(s.student_number) === key) ?? null;
+  }, [studentNumber, roster]);
+
+  // When a number matches, the names come off the roster. They are NOT merely
+  // suggested: the save path sends the number, and the server reads the names
+  // itself, so what is shown here has to be what will be stored.
+  useEffect(() => {
+    if (!matched) return;
+    setLastName(matched.last_name);
+    setFirstName(matched.first_name);
+    setLastNameError(null);
+    setFirstNameError(null);
+  }, [matched]);
+
+  /** Clear the number and unlock the names, KEEPING what the roster filled in.
+   *  The teacher is most likely correcting a spelling for this one paper, and
+   *  blanking the boxes would make them retype a name they can see. */
+  const unlink = () => setStudentNumber("");
 
   const handlePageCountChange = (n: number) => {
     setPageCount(n);
@@ -93,14 +183,21 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setGlobalError(null);
     setLastNameError(null);
     setFirstNameError(null);
-    // CHANGED 2026-11-04 (Doc Rubrica): two fields, same rule, same words and
-    // same order as check_name_part() in backend/app/schemas/_text.py. A comma
-    // in either box gets its own sentence, because a comma there means the
-    // teacher typed "Surname, First name" into one of them.
-    const lastMsg = checkNamePart(lastName, "Last name");
-    if (lastMsg) { setLastNameError(lastMsg); ok = false; }
-    const firstMsg = checkNamePart(firstName, "First name");
-    if (firstMsg) { setFirstNameError(firstMsg); ok = false; }
+    // CHANGED 2026-11-14: the two name rules are SKIPPED when a roster student
+    // is matched, because those names are then never sent - the server reads
+    // them from the roster row. Checking them here would let a name the
+    // teacher legitimately saved on the Students page block a paper on a
+    // screen that cannot edit it.
+    if (!matched) {
+      // CHANGED 2026-11-04 (Doc Rubrica): two fields, same rule, same words and
+      // same order as check_name_part() in backend/app/schemas/_text.py. A comma
+      // in either box gets its own sentence, because a comma there means the
+      // teacher typed "Surname, First name" into one of them.
+      const lastMsg = checkNamePart(lastName, "Last name");
+      if (lastMsg) { setLastNameError(lastMsg); ok = false; }
+      const firstMsg = checkNamePart(firstName, "First name");
+      if (firstMsg) { setFirstNameError(firstMsg); ok = false; }
+    }
     const checked = pages.map(p => ({
       ...p,
       error: !p.file ? `Please upload an image for Page ${p.pageNumber}.`
@@ -125,25 +222,41 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setStep("uploading");
     let paperId: number | null = null;
     try {
-      // CHANGED 2026-11-04: one object, not two positional strings. Both parts
-      // are `string`, so TypeScript cannot catch them being swapped either way
-      // - what the object DOES catch is an omitted field (TS2741), and it names
-      // each value at the call site so a reader can see which is which.
+      // CHANGED 2026-11-14 — two create paths, chosen by whether a roster
+      // student is matched.
+      //
+      // MATCHED: send the NUMBER. The server looks the student up and writes
+      // student_id as well as the names, which is what makes the paper linked
+      // rather than merely similarly spelled. It answers 404 if the roster
+      // changed since this dialog opened, and 409 if that student already has
+      // a paper on this exam - a rule the database enforces with
+      // ux_test_papers_exam_student, so it cannot be worked around from here.
+      //
+      // UNMATCHED: the 2026-11-04 call, unchanged. One object, not two
+      // positional strings. Both parts are `string`, so TypeScript cannot
+      // catch them being swapped either way - what the object DOES catch is an
+      // omitted field (TS2741), and it names each value at the call site so a
+      // reader can see which is which.
       //
       // tidyText, not trim - the server collapses runs of whitespace, so send
       // what it would have stored anyway.
-      const paper = await paperService.create(
-        examId,
-        { last_name: tidyText(lastName), first_name: tidyText(firstName) },
-        token,
-      );
-      paperId = paper.paper_id;
+      if (matched) {
+        const paper = await paperService.createForStudent(examId, matched.student_number, token);
+        paperId = paper.paper_id;
+      } else {
+        const paper = await paperService.create(
+          examId,
+          { last_name: tidyText(lastName), first_name: tidyText(firstName) },
+          token,
+        );
+        paperId = paper.paper_id;
+      }
 
       for (let i = 0; i < pages.length; i++) {
         const p = pages[i];
         setPages(prev => prev.map((pg, idx) => (idx === i ? { ...pg, uploading: true } : pg)));
         try {
-          await paperService.uploadPage(examId, paper.paper_id, p.pageNumber, p.file as File, token);
+          await paperService.uploadPage(examId, paperId, p.pageNumber, p.file as File, token);
           setPages(prev => prev.map((pg, idx) => (idx === i ? { ...pg, uploading: false, uploaded: true } : pg)));
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : "Upload failed";
@@ -180,21 +293,69 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       </p>
     );
 
+  // NEW 2026-11-14. Read-only rather than disabled: a disabled input is skipped
+  // by the keyboard and greyed to the point of looking broken, and the teacher
+  // still needs to be able to select and read the name that will be stored.
+  const lockedInput = matched
+    ? { background: "var(--bg, #f4f4f5)", color: "var(--text-muted)" }
+    : undefined;
+
   return (
     <Modal title="Add Paper" onClose={busy ? () => {} : onClose}>
       {step === "form" && (
         <>
+          {/* NEW 2026-11-14 (Alex & Bancud, item 4). FIRST, above the names,
+              because it is the field that fills the other two. Optional - the
+              label says so, and leaving it blank is the 2026-11-04 behaviour
+              exactly. */}
+          <label className="form-label" htmlFor="student-number">
+            Student No.{" "}
+            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
+          </label>
+          <input id="student-number" className="form-input" value={studentNumber}
+            onChange={e => { setStudentNumber(e.target.value); setGlobalError(null); }}
+            placeholder="e.g. 2021-00123" autoComplete="off"
+            aria-describedby="student-number-hint" />
+
+          <p id="student-number-hint" style={{
+            fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem",
+            color: matched ? "var(--navy)" : "var(--text-muted)",
+          }}>
+            {rosterError
+              ? rosterError
+              : matched
+              ? <>
+                  Linked to <strong>{matched.last_name}, {matched.first_name}</strong>
+                  {matched.section ? ` — ${matched.section}` : ""}.{" "}
+                  <button type="button" onClick={unlink}
+                    style={{ background: "none", border: "none", padding: 0, font: "inherit",
+                             color: "var(--orange)", textDecoration: "underline", cursor: "pointer" }}>
+                    Clear
+                  </button>
+                </>
+              : studentNumber.trim()
+              ? (roster === null
+                  ? "Looking that number up…"
+                  : "Not on your student list — the names below will be used, and this paper will not be linked.")
+              : "Type the number written on the paper and the names fill in from your student list."}
+          </p>
+
           {/* CHANGED 2026-11-04. The old placeholder was "e.g. Tablizo, Eric",
               which TAUGHT the comma format the split is meant to end - and a
               comma is now refused with its own message. These two teach the
-              shape the two boxes actually want. */}
+              shape the two boxes actually want.
+
+              CHANGED 2026-11-14: read-only while a student number is matched,
+              because those names come from the roster and are not sent from
+              here. Edit them on the Students page, or press Clear. */}
           <label className="form-label" htmlFor="last-name">
             Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
           <input id="last-name" className="form-input" value={lastName}
             onChange={e => { setLastName(e.target.value); setLastNameError(null); }}
             placeholder="e.g. Dela Cruz-Santos" aria-required="true" aria-invalid={!!lastNameError}
-            style={lastNameError ? { borderBottomColor: "var(--error)" } : undefined} />
+            readOnly={!!matched}
+            style={lastNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
           {nameErr(lastNameError)}
 
           <label className="form-label" htmlFor="first-name">
@@ -203,7 +364,8 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
           <input id="first-name" className="form-input" value={firstName}
             onChange={e => { setFirstName(e.target.value); setFirstNameError(null); }}
             placeholder="e.g. Ma. Teresa" aria-required="true" aria-invalid={!!firstNameError}
-            style={firstNameError ? { borderBottomColor: "var(--error)" } : undefined} />
+            readOnly={!!matched}
+            style={firstNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
           {nameErr(firstNameError)}
 
           <div style={{ marginBottom: "1rem" }}>
