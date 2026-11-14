@@ -23,11 +23,11 @@ class Settings(BaseSettings):
     # SMTP. Leave SMTP_HOST empty = DEV MODE (link is printed in the uvicorn terminal).
     # Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USER=you@gmail.com,
     #        SMTP_PASSWORD=<16-char App Password, NOT your normal password>
-    SMTP_HOST: str = ""
+    SMTP_HOST: str = "smtp-relay.brevo.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = ""          # defaults to SMTP_USER when empty
+    SMTP_USER: str = "<the SMTP login shown on your Brevo SMTP page>"
+    SMTP_PASSWORD: str = "<your SMTP key — NOT your account password, NOT an API key>"
+    SMTP_FROM: str = "<the sender address you set up in Brevo>"          # defaults to SMTP_USER when empty
     SMTP_FROM_NAME: str = "LearnLens"
     SMTP_USE_SSL: bool = False   # True only for port 465
 
