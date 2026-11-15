@@ -22,7 +22,7 @@
  *   Student No.      checkStudentNumber - letters, digits, hyphen, no spaces,
  *                    50 characters, and REQUIRED
  *   Last / First     checkNamePart, the 2026-11-04 rule, unchanged
- *   Middle Initial   checkMiddleName(v, true) - the same character rule as a
+ *   Middle Name      checkMiddleName(v, true) - the same character rule as a
  *                    name part, now REQUIRED
  *   Section          CHANGED 2026-11-15 - REQUIRED, with the shared label
  *                    rule (letters, numbers, space and . , ( ) -). It was the
@@ -106,7 +106,12 @@ const FIELDS: ReadonlyArray<{
     required: true,  check: v => checkNamePart(v, "Last name") },
   { key: "first_name", label: "First Name", placeholder: "Ana", width: 170,
     required: true,  check: v => checkNamePart(v, "First name") },
-  { key: "middle_name", label: "Middle Initial", placeholder: "R.", width: 140,
+  // CHANGED 2026-11-15: "Middle Name", not "Middle Initial". The field has
+  // always stored a NAME - "Reyes" is accepted, and middleInitial() renders a
+  // stored "R" as "R." only when composing student_name. The old label also
+  // disagreed with the server's own message, which says "Middle name is
+  // required."
+  { key: "middle_name", label: "Middle Name", placeholder: "Reyes", width: 150,
     required: true,  check: v => checkMiddleName(v, true) },
   // CHANGED 2026-11-15: required, and checked. It keeps its datalist.
   { key: "section", label: "Section", placeholder: "BSCS 3A", width: 150,
@@ -381,7 +386,7 @@ export default function StudentsPage() {
                 <th style={{ width: 140 }}>Student No.</th>
                 <th>Last Name</th>
                 <th>First Name</th>
-                <th style={{ width: 80 }}>M.I.</th>
+                <th style={{ width: 110 }}>Middle Name</th>
                 <th style={{ width: 140 }}>Section</th>
                 <th style={{ width: 90 }}>Actions</th>
               </tr>
