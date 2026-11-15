@@ -24,9 +24,10 @@ import { useRouter } from "next/navigation";
 import Navbar, { PROFILE_UPDATED_EVENT } from "@/components/ui/Navbar";
 import { profileService } from "@/services/profileService";
 import {
-  COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College, UserProfile,
-  YearLevel, YEAR_LABELS, yearLevelsFor, isValidYear,   // Added on 2026-10-04
+  College, UserProfile,
+  YearLevel,   // the lists now come from useReferenceLists()
 } from "@/types/profile";
+import { useReferenceLists } from "@/hooks/useReferenceLists";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { checkPersonName, checkPosition, tidyName }
   from "@/lib/personName";
@@ -46,6 +47,10 @@ export default function EditProfilePage() {
   const [firstName, setFirstName] = useState("");
   const [lastName,  setLastName]  = useState("");
   const [college,   setCollege]   = useState<College | "">("");
+  // NEW 2026-11-14. The College / Course / Year Level choices come from the
+  // database now, not from COLLEGE_OPTIONS and COURSES_BY_COLLEGE. See
+  // hooks/useReferenceLists.ts; the shapes are deliberately the same.
+  const lists = useReferenceLists();
   const [course,    setCourse]    = useState("");
   const [position,  setPosition]  = useState("");
   const [year,      setYear]      = useState<YearLevel | "">("");   // Added on 2026-10-04
@@ -71,7 +76,13 @@ export default function EditProfilePage() {
         setCollege((p.college as College) ?? "");
         setCourse(p.course ?? "");
         setPosition(p.position ?? "");
-        setYear(isValidYear(p.college as College, p.year_level) ? (p.year_level as YearLevel) : "");
+        // CHANGED 2026-11-14 - the saved year is kept, NOT validated here.
+        //
+        // This runs when the profile arrives, which can be BEFORE the lists
+        // have. Validating against an empty list would answer "invalid" and
+        // silently wipe the teacher's saved year level. The effect below does
+        // the validating, once the lists are actually there.
+        setYear((p.year_level as YearLevel) ?? "");
         loaded.current = true;
       })
       .catch(() => setLoadError("Could not load your profile."))
@@ -82,14 +93,16 @@ export default function EditProfilePage() {
   // saved profile, or the teacher's existing course would be wiped on arrival.
   useEffect(() => {
     if (!loaded.current) return;
-    setCourse(c => (college && COURSES_BY_COLLEGE[college].includes(c) ? c : ""));
-    setYear(y => (isValidYear(college || null, y) ? y : ""));   // Added on 2026-10-04
+    setCourse(c => (lists.loading ? c
+    : (college && lists.coursesFor(college).includes(c) ? c : "")));
+    setYear(y => (lists.loading ? y
+    : (lists.isValidYear(college || null, y) ? y : "")));
   }, [college]);
 
   // Keep a course that is not in the list (entered before the list changed)
   const courseOptions = (() => {
     if (!college) return [];
-    const list = COURSES_BY_COLLEGE[college];
+    const list = lists.coursesFor(college);
     const savedCourse = profile?.course ?? "";
     return savedCourse && profile?.college === college && !list.includes(savedCourse)
       ? [savedCourse, ...list]
@@ -290,7 +303,7 @@ export default function EditProfilePage() {
                 onChange={e => { setCollege(e.target.value as College | ""); setError(null); setSaved(false); }}
                 aria-required="true">
                 <option value="">Select your college…</option>
-                {COLLEGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {lists.collegeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
 
               <label className="form-label" htmlFor="course" style={labelGap}>
@@ -315,8 +328,8 @@ export default function EditProfilePage() {
                   setError(null); setSaved(false);
                 }}>
                 <option value="">{college ? "No default" : "Select a college first"}</option>
-                {yearLevelsFor(college || null).map(y => (
-                  <option key={y} value={y}>{YEAR_LABELS[y]}</option>
+                {lists.yearLevelsFor(college || null).map(y => (
+                  <option key={y} value={y}>{lists.yearLabel(college || null, y)}</option>
                 ))}
               </select>
               <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>

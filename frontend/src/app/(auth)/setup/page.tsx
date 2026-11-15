@@ -12,9 +12,10 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { profileService } from "@/services/profileService";
 import {
-  COLLEGE_OPTIONS, COURSES_BY_COLLEGE, College,
-  YearLevel, YEAR_LABELS, yearLevelsFor,          // Added on 2026-10-05
+  College,
+  YearLevel,   // the lists now come from useReferenceLists()
 } from "@/types/profile";
+import { useReferenceLists } from "@/hooks/useReferenceLists";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { checkPersonName, checkPosition, looksMiscased, tidyName }
   from "@/lib/personName";
@@ -26,6 +27,8 @@ export default function ProfileSetupPage() {
   const [firstName,     setFirstName]     = useState("");
   const [lastName,      setLastName]      = useState("");
   const [college,       setCollege]       = useState<College | "">("");
+  // NEW 2026-11-14 - see hooks/useReferenceLists.ts.
+  const lists = useReferenceLists();
   const [course,        setCourse]        = useState("");
   const [year,          setYear]          = useState<YearLevel | "">("");   // Added 2026-10-05
   const [position,      setPosition]      = useState("");
@@ -42,8 +45,8 @@ export default function ProfileSetupPage() {
   // make no sense once the college is something else)
   useEffect(() => { setCourse(""); setYear(""); }, [college]);
 
-  const courseOptions = college ? COURSES_BY_COLLEGE[college] : [];
-  const yearOptions   = yearLevelsFor(college || null);          // Added 2026-10-05
+  const courseOptions = college ? lists.coursesFor(college) : [];
+  const yearOptions   = lists.yearLevelsFor(college || null);
 
   // Live initials from typed name
   const initials = [firstName[0], lastName[0]]
@@ -277,7 +280,7 @@ export default function ProfileSetupPage() {
             disabled={saving}
           >
             <option value="" disabled>Select your college</option>
-            {COLLEGE_OPTIONS.map(o => (
+            {lists.collegeOptions.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -317,7 +320,7 @@ export default function ProfileSetupPage() {
             >
               <option value="">Year level you usually teach (optional)</option>
               {yearOptions.map(y => (
-                <option key={y} value={y}>{YEAR_LABELS[y]}</option>
+                <option key={y} value={y}>{lists.yearLabel(college || null, y)}</option>
               ))}
             </select>
           </div>

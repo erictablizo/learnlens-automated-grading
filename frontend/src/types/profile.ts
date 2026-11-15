@@ -1,5 +1,33 @@
-export type College = "CVMAS" | "CBMA" | "CoEd" | "CAST";
+// WIDENED 2026-11-14. Was a union of the four colleges that existed in
+// September. They are a TABLE now (migrations/2026-11-14_reference_lists.sql),
+// maintained by an administrator, so a type that lists them can only be wrong
+// the moment a fifth is added - and would make adding one a compile error in
+// every file that touches a college.
+//
+// Nothing is lost that was protecting anything: the real check is
+// reference_service.validate_selection() on the server, which asks the
+// database. A union here only ever checked against a copy.
+export type College = string;
  
+// ───────────────────────────────────────────────────────────────────────────
+// DEPRECATED 2026-11-14 - everything from here to TeachingContext below.
+//
+// These arrays are a SECOND copy of the three dropdown lists, and the first
+// copy is now the database. The Edit Profile and Setup screens no longer read
+// them; they call useReferenceLists(), which fetches /api/reference/lists.
+//
+// They are left in place for one reason only: this script cannot know what
+// else imports them. Find out, and then delete what nothing uses:
+//
+//     grep -rn "COLLEGE_OPTIONS\|COURSES_BY_COLLEGE\|MAX_YEAR_BY_COLLEGE\|YEAR_LABELS\|yearLevelsFor\|isValidYear\|isValidCourse" frontend/src
+//
+// A SPECIFIC HAZARD while they remain. With College widened to string,
+// `COURSES_BY_COLLEGE[college]` is `undefined` for any college an
+// administrator has added, so `isValidCourse()` THROWS on `.includes` rather
+// than returning false. It is unused by the two screens as of today. If that
+// grep finds another caller, move it to the hook before adding a fifth
+// college.
+// ───────────────────────────────────────────────────────────────────────────
 export const COLLEGE_OPTIONS: { value: College; label: string }[] = [
   { value: "CVMAS", label: "College of Veterinary Medicine and Agricultural Sciences (CVMAS)" },
   { value: "CBMA",  label: "College of Business, Management, and Accountancy (CBMA)" },
@@ -40,7 +68,10 @@ export const COURSES_BY_COLLEGE: Record<College, string[]> = {
 // After picking a college on /college, the teacher also picks the course and
 // the year level they are teaching today.
 
-export type YearLevel = 1 | 2 | 3 | 4 | 5 | 6;
+// WIDENED 2026-11-14, same reason. Year levels are per college now and come
+// from the `year_levels` table; `user_profiles_year_level_check` still bounds
+// them to 1-6 in the database, which is where that rule belongs.
+export type YearLevel = number;
 
 /** How far each college's students go.
  *  CVMAS reaches 6th year (Doctor of Veterinary Medicine); the others reach 3rd.
