@@ -35,13 +35,28 @@ meaning validations". Two changes, and both reach existing data:
      schemas/_text.py — letters, digits and the hyphen, capped at 50 to match
      varchar(50). Before this, a 51-character number reached PostgreSQL and
      returned a driver error: a 500 where every other field answers 422.
+
+CHANGED 2026-11-15, SECOND PASS — "Section should also be validated like
+blank or other special characters."
+
+  3. SECTION IS REQUIRED, and has a character rule for the first time.
+     _section() collapsed whitespace, capped the length and turned blank into
+     NULL; none of that refused anything, so "@@@" went into the column.
+     It now delegates to check_section() — the SHARED label set, the same one
+     exam names and subjects use.
+
+     TWO VALIDATORS, NOT ONE, and the difference matters:
+     StudentCreate.section is REQUIRED, while StudentBulkRequest.section is a
+     DEFAULT applied to rows that carry none. Requiring the default would
+     422 a whole paste whose rows each name their own section — the opposite
+     of what bulk_create exists to do.
 """
 from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.schemas._text import check_name_part, check_middle_name
+from app.schemas._text import check_name_part, check_middle_name, check_section
 from app.services.student_service import check_number
 
 
@@ -69,24 +84,33 @@ def _middle(v: str) -> str:
     return check_middle_name(v, required=True) or ""
 
 
-def _section(v: Optional[str]) -> Optional[str]:
-    """Whitespace-collapsed, and empty becomes NULL rather than "".
+def _section(v: str) -> str:
+    """CHANGED 2026-11-15. REQUIRED, and checked against the shared label set.
 
-    A student with no section and a student with a section of "" are the same
-    student, and leaving both representations in the column would split the
-    section dropdown in two.
+    This replaces a function that only collapsed whitespace and capped the
+    length. The cap stays — check_section() carries MAX_SECTION_LENGTH = 255,
+    matching the column — and the character rule is new.
 
-    NOT made required on 2026-11-15. Grace's four fields are Student No.,
-    Last Name, First Name and Middle Initial; Section is the fifth box on that
-    row and was not among them. It is also genuinely optional — a teacher may
-    keep one undivided list.
+    `or ""` for the same reason as _middle: with required=True the helper can
+    only return a non-empty string or raise, so the fallback is unreachable
+    and exists to satisfy the type.
     """
-    s = " ".join((v or "").split())
-    if not s:
-        return None
-    if len(s) > 255:
-        raise ValueError("Section must be 255 characters or fewer.")
-    return s
+    return check_section(v, required=True) or ""
+
+
+def _section_default(v: Optional[str]) -> Optional[str]:
+    """The BULK default — the section applied to rows that carry none.
+
+    OPTIONAL on purpose. A pasted list whose every row names its own section
+    does not need this field at all, and requiring it would reject the whole
+    request rather than any row. The characters are still checked, so a
+    default of "@@@" is refused before it is copied onto 35 students.
+
+    Blank still becomes NULL rather than "": a student with no section and a
+    student with a section of "" are the same student, and both spellings in
+    the column would split the section dropdown in two.
+    """
+    return check_section(v, required=False)
 
 
 class StudentCreate(BaseModel):
@@ -97,7 +121,10 @@ class StudentCreate(BaseModel):
     # moving it would change nothing for a JSON body but would make the diff
     # read as a reordering rather than a requirement change.
     middle_name: str
-    section: Optional[str] = None
+    # CHANGED 2026-11-15, second pass: REQUIRED. StudentResponse keeps it
+    # Optional for the same reason middle_name is — rows written before today
+    # may hold NULL and still have to be readable.
+    section: str
 
     @field_validator("student_number")
     @classmethod
@@ -121,7 +148,7 @@ class StudentCreate(BaseModel):
 
     @field_validator("section")
     @classmethod
-    def _s(cls, v: Optional[str]) -> Optional[str]:
+    def _s(cls, v: str) -> str:
         return _section(v)
 
 
@@ -208,13 +235,13 @@ class StudentBulkRequest(BaseModel):
 
     rows: List[StudentBulkRow]
     # Applied to any row that does not carry its own. The common case is one
-    # section pasted at a time.
+    # section pasted at a time. OPTIONAL — see _section_default().
     section: Optional[str] = None
 
     @field_validator("section")
     @classmethod
     def _s(cls, v: Optional[str]) -> Optional[str]:
-        return _section(v)
+        return _section_default(v)
 
 
 class StudentBulkIssue(BaseModel):

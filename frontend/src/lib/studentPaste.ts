@@ -19,9 +19,9 @@
  * can alter how an OLD paste is read. See pickColumns() below.
  *
  * CHANGED 2026-11-15 — withIssues() now applies the REAL field rules rather
- * than testing for blank. See the comment there; it is the change in this
- * file most likely to make a list that pasted cleanly yesterday flag rows
- * today.
+ * than testing for blank, and the MIDDLE NAME and SECTION are both required.
+ * See the comment there; it is the change in this file most likely to make a
+ * list that pasted cleanly yesterday flag rows today.
  *
  * Pure functions, no React, no network — measured by
  * measure/2026-11-15_student_paste_required.mjs.
@@ -30,7 +30,8 @@
 // browser copies of check_student_number / check_name_part / check_middle_name
 // in backend/app/schemas/_text.py. Imported rather than reimplemented: three
 // copies of one rule is how the 2026-11-11 email-case bug happened.
-import { checkStudentNumber, checkNamePart, checkMiddleName } from "@/lib/textField";
+import { checkStudentNumber, checkNamePart, checkMiddleName, checkSection }
+  from "@/lib/textField";
 
 /** One line of the paste, after splitting. `line` is 1-based in the ORIGINAL text. */
 export interface ParsedRow {
@@ -244,11 +245,15 @@ function collapse(v: string): string {
  * server's. So the preview, the Add-a-student box and the API now say the
  * same sentence about the same value.
  *
- * THE MIDDLE NAME IS NOW REQUIRED, reversing the 2026-11-14 note here that
- * said it would never be flagged. Grace's decision of 2026-11-15: "require it
- * everywhere, fix the data". A three-column list of Number/Last/First will
- * therefore flag EVERY row until a middle-name column is added — which is the
- * intended behaviour and is worth knowing before you paste 35 lines.
+ * THE MIDDLE NAME AND THE SECTION ARE NOW REQUIRED, reversing the 2026-11-14
+ * note here that said the middle name would never be flagged. Grace's
+ * decisions of 2026-11-15: "require it everywhere, fix the data", and the
+ * section "should also be validated like blank or other special characters".
+ *
+ * A three-column list of Number/Last/First will therefore flag EVERY row
+ * until a middle-name column is added, and a list with no section column
+ * flags every row unless the Section box above the paste is filled. Both are
+ * intended, and both are worth knowing before pasting 35 lines.
  *
  * Exported so the preview table can re-flag after an edit.
  */
@@ -264,6 +269,13 @@ export function withIssues(rows: ParsedRow[]): ParsedRow[] {
     if (firstMsg) issues.push(firstMsg);
     const midMsg = checkMiddleName(r.middle_name, true);
     if (midMsg) issues.push(midMsg);
+    // NEW 2026-11-15. r.section is ALREADY the effective one - parse() writes
+    // `collapse(tail) || sect`, so the Section box above the paste has been
+    // applied by the time this runs. A row only fails here when it has no
+    // section of its own AND that box is empty, which is exactly the case
+    // worth flagging.
+    const sectMsg = checkSection(r.section, true);
+    if (sectMsg) issues.push(sectMsg);
 
     // The duplicate test stays keyed on the RAW lowercased number rather than
     // on a validated one, so two copies of the same bad number still read as

@@ -24,8 +24,11 @@
  *   Last / First     checkNamePart, the 2026-11-04 rule, unchanged
  *   Middle Initial   checkMiddleName(v, true) - the same character rule as a
  *                    name part, now REQUIRED
- *   Section          unchanged and still optional. It is the fifth box on this
- *                    row and was not one of the four.
+ *   Section          CHANGED 2026-11-15 - REQUIRED, with the shared label
+ *                    rule (letters, numbers, space and . , ( ) -). It was the
+ *                    one box here with no rule at all: _section() collapsed
+ *                    whitespace and capped the length, which is storage
+ *                    hygiene, not validation, and "@@@" went straight in.
  *
  * Every one of those is the browser copy of the function in
  * backend/app/schemas/_text.py, so a value refused here is refused there with
@@ -46,7 +49,8 @@ import type { Student, StudentBulkResult } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 // NEW 2026-11-15 — the same rules the API applies, in the browser.
-import { checkStudentNumber, checkNamePart, checkMiddleName } from "@/lib/textField";
+import { checkStudentNumber, checkNamePart, checkMiddleName, checkSection }
+  from "@/lib/textField";
 
 const IconEdit = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -102,11 +106,11 @@ const FIELDS: ReadonlyArray<{
     required: true,  check: v => checkNamePart(v, "Last name") },
   { key: "first_name", label: "First Name", placeholder: "Ana", width: 170,
     required: true,  check: v => checkNamePart(v, "First name") },
-  { key: "middle_name", label: "Middle Name", placeholder: "R.", width: 140,
+  { key: "middle_name", label: "Middle Initial", placeholder: "R.", width: 140,
     required: true,  check: v => checkMiddleName(v, true) },
-  // Section keeps its datalist and stays optional — not one of the four.
+  // CHANGED 2026-11-15: required, and checked. It keeps its datalist.
   { key: "section", label: "Section", placeholder: "BSCS 3A", width: 150,
-    required: false, check: () => null },
+    required: true,  check: v => checkSection(v, true) },
 ];
 
 export default function StudentsPage() {
@@ -190,7 +194,9 @@ export default function StudentsPage() {
       // would be a 422 the teacher cannot act on. Section keeps its `|| null`
       // because a blank section really is NULL.
       middle_name: form.middle_name,
-      section: form.section || null,
+      // CHANGED 2026-11-15: no `|| null` here either. Both are required and
+      // validate() has just proved both are present.
+      section: form.section,
     };
     try {
       if (editingId === null) {
@@ -375,7 +381,7 @@ export default function StudentsPage() {
                 <th style={{ width: 140 }}>Student No.</th>
                 <th>Last Name</th>
                 <th>First Name</th>
-                <th style={{ width: 90 }}>Middle Name</th>
+                <th style={{ width: 80 }}>M.I.</th>
                 <th style={{ width: 140 }}>Section</th>
                 <th style={{ width: 90 }}>Actions</th>
               </tr>
