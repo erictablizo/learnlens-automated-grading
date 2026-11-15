@@ -39,8 +39,8 @@ services:
       UPLOAD_DIR: uploads
       # Empty on Linux so pytesseract uses /usr/bin/tesseract from PATH
       TESSERACT_CMD: ""
-      CORS_ORIGINS: '["http://localhost", "http://localhost:3000", "http://127.0.0.1", "http://${DOMAIN:-localhost}"]'
-      FRONTEND_URL: http://${DOMAIN:-localhost}
+      CORS_ORIGINS: '["http://localhost", "http://localhost:3000", "http://127.0.0.1", "http://${DOMAIN:-localhost}", "https://${DOMAIN:-localhost}"]'
+      FRONTEND_URL: https://${DOMAIN:-localhost}
       SHOW_DEV_RESET_LINK: ${SHOW_DEV_RESET_LINK:-False}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -89,3 +89,4 @@ networks:
 
 volumes:
   postgres_data:
+
