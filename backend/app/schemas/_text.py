@@ -49,6 +49,29 @@ _STUDENT_NUMBER_MARKS = "-"
 STUDENT_NUMBER_SENTENCE = "Use letters, numbers and - only, with no spaces."
 
 
+# ── NEW 2026-11-15 (Grace, post-UAT): the SECTION gets a rule ───────────────
+#
+# It had none. _section() in schemas/student.py collapsed whitespace, capped
+# the length and turned blank into NULL - which is storage hygiene, not
+# validation. "@@@" and "<script>" both went straight into the column.
+#
+# THE SET IS THE SHARED LABEL SET. A section is a label - "BSCS 3A",
+# "BSCS 3A, morning" - and _STRICT_MARKS already describes exactly that:
+# letters, numbers, space and . , ( ) - and nothing else.
+#
+# THE COMMA IS LOAD-BEARING HERE, not merely tolerated.
+# lib/studentPaste.ts rejoins everything after the section column back into
+# the section precisely so "BSCS 3A, morning" survives a comma-separated
+# paste. A rule refusing commas would leave that code in place doing nothing.
+#
+# ONE DELIBERATE DEVIATION from every other field in this file: the test is
+# "at least one letter OR DIGIT", not "at least one letter". A section can
+# legitimately be "101". The test still refuses "---" and "...", which is what
+# it is there for.
+MAX_SECTION_LENGTH = 255
+STRICT_SECTION = True
+
+
 STRICT_EXAM_NAME = True
 STRICT_DESCRIPTION = True
 STRICT_STUDENT_NAME = True
@@ -404,6 +427,35 @@ def check_student_number(v: Optional[str]) -> str:
     if bad:
         raise ValueError(
             f"Student number cannot contain {_shown(bad)}. {STUDENT_NUMBER_SENTENCE}")
+    return v
+
+
+
+def check_section(v: Optional[str], required: bool = False) -> Optional[str]:
+    """The section, or None. Blank is an error ONLY when required=True.
+
+    The flag, not a second function, for the same reason check_middle_name
+    carries one: StudentCreate.section is required from 2026-11-15, but
+    StudentBulkRequest.section is a DEFAULT applied to rows that carry none,
+    and requiring that would 422 a whole paste whose rows each name their own.
+
+    Mirrors checkSection() in frontend/src/lib/textField.ts, including the
+    order of the tests - required, length, at-least-one-alphanumeric,
+    characters.
+    """
+    v = tidy_text(v)
+    if not v:
+        if required:
+            raise ValueError("Section is required.")
+        return None
+    if len(v) > MAX_SECTION_LENGTH:
+        raise ValueError(f"Section must be at most {MAX_SECTION_LENGTH} characters.")
+    if not any(c.isalnum() for c in v):
+        raise ValueError("Section must contain at least one letter or number.")
+    bad = _bad_chars(v, STRICT_SECTION)
+    if bad:
+        raise ValueError(
+            f"Section cannot contain {_shown(bad)}. {_allowed(STRICT_SECTION)}")
     return v
 
 

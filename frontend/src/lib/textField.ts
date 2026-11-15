@@ -397,6 +397,42 @@ export function checkStudentNumber(raw: string): string | null {
 }
 
 
+/**
+ * THE SECTION, NEW 2026-11-15 (Grace, post-UAT).
+ *
+ * It had no rule on either side. _section() on the server collapsed
+ * whitespace and capped the length; the browser did not look at it at all.
+ *
+ * It reuses the LABEL class, not a new one - a section is a label, and
+ * NOT_IN_LABEL_STRICT already means letters, numbers, space and . , ( ) -
+ *
+ * THE COMMA IS LOAD-BEARING: lib/studentPaste.ts rejoins a trailing comma
+ * into the section so "BSCS 3A, morning" survives a comma-separated paste.
+ *
+ * ONE DEVIATION from the other label checks: at least one letter OR DIGIT,
+ * because a section can legitimately be "101". It still refuses "---".
+ *
+ * Matches check_section() in backend/app/schemas/_text.py.
+ */
+export const MAX_SECTION_LENGTH = 255;
+
+export function checkSection(raw: string, required = false): string | null {
+  const v = tidyText(raw);
+  if (!v) return required ? "Section is required." : null;
+  if (v.length > MAX_SECTION_LENGTH) {
+    return `Section must be at most ${MAX_SECTION_LENGTH} characters.`;
+  }
+  if (!/[\p{L}\p{N}]/u.test(v)) {
+    return "Section must contain at least one letter or number.";
+  }
+  const bad = listBad(v, labelRe(STRICT_EXAM_NAME));
+  if (bad.length) {
+    return badCharMessage("Section", bad, allowedSentence(STRICT_EXAM_NAME));
+  }
+  return null;
+}
+
+
 export function composeStudentName(lastName: string, firstName: string,
                                    middleName?: string | null): string {
   // CHANGED 2026-11-14: an optional THIRD part - "Alcantara, Ben R."

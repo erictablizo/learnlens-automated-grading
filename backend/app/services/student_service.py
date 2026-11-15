@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Student, TestPaper
 from app.schemas._text import (check_name_part, check_middle_name,
+                              check_section,
                               check_student_number)
 
 MAX_NUMBER_LEN = 50
@@ -314,6 +315,13 @@ async def bulk_create(
             last = check_name_part(str(raw.get("last_name", "")), "Last name")
             first = check_name_part(str(raw.get("first_name", "")), "First name")
             middle = check_middle_name(str(raw.get("middle_name", "") or ""), required=True)
+            # NEW 2026-11-15. INSIDE the try on purpose - the old computation sat
+            # below the per-row handler, so a bad section would have raised past it
+            # and failed the whole paste. The docstring above promises the opposite:
+            # "a 35-row paste with one bad line must not throw away the other 34".
+            row_section = check_section(
+                " ".join(str(raw.get("section", "") or "").split()) or (sect_default or ""),
+                required=True)
         except ValueError as e:
             failed.append({"line": line, "student_number":
                            tidy_number(str(raw.get("student_number", ""))),
@@ -339,7 +347,9 @@ async def bulk_create(
             })
             continue
 
-        row_section = " ".join(str(raw.get("section", "") or "").split()) or sect_default
+        # CHANGED 2026-11-15: row_section is computed AND validated inside the
+        # try block above, so a bad section is reported with its line number like
+        # every other field instead of escaping the handler.
         student = Student(
             created_by=owner_id, student_number=number,
             last_name=last, first_name=first, middle_name=middle, section=row_section,
