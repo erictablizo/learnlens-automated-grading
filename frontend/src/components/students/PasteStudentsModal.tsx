@@ -99,7 +99,7 @@ export default function PasteStudentsModal({
           first_name: r.first_name,
           // null, not "", for a blank one - the server stores NULL and the
           // two must not become different values in the column.
-          middle_name: r.middle_name || null,
+          middle_name: r.middle_name,
           section: r.section || null,
         })),
         section.trim() || undefined,
