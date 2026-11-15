@@ -462,7 +462,7 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
       {/* CHANGED 2026-11-15. The marker and the rule arrived together - it
           was "(optional)" for exactly one day. */}
       <label className="form-label" htmlFor="edit-middle-name">
-        Middle Initial <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+        Middle Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
       </label>
       <input
         id="edit-middle-name"

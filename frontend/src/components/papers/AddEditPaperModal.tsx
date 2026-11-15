@@ -457,7 +457,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               accepted too. Matching the panel's "Middle Name" wording later is
               a label change, not a migration. */}
           <label className="form-label" htmlFor="middle-name">
-            Middle Initial <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+            Middle Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
           <input id="middle-name" className="form-input" value={middleName} readOnly
             placeholder="fills in from your student list" aria-required="true"

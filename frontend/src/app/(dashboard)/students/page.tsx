@@ -102,7 +102,7 @@ const FIELDS: ReadonlyArray<{
     required: true,  check: v => checkNamePart(v, "Last name") },
   { key: "first_name", label: "First Name", placeholder: "Ana", width: 170,
     required: true,  check: v => checkNamePart(v, "First name") },
-  { key: "middle_name", label: "Middle Initial", placeholder: "R.", width: 140,
+  { key: "middle_name", label: "Middle Name", placeholder: "R.", width: 140,
     required: true,  check: v => checkMiddleName(v, true) },
   // Section keeps its datalist and stays optional — not one of the four.
   { key: "section", label: "Section", placeholder: "BSCS 3A", width: 150,
@@ -375,7 +375,7 @@ export default function StudentsPage() {
                 <th style={{ width: 140 }}>Student No.</th>
                 <th>Last Name</th>
                 <th>First Name</th>
-                <th style={{ width: 80 }}>M.I.</th>
+                <th style={{ width: 90 }}>Middle Name</th>
                 <th style={{ width: 140 }}>Section</th>
                 <th style={{ width: 90 }}>Actions</th>
               </tr>
