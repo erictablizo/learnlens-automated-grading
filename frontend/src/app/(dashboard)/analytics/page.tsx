@@ -24,6 +24,11 @@
  *   GET /exams/{id}/papers     — existing. Drives the four student lists.
  *   GET /exams/{id}/analytics  — NEW. Drives the per-item table only; nothing
  *                                else exposes per-item results in bulk.
+ *
+ * CHANGED 2026-11-15 (Grace, post-UAT) — the per-item table was headed
+ * "Items students got wrong" and listed EVERY item, including the ones nobody
+ * missed. Sixty rows of mostly zeroes is a table a teacher scrolls past. It
+ * now shows only the items the MAJORITY missed. See MAJORITY_* below.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -49,6 +54,66 @@ import { bySurname, paperLastName, paperFirstName } from "@/lib/textField";
  * panellist asks. With the control on screen, the answer is on screen too.
  */
 const DEFAULT_PASS_PERCENT = 75;
+
+/**
+ * NEW 2026-11-15 (Grace, post-UAT):
+ *
+ *   "Instead of Items students got wrong, it should be: Items incorrectly
+ *    answered by the majority of the class. => more than 50% of the
+ *    population of the Class got wrong answer in this item."
+ *
+ * STRICTLY MORE THAN HALF. `wrong * 2 > answered`, not `>=`, and not a float
+ * comparison: 2 of 4 is not a majority, and integer arithmetic cannot drift
+ * the way `wrong / answered > 0.5` can at the boundary.
+ *
+ * THE DENOMINATOR IS `answered` — the papers that actually have a result for
+ * THAT item — and this is the one judgement call in the change, so it is
+ * written down rather than buried.
+ *
+ *   `papers_total` would count papers that have not been graded at all. They
+ *   contribute nothing to `wrong`, so an item every graded student missed
+ *   would be diluted below half by papers nobody has checked yet, and the
+ *   table would stay empty while the teacher stares at a class that plainly
+ *   failed it.
+ *
+ *   `answered` cannot do that. Its weakness is the opposite one: with 3 of 40
+ *   papers graded, "the majority" means the majority of three. That is why
+ *   the row PRINTS its own denominator — "3 of 3 (100%)" — and why the
+ *   not-included banner above the table stays.
+ *
+ * `wrong` ALREADY INCLUDES BLANKS. analytics_service counts `wrong` as
+ * `is_correct = False` and `blank` as a subset of it; this page has said so
+ * in its own footnote since 2026-11-11. So "got wrong answer" and Doc
+ * Rubrica's "did not get the correct answer" are the same number, and no
+ * subtraction is needed to honour either sentence.
+ *
+ * Items still UNDER REVIEW are in neither `wrong` nor `correct`, so they
+ * cannot push an item over the line. An item can therefore cross the
+ * threshold later, once those decisions are made — which is correct, and the
+ * footnote says it.
+ */
+const isMajorityWrong = (it: { wrong: number; answered: number }): boolean =>
+  it.answered > 0 && it.wrong * 2 > it.answered;
+
+/**
+ * The percentage, to ONE DECIMAL where it needs one.
+ *
+ * NOT Math.round to a whole number, and this was found by the bench rather
+ * than by reading. With 101 papers the smallest majority is 51, and
+ * `Math.round(51 / 101 * 100)` is **50** — so a row would have printed
+ * "51 of 101 (50%)" directly under a heading promising MORE than 50%. A
+ * table that appears to contradict its own heading is worse than one with no
+ * percentage at all.
+ *
+ * One decimal fixes it for every class size this system can hold: the
+ * smallest majority of n is floor(n/2)+1, which is at least 50 + 50/n
+ * percent, and that only rounds back down to 50.0 once n exceeds 1000.
+ * MAX_BULK_ROWS and the per-exam paper count are both far below that.
+ */
+const wrongPercent = (wrong: number, answered: number): string => {
+  const p = Math.round((wrong / answered) * 1000) / 10;
+  return `${p}%`;
+};
 
 /** Highest first; alphabetical within a tie so the order is never arbitrary. */
 const byScoreDesc = (a: Paper, b: Paper): number => {
@@ -189,6 +254,20 @@ export default function DataAnalyticsPage() {
   );
   const excluded = papers.length - final.length;
 
+  /**
+   * NEW 2026-11-15. The items more than half the class got wrong, and how
+   * many items are therefore NOT shown.
+   *
+   * `hidden` exists because a table that silently omits rows is a table a
+   * reader cannot trust. "48 other items" is the sentence that turns an empty
+   * table from "something is broken" into "nothing to report".
+   */
+  const majority = useMemo(
+    () => (items?.items ?? []).filter(isMajorityWrong),
+    [items],
+  );
+  const hidden = (items?.items.length ?? 0) - majority.length;
+
   const categories: Category[] = useMemo(() => {
     const scores = final.map(p => p.total_score as number);
     const highestScore = scores.length > 0 ? Math.max(...scores) : null;
@@ -299,7 +378,7 @@ export default function DataAnalyticsPage() {
                 )}
               </div>
 
-              <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.4rem"}}>
                 Passing mark
                 <input
                   type="number" min={1} max={100} value={passPercent}
@@ -330,38 +409,53 @@ export default function DataAnalyticsPage() {
             {categories.map(c => <CategoryBlock key={c.key} cat={c} totalItems={totalItems} />)}
 
             {/* "Provide also info of number that students did not get the
-                correct answer" — her last line, per item. */}
-            <section aria-label="Per-item results" style={{
+                correct answer" — Doc Rubrica's last line, per item, narrowed
+                on 2026-11-15 to the items the MAJORITY missed. */}
+            <section aria-label="Items most of the class got wrong" style={{
               border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
               background: "var(--surface)", padding: "0.9rem 1rem",
             }}>
               <h2 style={{
                 fontFamily: "var(--font-heading)", fontSize: "0.95rem", fontWeight: 700,
-                color: "var(--navy)", margin: "0 0 0.5rem",
+                color: "var(--navy)", margin: "0 0 0.15rem",
               }}>
-                Items students got wrong
+                Items incorrectly answered by the majority of the class
               </h2>
+              <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", margin: "0 0 0.6rem" }}>
+                More than 50% of the papers counted for an item got it wrong.
+              </p>
 
               {!items || items.items.length === 0 ? (
                 <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>
                   No paper in this exam has been graded yet, so there are no per-item results.
                 </p>
+              ) : majority.length === 0 ? (
+                /* NOT an error, and it must not read like one. Every item was
+                   answered correctly by at least half the class, which is the
+                   good outcome - so it says that, and says how many items it
+                   looked at so the number is not mistaken for a failure to
+                   load. */
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>
+                  No item was missed by more than half the class. All{" "}
+                  {items.items.length} item(s) were answered correctly by at least
+                  half of the papers counted.
+                </p>
               ) : (
                 <>
                   <div className="table-wrapper">
-                    <table aria-label="Per-item results">
+                    <table aria-label="Items most of the class got wrong">
                       <thead>
                         <tr>
                           <th style={{ width: 50 }}>Item</th>
                           <th style={{ width: 90 }}>Answer</th>
-                          <th style={{ width: 80 }}>Wrong</th>
+                          <th style={{ width: 150 }}>Got it wrong</th>
                           <th style={{ width: 80 }}>Correct</th>
                           <th style={{ width: 90 }}>Blank</th>
                           <th style={{ width: 110 }}>Under review</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {items.items.map(it => (
+                        {majority.map(it => (
                           <tr key={it.question_number}>
                             <td style={{ color: "var(--navy)", fontWeight: 600 }}>{it.question_number}</td>
                             <td style={{ color: "var(--navy)" }}>
@@ -373,11 +467,14 @@ export default function DataAnalyticsPage() {
                                 >⚠</span>
                               )}
                             </td>
-                            <td style={{
-                              fontWeight: 700,
-                              color: it.wrong > 0 ? "var(--orange)" : "var(--text-muted)",
-                            }}>
-                              {it.wrong}
+                            {/* The DENOMINATOR IS PRINTED. "3 of 3 (100%)" is a
+                                claim a reader can check; a bare "3" next to a
+                                heading that says "majority" is one they cannot. */}
+                            <td style={{ fontWeight: 700, color: "var(--orange)" }}>
+                              {it.wrong} of {it.answered}{" "}
+                              <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>
+                                ({wrongPercent(it.wrong, it.answered)})
+                              </span>
                             </td>
                             <td style={{ color: "var(--navy)" }}>{it.correct}</td>
                             <td style={{ color: "var(--text-muted)" }}>{it.blank}</td>
@@ -391,9 +488,13 @@ export default function DataAnalyticsPage() {
                   </div>
 
                   <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "0.6rem", lineHeight: 1.6 }}>
-                    Counted over the {items.papers_checked} checked paper(s) and any
+                    {majority.length} of {items.items.length} item(s) shown.
+                    {hidden > 0 && ` The other ${hidden} were answered correctly by at least half of the papers counted.`}
+                    {" "}Counted over the {items.papers_checked} checked paper(s) and any
                     graded-but-unconfirmed ones. <strong>Blank</strong> is part of
-                    <strong> Wrong</strong>, not a separate group.
+                    <strong> Wrong</strong>, not a separate group. An item still
+                    <strong> under review</strong> counts as neither, so an item can
+                    appear here later once those decisions are made.
                     {items.items.some(i => i.key_mismatch) && (
                       <> A ⚠ marks an item whose papers were graded against more than one
                       answer key — those counts are not reliable until the exam is re-checked.</>
