@@ -19,6 +19,22 @@ The number helpers are IMPORTED from the service rather than re-spelled here.
 `lower(trim(student_number))` exactly; the 2026-11-11 email-case bug happened
 because three callers each normalised their own way and only one lowercased.
 One definition, in the module that owns the index's expression.
+
+CHANGED 2026-11-15 (Grace, post-UAT) — "4 Textfields should have asterisk
+meaning validations". Two changes, and both reach existing data:
+
+  1. MIDDLE NAME IS REQUIRED on input. It was optional from 2026-11-14 until
+     today. StudentResponse keeps it Optional, and that is not an
+     inconsistency: every row written before 2026-11-14 has NULL in the
+     column, those rows still have to be readable, and the migration
+     deliberately left the column nullable so it would not refuse to run
+     while they exist. Required to WRITE, nullable to READ.
+
+  2. THE STUDENT NUMBER HAS A CHARACTER RULE. check_number() used to test
+     only for blank; it now delegates to check_student_number() in
+     schemas/_text.py — letters, digits and the hyphen, capped at 50 to match
+     varchar(50). Before this, a 51-character number reached PostgreSQL and
+     returned a driver error: a 500 where every other field answers 422.
 """
 from datetime import datetime
 from typing import List, Optional
@@ -37,14 +53,20 @@ def _first(v: str) -> str:
     return check_name_part(v, "First name")
 
 
-def _middle(v: Optional[str]) -> Optional[str]:
-    """NEW 2026-11-14. OPTIONAL - blank becomes None, not "".
+def _middle(v: str) -> str:
+    """CHANGED 2026-11-15. REQUIRED now — blank raises instead of returning None.
 
-    Shown on the screens as "Middle Initial" but stored as a name, so a
-    teacher who types "Reyes" is not refused. See check_middle_name().
+    Still stored as a NAME, not a single letter: the screens label it "Middle
+    Initial" but a teacher who types "Reyes" is not refused, and `R` is
+    rendered as `R.` by middle_initial() at compose time rather than being
+    rewritten on the way in.
+
+    `or ""` because check_middle_name's signature still returns Optional for
+    the optional callers; with required=True it can only return a non-empty
+    string or raise, so the fallback is unreachable and exists to satisfy the
+    type rather than to handle a case.
     """
-    return check_middle_name(v)
-
+    return check_middle_name(v, required=True) or ""
 
 
 def _section(v: Optional[str]) -> Optional[str]:
@@ -53,6 +75,11 @@ def _section(v: Optional[str]) -> Optional[str]:
     A student with no section and a student with a section of "" are the same
     student, and leaving both representations in the column would split the
     section dropdown in two.
+
+    NOT made required on 2026-11-15. Grace's four fields are Student No.,
+    Last Name, First Name and Middle Initial; Section is the fifth box on that
+    row and was not among them. It is also genuinely optional — a teacher may
+    keep one undivided list.
     """
     s = " ".join((v or "").split())
     if not s:
@@ -66,9 +93,10 @@ class StudentCreate(BaseModel):
     student_number: str
     last_name: str
     first_name: str
-    # NEW 2026-11-14. Optional, and LAST of the name parts so an existing caller
-    # that sends only the three required fields is unaffected.
-    middle_name: Optional[str] = None
+    # CHANGED 2026-11-15: REQUIRED. It kept its position after first_name —
+    # moving it would change nothing for a JSON body but would make the diff
+    # read as a reordering rather than a requirement change.
+    middle_name: str
     section: Optional[str] = None
 
     @field_validator("student_number")
@@ -88,9 +116,8 @@ class StudentCreate(BaseModel):
 
     @field_validator("middle_name")
     @classmethod
-    def _m(cls, v: Optional[str]) -> Optional[str]:
+    def _m(cls, v: str) -> str:
         return _middle(v)
-
 
     @field_validator("section")
     @classmethod
@@ -104,6 +131,13 @@ class StudentUpdate(StudentCreate):
     Deliberate for the same reason recorded there: the roster form always sends
     the whole row, and a partial update would need a read of the other fields
     first. There is no PATCH here.
+
+    NOTE 2026-11-15: because this inherits, the middle name is now required to
+    SAVE AN EXISTING STUDENT too. A row created before 2026-11-14 with NULL in
+    the column cannot be re-saved until one is typed. That is the agreed
+    behaviour — "require it everywhere, fix the data" — and it is the reason
+    the column itself was left nullable rather than being migrated to NOT NULL,
+    which would have refused to run at all while such rows exist.
     """
 
 
@@ -114,6 +148,8 @@ class StudentResponse(BaseModel):
     student_number: str
     last_name: str
     first_name: str
+    # STILL Optional, deliberately — see the module docstring. Required to
+    # write, nullable to read.
     middle_name: Optional[str] = None
     section: Optional[str] = None
     created_at: datetime
@@ -145,12 +181,18 @@ class StudentBulkRow(BaseModel):
 
     The fields are plain `str` so a missing one is still a 422 — the shape of
     the request is validated, only its contents are not.
+
+    CHANGED 2026-11-15: middle_name becomes `str = ""` rather than
+    `Optional[str] = None`, matching last_name and first_name. It is required
+    now, and a required field that arrives as None would be reported as a
+    different failure than one that arrives blank — one message for one
+    mistake.
     """
 
     student_number: str = ""
     last_name: str = ""
     first_name: str = ""
-    middle_name: Optional[str] = None
+    middle_name: str = ""
     section: Optional[str] = None
 
 
