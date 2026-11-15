@@ -122,6 +122,15 @@ async def add_student(
             middle_name=data.middle_name,
             section=data.section,
         )
+    except ValueError as e:
+        # NEW 2026-11-15. The service re-checks every field and raises plain
+        # ValueError; without this they arrive as an unhandled 500 with no
+        # detail, while the SAME rule in the schema answers 422 and names the
+        # field. 422 is right: the request is well-formed, a value is not.
+        #
+        # DuplicateStudent is NOT a ValueError subclass - checked, not assumed -
+        # so this cannot swallow the 409 below.
+        raise HTTPException(status_code=422, detail=str(e))
     except student_service.DuplicateStudent as dup:
         raise HTTPException(status_code=409, detail=dup.message)
 
@@ -171,6 +180,15 @@ async def edit_student(
             middle_name=data.middle_name,
             section=data.section,
         )
+    except ValueError as e:
+        # NEW 2026-11-15. The service re-checks every field and raises plain
+        # ValueError; without this they arrive as an unhandled 500 with no
+        # detail, while the SAME rule in the schema answers 422 and names the
+        # field. 422 is right: the request is well-formed, a value is not.
+        #
+        # DuplicateStudent is NOT a ValueError subclass - checked, not assumed -
+        # so this cannot swallow the 409 below.
+        raise HTTPException(status_code=422, detail=str(e))
     except student_service.DuplicateStudent as dup:
         raise HTTPException(status_code=409, detail=dup.message)
     if not student:
