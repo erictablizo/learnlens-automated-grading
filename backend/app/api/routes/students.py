@@ -117,6 +117,9 @@ async def add_student(
             student_number=data.student_number,
             last_name=data.last_name,
             first_name=data.first_name,
+            # NEW 2026-11-15. Without this the single-row form stored NULL, silently -
+            # create_student's middle_name parameter simply defaulted.
+            middle_name=data.middle_name,
             section=data.section,
         )
     except student_service.DuplicateStudent as dup:
@@ -143,6 +146,7 @@ async def get_student(
         student_number=student.student_number,
         last_name=student.last_name,
         first_name=student.first_name,
+        middle_name=student.middle_name,
         section=student.section,
         created_at=student.created_at,
         papers_count=count,
@@ -162,6 +166,9 @@ async def edit_student(
             student_number=data.student_number,
             last_name=data.last_name,
             first_name=data.first_name,
+            # NEW 2026-11-15. This is the line whose absence produced
+            # "ValueError: Middle name is required." on a form that had one typed in.
+            middle_name=data.middle_name,
             section=data.section,
         )
     except student_service.DuplicateStudent as dup:
