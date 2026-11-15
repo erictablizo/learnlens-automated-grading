@@ -8,14 +8,32 @@
  *   Alex Passion / Julius Bancud, page 2 item 4: "Test Paper -> ID # Student /
  *   ID Student # -> file of Test Exam / Primary Key -> Additional Table"
  *
- * This is the prerequisite for item 7, "Batch upload of Exam": once a student
- * number names the image file, the upload knows whose paper is whose.
- *
  * CHANGED 2026-11-14 — a MIDDLE INITIAL box and column (Recommendations
- * page 1: "Student Middle Name"). Stored as a name, labelled as an initial,
- * optional everywhere: a blank one is never an error and is sent as null
- * rather than "", so the column holds NULL and "not stated" stays
- * distinguishable from "deliberately empty".
+ * page 1: "Student Middle Name").
+ *
+ * CHANGED 2026-11-15 (Grace, post-UAT) — "4 Textfields should have asterisk
+ * meaning validations".
+ *
+ * THIS SCREEN HAD NO CLIENT-SIDE VALIDATION AT ALL. It posted whatever was
+ * typed and printed whichever 422 came back, one field at a time, with no
+ * marker on the box that caused it. So the asterisks arrive together with the
+ * checking they are promising:
+ *
+ *   Student No.      checkStudentNumber - letters, digits, hyphen, no spaces,
+ *                    50 characters, and REQUIRED
+ *   Last / First     checkNamePart, the 2026-11-04 rule, unchanged
+ *   Middle Initial   checkMiddleName(v, true) - the same character rule as a
+ *                    name part, now REQUIRED
+ *   Section          unchanged and still optional. It is the fifth box on this
+ *                    row and was not one of the four.
+ *
+ * Every one of those is the browser copy of the function in
+ * backend/app/schemas/_text.py, so a value refused here is refused there with
+ * the same sentence - measured, 56 checks, 0 disagreements.
+ *
+ * THE SERVER STILL VALIDATES. This is a courtesy, not a gate: formError below
+ * still shows whatever the API says, because a 409 on a duplicate number is a
+ * thing only the server can know.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -27,6 +45,8 @@ import { studentService } from "@/services/studentService";
 import type { Student, StudentBulkResult } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
+// NEW 2026-11-15 — the same rules the API applies, in the browser.
+import { checkStudentNumber, checkNamePart, checkMiddleName } from "@/lib/textField";
 
 const IconEdit = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -60,8 +80,34 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
   );
 }
 
-// CHANGED 2026-11-14: middle_name joins the blank form.
 const BLANK = { student_number: "", last_name: "", first_name: "", middle_name: "", section: "" };
+type FieldKey = keyof typeof BLANK;
+
+/**
+ * NEW 2026-11-15. The row of boxes, with its rule beside each one.
+ *
+ * The CHECK LIVES IN THE TABLE, not in a switch inside validate(). A field
+ * that is added later cannot then be added without a rule, and the asterisk
+ * is derived from `required` rather than typed into the JSX by hand - so a
+ * box cannot be marked required and left unchecked, which is exactly what
+ * this screen was before today.
+ */
+const FIELDS: ReadonlyArray<{
+  key: FieldKey; label: string; placeholder: string; width: number;
+  required: boolean; check: (v: string) => string | null;
+}> = [
+  { key: "student_number", label: "Student No.", placeholder: "2021-00123", width: 160,
+    required: true,  check: v => checkStudentNumber(v) },
+  { key: "last_name", label: "Last Name", placeholder: "Cruz", width: 170,
+    required: true,  check: v => checkNamePart(v, "Last name") },
+  { key: "first_name", label: "First Name", placeholder: "Ana", width: 170,
+    required: true,  check: v => checkNamePart(v, "First name") },
+  { key: "middle_name", label: "Middle Initial", placeholder: "R.", width: 140,
+    required: true,  check: v => checkMiddleName(v, true) },
+  // Section keeps its datalist and stays optional — not one of the four.
+  { key: "section", label: "Section", placeholder: "BSCS 3A", width: 150,
+    required: false, check: () => null },
+];
 
 export default function StudentsPage() {
   const router = useRouter();
@@ -78,6 +124,8 @@ export default function StudentsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // NEW 2026-11-15 — one message per box, cleared as that box is typed in.
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
 
   const [showPaste, setShowPaste] = useState(false);
   const [deleting, setDeleting] = useState<{ student: Student; papers: number } | null>(null);
@@ -106,9 +154,30 @@ export default function StudentsPage() {
     load();
   }, [load, router]);
 
-  const resetForm = () => { setForm({ ...BLANK }); setEditingId(null); setFormError(null); };
+  const resetForm = () => {
+    setForm({ ...BLANK }); setEditingId(null);
+    setFormError(null); setFieldErrors({});
+  };
+
+  /** NEW 2026-11-15. Every box, every time — not first-failure-wins, because a
+   *  teacher correcting one field and pressing Add again only to be told about
+   *  the next one is four round trips for one row. */
+  const validate = (): boolean => {
+    const next: Partial<Record<FieldKey, string>> = {};
+    for (const f of FIELDS) {
+      const msg = f.check(form[f.key]);
+      if (msg) next[f.key] = msg;
+    }
+    setFieldErrors(next);
+    const count = Object.keys(next).length;
+    setFormError(count === 0 ? null
+      : count === 1 ? "One field needs your attention."
+      : `${count} fields need your attention.`);
+    return count === 0;
+  };
 
   const handleSave = async () => {
+    if (!validate()) return;
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
     setSaving(true); setFormError(null);
@@ -116,10 +185,11 @@ export default function StudentsPage() {
       student_number: form.student_number,
       last_name: form.last_name,
       first_name: form.first_name,
-      // CHANGED 2026-11-14. `|| null`, not the raw "": the server stores NULL
-      // for a blank middle name, and sending "" would put an empty string in a
-      // column where "not stated" is supposed to be NULL.
-      middle_name: form.middle_name || null,
+      // CHANGED 2026-11-15. No `|| null` any more: validate() has just proved
+      // this is a non-empty valid name, and sending null for a required field
+      // would be a 422 the teacher cannot act on. Section keeps its `|| null`
+      // because a blank section really is NULL.
+      middle_name: form.middle_name,
       section: form.section || null,
     };
     try {
@@ -135,7 +205,8 @@ export default function StudentsPage() {
     } catch (e: unknown) {
       // A 409 arrives here with the server's sentence already on .message -
       // "Student number X is already used by Cruz, Ana" - because api.ts maps
-      // `detail` onto it. Nothing to compose.
+      // `detail` onto it. Nothing to compose, and nothing the browser could
+      // have known before asking.
       setFormError(e instanceof Error ? e.message : "Could not save that student.");
     } finally { setSaving(false); }
   };
@@ -148,14 +219,9 @@ export default function StudentsPage() {
       section: s.section ?? "",
     });
     setFormError(null);
+    setFieldErrors({});
   };
 
-  /**
-   * Ask the server how many papers are linked BEFORE showing the confirm, so
-   * the dialog can say so. Removing a student does not delete their papers -
-   * the FK is ON DELETE SET NULL - but it does unlink them, and a teacher
-   * should be told that three graded papers are about to lose their link.
-   */
   const askDelete = async (s: Student) => {
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
@@ -184,11 +250,6 @@ export default function StudentsPage() {
     } finally { setDeleteBusy(false); }
   };
 
-  /**
-   * The bulk response is a REPORT, not a success or a failure. All three lists
-   * matter: 32 added, 2 already there and 1 unreadable is a normal outcome of
-   * re-pasting a list, and collapsing it to "error" would hide the 32.
-   */
   const handleBulkAdded = async (r: StudentBulkResult) => {
     setShowPaste(false);
     const detail = [...r.skipped, ...r.failed]
@@ -237,44 +298,61 @@ export default function StudentsPage() {
             {formError}
           </div>
         )}
+        {/* alignItems: flex-start, not flex-end — a box that grows an error
+            message underneath must not drag its neighbours down with it. */}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap",
-                      alignItems: "flex-end", marginBottom: "1.5rem" }}>
-          {/* CHANGED 2026-11-14: Middle Initial sits AFTER First Name, which is
-              where the panel's class list puts it and where a teacher reading
-              a paper expects it. It is the only box here that is optional. */}
-          {([
-            ["student_number", "Student No.", "2021-00123", 150],
-            ["last_name", "Last Name", "Cruz", 170],
-            ["first_name", "First Name", "Ana", 170],
-            ["middle_name", "Middle Initial", "R.", 110],
-            ["section", "Section", "BSCS 3A", 150],
-          ] as const).map(([field, label, placeholder, width]) => (
-            <div key={field} style={{ flex: `0 1 ${width}px` }}>
-              <label className="form-label" htmlFor={`f-${field}`}>{label}</label>
+                      alignItems: "flex-start", marginBottom: "1.5rem" }}>
+          {FIELDS.map(f => (
+            <div key={f.key} style={{ flex: `0 1 ${f.width}px` }}>
+              <label className="form-label" htmlFor={`f-${f.key}`}>
+                {f.label}
+                {f.required && (
+                  <span aria-hidden="true" style={{ color: "var(--error)" }}> *</span>
+                )}
+              </label>
               <input
-                id={`f-${field}`}
+                id={`f-${f.key}`}
                 className="form-input"
-                value={form[field]}
-                list={field === "section" ? "roster-sections" : undefined}
-                onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
+                value={form[f.key]}
+                list={f.key === "section" ? "roster-sections" : undefined}
+                aria-required={f.required || undefined}
+                aria-invalid={!!fieldErrors[f.key]}
+                style={fieldErrors[f.key] ? { borderBottomColor: "var(--error)" } : undefined}
+                onChange={e => {
+                  const v = e.target.value;
+                  setForm(p => ({ ...p, [f.key]: v }));
+                  // Clear THIS box's message only. Re-running every rule on
+                  // every keystroke would light up boxes the teacher has not
+                  // reached yet.
+                  setFieldErrors(p => (p[f.key] ? { ...p, [f.key]: undefined } : p));
+                }}
                 onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void handleSave(); } }}
-                placeholder={placeholder}
+                placeholder={f.placeholder}
               />
+              {fieldErrors[f.key] && (
+                <p role="alert" style={{ color: "var(--error)", fontSize: "0.72rem",
+                                         margin: "0.15rem 0 0", lineHeight: 1.35 }}>
+                  {fieldErrors[f.key]}
+                </p>
+              )}
             </div>
           ))}
           <datalist id="roster-sections">
             {sections.map(s => <option key={s} value={s} />)}
           </datalist>
-          <Button variant="primary" onClick={handleSave} loading={saving} disabled={saving}
-                  style={{ width: "auto", padding: "0.55rem 1.2rem" }}>
-            {editingId === null ? "Add" : "Save"}
-          </Button>
-          {editingId !== null && (
-            <Button variant="secondary" onClick={resetForm} disabled={saving}
+          {/* The buttons sit on the input line, not the label line. */}
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.6rem" }}>
+            <Button variant="primary" onClick={handleSave} loading={saving} disabled={saving}
                     style={{ width: "auto", padding: "0.55rem 1.2rem" }}>
-              Cancel
+              {editingId === null ? "Add" : "Save"}
             </Button>
-          )}
+            {editingId !== null && (
+              <Button variant="secondary" onClick={resetForm} disabled={saving}
+                      style={{ width: "auto", padding: "0.55rem 1.2rem" }}>
+                Cancel
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* ── Filters ── */}
@@ -319,8 +397,10 @@ export default function StudentsPage() {
                   <td style={{ fontWeight: 600, color: "var(--navy)" }}>{s.student_number}</td>
                   <td>{s.last_name}</td>
                   <td>{s.first_name}</td>
-                  {/* An em dash, like Section, so an absent middle name reads as
-                      "none" rather than as a rendering fault. */}
+                  {/* An em dash for a row written before 2026-11-14, which has
+                      NULL in the column. Those rows are still READ - the
+                      requirement is on writing - so this stays. Editing one
+                      now demands a middle initial before it can be saved. */}
                   <td style={{ color: "var(--text-muted)" }}>{s.middle_name ?? "—"}</td>
                   <td style={{ color: "var(--text-muted)" }}>{s.section ?? "—"}</td>
                   <td>

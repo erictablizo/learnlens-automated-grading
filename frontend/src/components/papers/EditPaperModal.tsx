@@ -301,11 +301,15 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
     if (lastMsg) { setLastNameError(lastMsg); setError(lastMsg); return; }
     const firstMsg = checkNamePart(firstName, "First name");
     if (firstMsg) { setFirstNameError(firstMsg); setError(firstMsg); return; }
-    // NEW 2026-11-14. Blank is NOT an error here either - checkMiddleName
-    // returns null for an empty box, matching check_middle_name() on the
-    // server. Most of the 18 legacy papers have no middle name at all and
-    // must stay saveable.
-    const midMsg = checkMiddleName(middleName);
+    // CHANGED 2026-11-15. REQUIRED now, matching PaperUpdate on the server,
+    // which refuses a save without one since the same day.
+    //
+    // THIS REACHES THE 18 LEGACY PAPERS. A row stored as "Tablizo, Eric" has
+    // no middle name to recover, so hand-splitting one now needs an initial
+    // read off the physical paper or the roster. That is the agreed
+    // behaviour - "require it everywhere, fix the data" - and the notice
+    // above the boxes says so rather than leaving a bare refusal.
+    const midMsg = checkMiddleName(middleName, true);
     if (midMsg) { setMiddleNameError(midMsg); setError(midMsg); return; }
 
     const token = getToken();
@@ -416,12 +420,16 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
         }}>
           This paper was saved before Last Name, First Name and Middle Initial
           were separate fields. They have been filled in from <strong>{paper.student_name}</strong> as
-          a best guess — please check them before saving.
+          a best guess — please check them before saving. If no middle initial
+          could be recovered, read it off the paper or the student list: it is
+          required now.
         </div>
       )}
 
       {/* Name — two fields as of 2026-11-04, three as of 2026-11-14 */}
-      <label className="form-label" htmlFor="edit-last-name">Last Name</label>
+      <label className="form-label" htmlFor="edit-last-name">
+        Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+      </label>
       <input
         id="edit-last-name"
         className="form-input"
@@ -435,7 +443,9 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
       />
       {nameErr(lastNameError)}
 
-      <label className="form-label" htmlFor="edit-first-name">First Name</label>
+      <label className="form-label" htmlFor="edit-first-name">
+        First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+      </label>
       <input
         id="edit-first-name"
         className="form-input"
@@ -449,11 +459,10 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
       />
       {nameErr(firstNameError)}
 
-      {/* NEW 2026-11-14. No required marker and no aria-required: the column
-          is nullable and check_middle_name() treats blank as "not stated". */}
+      {/* CHANGED 2026-11-15. The marker and the rule arrived together - it
+          was "(optional)" for exactly one day. */}
       <label className="form-label" htmlFor="edit-middle-name">
-        Middle Initial{" "}
-        <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
+        Middle Initial <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
       </label>
       <input
         id="edit-middle-name"
@@ -461,6 +470,7 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
         value={middleName}
         onChange={e => { setMiddleName(e.target.value); setMiddleNameError(null); setError(null); }}
         placeholder="e.g. R."
+        aria-required="true"
         aria-invalid={!!middleNameError}
         disabled={saving}
         style={middleNameError ? { borderBottomColor: "var(--error)" } : undefined}

@@ -18,9 +18,19 @@
  * CHANGED 2026-11-14 — the MIDDLE NAME, and this is the one change here that
  * can alter how an OLD paste is read. See pickColumns() below.
  *
+ * CHANGED 2026-11-15 — withIssues() now applies the REAL field rules rather
+ * than testing for blank. See the comment there; it is the change in this
+ * file most likely to make a list that pasted cleanly yesterday flag rows
+ * today.
+ *
  * Pure functions, no React, no network — measured by
- * measure/2026-11-12_student_paste.mjs.
+ * measure/2026-11-15_student_paste_required.mjs.
  */
+// NEW 2026-11-15. The SAME functions the single-row form calls, which are the
+// browser copies of check_student_number / check_name_part / check_middle_name
+// in backend/app/schemas/_text.py. Imported rather than reimplemented: three
+// copies of one rule is how the 2026-11-11 email-case bug happened.
+import { checkStudentNumber, checkNamePart, checkMiddleName } from "@/lib/textField";
 
 /** One line of the paste, after splitting. `line` is 1-based in the ORIGINAL text. */
 export interface ParsedRow {
@@ -28,7 +38,7 @@ export interface ParsedRow {
   student_number: string;
   last_name: string;
   first_name: string;
-  /** NEW 2026-11-14. OPTIONAL — a blank middle name is never an issue. */
+  /** NEW 2026-11-14. CHANGED 2026-11-15 — required, like the other three. */
   middle_name: string;
   section: string;
   /** Why this row cannot be submitted as it stands. Empty means it is fine. */
@@ -49,15 +59,6 @@ export interface ParseResult {
    */
   fourthColumn: "middle" | "section" | "none";
 }
-
-const HEADER_WORDS = [
-  "id", "no", "no.", "number", "student", "student no", "student number",
-  "last", "last name", "surname", "family name",
-  "first", "first name", "given", "given name",
-  // NEW 2026-11-14
-  "middle", "middle name", "mi", "m.i.", "middle initial",
-  "section", "class", "year",
-];
 
 function pickDelimiter(lines: string[]): "tab" | "comma" {
   return lines.some(l => l.includes("\t")) ? "tab" : "comma";
@@ -104,9 +105,9 @@ interface ColumnMap {
  * Decide what each column means. THIS IS THE DELICATE PART OF THE 2026-11-14
  * CHANGE, and it is delicate because of an old paste, not a new one.
  *
- * Before today the parser read field 4 and everything after it as the SECTION.
- * The panel's own order is Number, Last, First, MIDDLE — so a list pasted last
- * week as
+ * Before 2026-11-14 the parser read field 4 and everything after it as the
+ * SECTION. The panel's own order is Number, Last, First, MIDDLE — so a list
+ * pasted before then as
  *
  *     2021-00123, Cruz, Ana, BSCS 3A
  *
@@ -230,10 +231,24 @@ function collapse(v: string): string {
 /**
  * Flag what cannot be submitted, and what is a duplicate WITHIN the paste.
  *
- * THE MIDDLE NAME IS NEVER FLAGGED. It is optional on the server
- * (check_middle_name returns None for blank), so a missing one is not a
- * problem to fix - and a red row for an absent middle initial would make the
- * common case look broken.
+ * CHANGED 2026-11-15 — THIS NOW APPLIES THE REAL RULES, not a blank test.
+ *
+ * Until today each of the three required fields was checked with `if (!x)`,
+ * so a row reading `2021@123, Cruz3, Ana` passed the preview clean and was
+ * then refused by the API one row at a time. The preview's whole purpose is
+ * that the teacher sees what is wrong BEFORE she submits, and it was only
+ * ever catching the emptiest case.
+ *
+ * It calls checkStudentNumber / checkNamePart / checkMiddleName — the same
+ * functions the single-row form uses, which are the browser copies of the
+ * server's. So the preview, the Add-a-student box and the API now say the
+ * same sentence about the same value.
+ *
+ * THE MIDDLE NAME IS NOW REQUIRED, reversing the 2026-11-14 note here that
+ * said it would never be flagged. Grace's decision of 2026-11-15: "require it
+ * everywhere, fix the data". A three-column list of Number/Last/First will
+ * therefore flag EVERY row until a middle-name column is added — which is the
+ * intended behaviour and is worth knowing before you paste 35 lines.
  *
  * Exported so the preview table can re-flag after an edit.
  */
@@ -241,10 +256,18 @@ export function withIssues(rows: ParsedRow[]): ParsedRow[] {
   const seen = new Map<string, number>();
   return rows.map(r => {
     const issues: string[] = [];
-    if (!r.student_number) issues.push("Student number is missing.");
-    if (!r.last_name) issues.push("Last name is missing.");
-    if (!r.first_name) issues.push("First name is missing.");
+    const numMsg = checkStudentNumber(r.student_number);
+    if (numMsg) issues.push(numMsg);
+    const lastMsg = checkNamePart(r.last_name, "Last name");
+    if (lastMsg) issues.push(lastMsg);
+    const firstMsg = checkNamePart(r.first_name, "First name");
+    if (firstMsg) issues.push(firstMsg);
+    const midMsg = checkMiddleName(r.middle_name, true);
+    if (midMsg) issues.push(midMsg);
 
+    // The duplicate test stays keyed on the RAW lowercased number rather than
+    // on a validated one, so two copies of the same bad number still read as
+    // duplicates of each other and the teacher fixes one mistake, not two.
     if (r.student_number) {
       const key = r.student_number.toLowerCase();
       const firstSeen = seen.get(key);
@@ -271,7 +294,7 @@ export function submittableRows(rows: readonly ParsedRow[]): ParsedRow[] {
  * and "read as tab-separated" is the sentence that explains it.
  *
  * CHANGED 2026-11-14: it also says how the FOURTH column was read, because
- * that is the one thing about this parse that changed today and the one a
+ * that is the one thing about this parse that changed that day and the one a
  * teacher with an older list would otherwise have to spot for herself.
  */
 export function parseSummary(r: ParseResult): string {

@@ -48,10 +48,25 @@
  *             screen is DISPLAYING what will be stored, not sending it.
  *
  *   UNMATCHED the box is typed and sent, which needed PaperCreate to gain the
- *             field - apply_2026-11-14_paper_middle.py. Unlike the 2026-11-04
- *             change this one is NOT deploy-coupled: middle_name has a
- *             default, so an old payload still validates and a new payload
- *             against an old backend merely has the key ignored.
+ *             field - apply_2026-11-14_paper_middle.py.
+ *
+ * CHANGED 2026-11-15 (Grace, post-UAT): THE STUDENT NO. IS REQUIRED AND MUST
+ * MATCH. An unmatched number is now a blocking error instead of a quiet
+ * fallback, so the UNMATCHED path above no longer exists on this screen.
+ *
+ * WHAT THAT COSTS, recorded because it reverses a documented decision: the
+ * 2026-11-12 migration comment says "a paper can also be added by name alone
+ * and linked later", and that is no longer true here. A teacher whose roster
+ * is empty cannot add a paper at all - she adds the student first. The
+ * endpoint still exists and still works; nothing in the UI calls it.
+ *
+ * WHAT IT BUYS: every paper written from this screen carries student_id, so
+ * the batch upload, the per-student lookup and ux_test_papers_exam_student
+ * all hold for every row rather than for most of them.
+ *
+ * The three name boxes are READ-ONLY ALWAYS now. They are never typed and
+ * never sent - the server reads all three off the roster row - so their
+ * asterisks mark fields that must be POPULATED, which matching guarantees.
  */
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
@@ -70,7 +85,11 @@ import { PageUploadState, GradeResult } from "@/types/paper";
 // copies of the functions in backend/app/schemas/_text.py, which is the point
 // of that module existing - the screen and the server must agree on what a
 // middle name may contain and on how "R" is written inside a composed name.
-import { checkNamePart, checkMiddleName, middleInitial, tidyText } from "@/lib/textField";
+// CHANGED 2026-11-15: checkNamePart, checkMiddleName and tidyText are gone
+// from this screen. Nothing here types or sends a name any more - the server
+// reads all three from the roster - so validating them here would refuse a
+// value this dialog cannot edit. checkStudentNumber is the one rule left.
+import { checkStudentNumber, middleInitial } from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
@@ -116,9 +135,8 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   const [firstName, setFirstName] = useState("");
   // NEW 2026-11-14 — the third, OPTIONAL part.
   const [middleName, setMiddleName] = useState("");
-  const [lastNameError,   setLastNameError]   = useState<string | null>(null);
-  const [firstNameError,  setFirstNameError]  = useState<string | null>(null);
-  const [middleNameError, setMiddleNameError] = useState<string | null>(null);
+  // CHANGED 2026-11-15: one error, on the only box that is typed.
+  const [numberError, setNumberError] = useState<string | null>(null);
   const [pageCount,   setPageCount]   = useState(Math.max(1, examPages));
   const [pages,       setPages]       = useState<PageUploadState[]>(() => blankPages(Math.max(1, examPages)));
   const [step,        setStep]        = useState<"form" | "uploading" | "grading" | "done">("form");
@@ -168,15 +186,21 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setLastName(matched.last_name);
     setFirstName(matched.first_name);
     setMiddleName(matched.middle_name ?? "");
-    setLastNameError(null);
-    setFirstNameError(null);
-    setMiddleNameError(null);
+    setNumberError(null);
   }, [matched]);
 
-  /** Clear the number and unlock the names, KEEPING what the roster filled in.
-   *  The teacher is most likely correcting a spelling for this one paper, and
-   *  blanking the boxes would make them retype a name they can see. */
-  const unlink = () => setStudentNumber("");
+  /** CHANGED 2026-11-15. Clear BOTH the number and the names.
+   *
+   *  It used to keep the names so a teacher could correct a spelling for one
+   *  paper. That is no longer possible - the names are read-only and come
+   *  from the roster - so leaving them filled after Clear would show a name
+   *  belonging to a student this paper is no longer linked to. Spelling is
+   *  corrected on the Students page, where it belongs. */
+  const unlink = () => {
+    setStudentNumber("");
+    setLastName(""); setFirstName(""); setMiddleName("");
+    setNumberError(null);
+  };
 
   const handlePageCountChange = (n: number) => {
     setPageCount(n);
@@ -210,29 +234,33 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   const validate = (): boolean => {
     let ok = true;
     setGlobalError(null);
-    setLastNameError(null);
-    setFirstNameError(null);
-    setMiddleNameError(null);
-    // CHANGED 2026-11-14: the two name rules are SKIPPED when a roster student
-    // is matched, because those names are then never sent - the server reads
-    // them from the roster row. Checking them here would let a name the
-    // teacher legitimately saved on the Students page block a paper on a
-    // screen that cannot edit it.
-    if (!matched) {
-      // CHANGED 2026-11-04 (Doc Rubrica): two fields, same rule, same words and
-      // same order as check_name_part() in backend/app/schemas/_text.py. A comma
-      // in either box gets its own sentence, because a comma there means the
-      // teacher typed "Surname, First name" into one of them.
-      const lastMsg = checkNamePart(lastName, "Last name");
-      if (lastMsg) { setLastNameError(lastMsg); ok = false; }
-      const firstMsg = checkNamePart(firstName, "First name");
-      if (firstMsg) { setFirstNameError(firstMsg); ok = false; }
-      // NEW 2026-11-14. BLANK IS NOT AN ERROR - checkMiddleName returns null
-      // for an empty box, exactly as check_middle_name() does on the server.
-      // A red row for a student who has no middle name would make the
-      // ordinary case look broken.
-      const midMsg = checkMiddleName(middleName);
-      if (midMsg) { setMiddleNameError(midMsg); ok = false; }
+    setNumberError(null);
+    // CHANGED 2026-11-15. ONE rule, on the one box that is typed.
+    //
+    // The three name boxes are not checked because they are not typed and not
+    // sent: the server reads all three off the roster row the number names.
+    // Validating them here would let a name the teacher legitimately saved on
+    // the Students page block a paper on a screen that cannot edit it.
+    //
+    // THE ORDER MATTERS. The character rule runs first, so "2021 00123" is
+    // told it has a space rather than being told it is not on the list - the
+    // second sentence would send the teacher to the roster to look for a
+    // student who is already there.
+    const numMsg = checkStudentNumber(studentNumber);
+    if (numMsg) {
+      setNumberError(numMsg);
+      ok = false;
+    } else if (roster === null) {
+      // The fetch has not landed. Saying "not on your list" here would be a
+      // claim we cannot support yet.
+      setNumberError("Still reading your student list — try again in a moment.");
+      ok = false;
+    } else if (!matched) {
+      setNumberError(
+        "That number is not on your student list. Add the student on the " +
+        "Students page first, then come back — the paper is linked to them " +
+        "by number, not by name.");
+      ok = false;
     }
     const checked = pages.map(p => ({
       ...p,
@@ -280,21 +308,18 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       // column must not hold two spellings of "no middle name"; the server
       // does the same coercion, and agreeing with it here means the value
       // round-trips unchanged.
-      if (matched) {
-        const paper = await paperService.createForStudent(examId, matched.student_number, token);
-        paperId = paper.paper_id;
-      } else {
-        const paper = await paperService.create(
-          examId,
-          {
-            last_name:   tidyText(lastName),
-            first_name:  tidyText(firstName),
-            middle_name: tidyText(middleName) || null,
-          },
-          token,
-        );
-        paperId = paper.paper_id;
+      // CHANGED 2026-11-15: ONE create path. validate() has already proved a
+      // roster student is matched, so `matched` cannot be null here - but it
+      // is checked rather than asserted, because a non-null assertion would
+      // be a promise about a race (the roster reloading between validate and
+      // save) that nothing in this file actually prevents.
+      if (!matched) {
+        setGlobalError("That student number is no longer on your list. Close this and try again.");
+        setStep("form");
+        return;
       }
+      const paper = await paperService.createForStudent(examId, matched.student_number, token);
+      paperId = paper.paper_id;
 
       for (let i = 0; i < pages.length; i++) {
         const p = pages[i];
@@ -337,12 +362,11 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       </p>
     );
 
-  // NEW 2026-11-14. Read-only rather than disabled: a disabled input is skipped
-  // by the keyboard and greyed to the point of looking broken, and the teacher
-  // still needs to be able to select and read the name that will be stored.
-  const lockedInput = matched
-    ? { background: "var(--bg, #f4f4f5)", color: "var(--text-muted)" }
-    : undefined;
+  // NEW 2026-11-14, ALWAYS ON as of 2026-11-15. Read-only rather than
+  // disabled: a disabled input is skipped by the keyboard and greyed to the
+  // point of looking broken, and the teacher still needs to be able to select
+  // and read the name that will be stored.
+  const lockedInput = { background: "var(--bg, #f4f4f5)", color: "var(--text-muted)" };
 
   return (
     <Modal title="Add Paper" onClose={busy ? () => {} : onClose}>
@@ -352,14 +376,18 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               because it is the field that fills the other two. Optional - the
               label says so, and leaving it blank is the 2026-11-04 behaviour
               exactly. */}
+          {/* CHANGED 2026-11-15: REQUIRED. It was "(optional)" from 2026-11-14
+              until today, when it became the field the whole dialog turns on. */}
           <label className="form-label" htmlFor="student-number">
-            Student No.{" "}
-            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
+            Student No. <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
           <input id="student-number" className="form-input" value={studentNumber}
-            onChange={e => { setStudentNumber(e.target.value); setGlobalError(null); }}
+            onChange={e => { setStudentNumber(e.target.value); setNumberError(null); setGlobalError(null); }}
             placeholder="e.g. 2021-00123" autoComplete="off"
+            aria-required="true" aria-invalid={!!numberError}
+            style={numberError ? { borderBottomColor: "var(--error)" } : undefined}
             aria-describedby="student-number-hint" />
+          {nameErr(numberError)}
 
           <p id="student-number-hint" style={{
             fontSize: "0.78rem", marginTop: "-0.9rem", marginBottom: "0.9rem",
@@ -387,8 +415,8 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               : studentNumber.trim()
               ? (roster === null
                   ? "Looking that number up…"
-                  : "Not on your student list — the names below will be used, and this paper will not be linked.")
-              : "Type the number written on the paper and the names fill in from your student list."}
+                  : "Not on your student list. Add the student on the Students page first.")
+              : "Type the number written on the paper. The names fill in from your student list."}
           </p>
 
           {/* CHANGED 2026-11-04. The old placeholder was "e.g. Tablizo, Eric",
@@ -396,50 +424,44 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               comma is now refused with its own message. These two teach the
               shape the two boxes actually want.
 
-              CHANGED 2026-11-14: read-only while a student number is matched,
-              because those names come from the roster and are not sent from
-              here. Edit them on the Students page, or press Clear. */}
+              CHANGED 2026-11-15: read-only ALWAYS. These three come from the
+              roster row the number names and are never sent from here, so
+              there is nothing to type. Correct a spelling on the Students
+              page; it is the one place that owns these values. */}
           <label className="form-label" htmlFor="last-name">
             Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
-          <input id="last-name" className="form-input" value={lastName}
-            onChange={e => { setLastName(e.target.value); setLastNameError(null); }}
-            placeholder="e.g. Dela Cruz-Santos" aria-required="true" aria-invalid={!!lastNameError}
-            readOnly={!!matched}
-            style={lastNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
-          {nameErr(lastNameError)}
+          <input id="last-name" className="form-input" value={lastName} readOnly
+            placeholder="fills in from your student list" aria-required="true"
+            style={lockedInput} />
 
           <label className="form-label" htmlFor="first-name">
             First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
-          <input id="first-name" className="form-input" value={firstName}
-            onChange={e => { setFirstName(e.target.value); setFirstNameError(null); }}
-            placeholder="e.g. Ma. Teresa" aria-required="true" aria-invalid={!!firstNameError}
-            readOnly={!!matched}
-            style={firstNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
-          {nameErr(firstNameError)}
+          <input id="first-name" className="form-input" value={firstName} readOnly
+            placeholder="fills in from your student list" aria-required="true"
+            style={lockedInput} />
 
           {/* NEW 2026-11-14 (Alex & Bancud, Recommendations page 1, "Student
               Middle Name"). AFTER First Name, matching both the panel's own
               order on that page and the Students page.
 
-              NO RED ASTERISK, and that is deliberate: the column is nullable,
-              check_middle_name() treats blank as "not stated" rather than as
-              an error, and a required marker here would contradict the server.
+              CHANGED 2026-11-15: it HAS a red asterisk now. StudentCreate
+              requires a middle name, so every roster row written from today
+              carries one and this box is always filled. A row created before
+              2026-11-14 may still hold NULL - it shows blank here, and that
+              student has to be edited on the Students page before a paper can
+              be added for them.
 
               Labelled "Middle Initial" and stored as a NAME, so "Reyes" is
               accepted too. Matching the panel's "Middle Name" wording later is
               a label change, not a migration. */}
           <label className="form-label" htmlFor="middle-name">
-            Middle Initial{" "}
-            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
+            Middle Initial <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
-          <input id="middle-name" className="form-input" value={middleName}
-            onChange={e => { setMiddleName(e.target.value); setMiddleNameError(null); }}
-            placeholder="e.g. R." aria-invalid={!!middleNameError}
-            readOnly={!!matched}
-            style={middleNameError ? { borderBottomColor: "var(--error)" } : lockedInput} />
-          {nameErr(middleNameError)}
+          <input id="middle-name" className="form-input" value={middleName} readOnly
+            placeholder="fills in from your student list" aria-required="true"
+            style={lockedInput} />
 
           <div style={{ marginBottom: "1rem" }}>
             <label className="form-label" htmlFor="page-count">Pages</label>
