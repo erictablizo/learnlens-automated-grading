@@ -132,7 +132,7 @@ async def override_answer(
 
     key_map = await _key_map(db, paper.exam_id)
     raw_key = key_map.get(question_number, score.correct_answer or "")
-    is_identification = question_number in _identification_items(key_map)
+    is_identification = question_number in _identification_items([], key_map)
 
     old_answer = score.student_answer
     verdict, is_correct = recheck_answer(new_answer, raw_key, is_identification)
