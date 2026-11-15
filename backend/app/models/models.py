@@ -167,6 +167,7 @@ class Student(Base):
     student_number = Column(String(50), nullable=False)
     last_name      = Column(String(255), nullable=False)
     first_name     = Column(String(255), nullable=False)
+    middle_name    = Column(String(100))
     # Free text, for the reason Exam.schedule is free text: her sections are
     # written however her school writes them.
     section        = Column(String(255))
@@ -203,6 +204,7 @@ class TestPaper(Base):
     added_at     = Column(UTCDateTime(), server_default=func.now(), nullable=False)
     updated_at   = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
     first_name   = Column(String(255))
+    middle_name  = Column(String(100))
     last_name    = Column(String(255))
     # NEW 2026-11-12. DECLARED LAST, for exactly the reason first_name and
     # last_name are declared last above: the migration adds it with ALTER TABLE
