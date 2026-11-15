@@ -142,3 +142,9 @@ venv/
 __pycache__/
 *.pyc
 backend/uploads/
+
+# patcher backups, editor swap files, local dumps
+*.bak-*
+*.bak
+*.swp
+backup*.sql
