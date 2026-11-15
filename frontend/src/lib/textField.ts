@@ -322,14 +322,80 @@ export function middleInitial(v: string | null | undefined): string {
  * part and two copies of one rule drift apart - which is why the 2026-11-10
  * parity bench exists.
  */
-export function checkMiddleName(raw: string): string | null {
+export function checkMiddleName(raw: string, required = false): string | null {
   const v = tidyText(raw);
-  if (!v) return null;
+  // CHANGED 2026-11-15: required= rather than a second function, matching
+    // check_middle_name(v, required) on the server.
+    if (!v) return required ? "Middle name is required." : null;
   if (v.length > MAX_MIDDLE_NAME_LENGTH) {
     return `Middle name must be at most ${MAX_MIDDLE_NAME_LENGTH} characters.`;
   }
   return checkNamePart(v, "Middle name");
 }
+
+/**
+ * THE STUDENT NUMBER, NEW 2026-11-15 (Grace, post-UAT).
+ *
+ * The browser had no rule for this field at all - check_number() on the
+ * server tested only for blank, and nothing here tested anything. MEASURED:
+ * students.student_number is varchar(50) with no length check anywhere, so a
+ * 51-character number reached PostgreSQL as a driver error, a 500 rather than
+ * a 422 naming the field.
+ *
+ * A FOURTH class, and the narrowest in this file: letters, digits, hyphen.
+ *
+ *     2021-00123      the panel's own example paper
+ *     202300000001    the live roster
+ *     2021-A123       a LETTER is legal - ux_students_owner_number indexes
+ *                     lower(trim(student_number)), which is only meaningful
+ *                     if a number can carry one
+ *
+ * NO SPACE, deliberately. norm_number()'s docstring describes "2021 - 00123"
+ * pasted out of a spreadsheet; that is refused from now on rather than
+ * stored. Rows already in the database are untouched.
+ *
+ * \p{N} and \p{L} rather than [0-9A-Za-z], to stay consistent with every
+ * other class here. Hyphen LAST so it is a literal hyphen, not a range.
+ * Matches _STUDENT_NUMBER_MARKS in backend/app/schemas/_text.py.
+ */
+export const MAX_STUDENT_NUMBER_LENGTH = 50;
+const NOT_IN_STUDENT_NUMBER = /[^\p{L}\p{N}-]/gu;
+
+/** Matches STUDENT_NUMBER_SENTENCE in backend/app/schemas/_text.py. */
+export const STUDENT_NUMBER_SENTENCE =
+  "Use letters, numbers and - only, with no spaces.";
+
+/**
+ * Mirrors check_student_number() in _text.py, including the ORDER of the
+ * tests - required, length, at-least-one-alphanumeric, characters - so the
+ * two never disagree about which message a bad value earns.
+ *
+ * There is no "must contain a letter" test: a student number is normally all
+ * digits. The alphanumeric test is what stops "---" passing a rule built out
+ * of allowed marks.
+ */
+export function checkStudentNumber(raw: string): string | null {
+  const v = tidyText(raw);
+  if (!v) return "Student number is required.";
+  if (v.length > MAX_STUDENT_NUMBER_LENGTH) {
+    return `Student number must be at most ${MAX_STUDENT_NUMBER_LENGTH} characters.`;
+  }
+  if (!/[\p{L}\p{N}]/u.test(v)) {
+    return "Student number must contain at least one letter or number.";
+  }
+  // The SPACE gets its own sentence, before the general character test -
+  // badCharMessage prints whitespace as "a control character", which is
+  // nonsense to a teacher looking at "2021 - 00123" out of a spreadsheet.
+  if (v.includes(" ")) {
+    return `Student number cannot contain spaces. ${STUDENT_NUMBER_SENTENCE}`;
+  }
+  const bad = listBad(v, NOT_IN_STUDENT_NUMBER);
+  if (bad.length) {
+    return badCharMessage("Student number", bad, STUDENT_NUMBER_SENTENCE);
+  }
+  return null;
+}
+
 
 export function composeStudentName(lastName: string, firstName: string,
                                    middleName?: string | null): string {

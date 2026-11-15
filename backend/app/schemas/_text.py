@@ -10,6 +10,45 @@ MAX_SUBJECT_LENGTH = 255          # NEW 2026-11-04
 MAX_SCHEDULE_LENGTH = 255         # NEW 2026-11-04
 MAX_NAME_PART_LENGTH = 255        # NEW 2026-11-04 — first_name / last_name
 
+# ── NEW 2026-11-15 (Grace, post-UAT): the STUDENT NUMBER gets a rule ─────────
+#
+# check_number() in services/student_service.py has only ever tested for
+# blank. MEASURED against the live schema: students.student_number is
+# varchar(50) and nothing checked the length, so a 51-character number reached
+# PostgreSQL and came back as a driver error - a 500, where every other field
+# in this file answers 422 and names itself. The same fault
+# MAX_MIDDLE_NAME_LENGTH was added to prevent on 2026-11-14.
+#
+# A FOURTH SET, and the narrowest in this file: letters, digits, hyphen.
+#
+#     2021-00123      the panel's own example paper
+#     202300000001    the live roster
+#     2021-A123       a LETTER is legal, and this is not a guess:
+#                     ux_students_owner_number indexes
+#                     lower(trim(student_number)), which is only meaningful if
+#                     a number can carry one, and AddEditPaperModal's comment
+#                     names this exact value as the reason it matches on
+#                     lower(trim(...)) too
+#
+# NO SPACE, and that is a deliberate narrowing agreed with Grace on
+# 2026-11-15. norm_number()'s own docstring describes "2021 - 00123" pasted
+# out of a spreadsheet; that value is REFUSED from now on rather than stored,
+# because a space inside a student number is a spreadsheet artefact and not
+# part of the number. Rows already in the database are untouched - only new
+# input is checked - so a class list pasted today may flag lines that went in
+# silently yesterday.
+#
+# NO "must contain a letter" test: a student number is normally all digits.
+# It must contain at least one LETTER OR DIGIT, which is what stops "---"
+# and "--" passing a rule built out of allowed marks.
+#
+# Matches checkStudentNumber() in frontend/src/lib/textField.ts.
+MAX_STUDENT_NUMBER_LENGTH = 50
+_STUDENT_NUMBER_MARKS = "-"
+
+STUDENT_NUMBER_SENTENCE = "Use letters, numbers and - only, with no spaces."
+
+
 STRICT_EXAM_NAME = True
 STRICT_DESCRIPTION = True
 STRICT_STUDENT_NAME = True
@@ -313,10 +352,19 @@ def check_name_part(v: Optional[str], label: str) -> str:
 MAX_MIDDLE_NAME_LENGTH = 100
 
 
-def check_middle_name(v: Optional[str]) -> Optional[str]:
-    """The middle name, or None. Blank is NOT an error."""
+def check_middle_name(v: Optional[str], required: bool = False) -> Optional[str]:
+    """The middle name. Blank is an error ONLY when required=True.
+
+    CHANGED 2026-11-15 (Grace, post-UAT): the flag, not a second function. The
+    roster, the paste and Edit Paper all demand one now; compose and the legacy
+    read paths still have to tolerate the NULL that every row written before
+    2026-11-14 carries, and a separate required-variant would be two copies of
+    one character rule - the drift this module exists to prevent.
+    """
     v = tidy_text(v)
     if not v:
+        if required:
+            raise ValueError("Middle name is required.")
         return None
     if len(v) > MAX_MIDDLE_NAME_LENGTH:
         raise ValueError(
@@ -328,6 +376,36 @@ def check_middle_name(v: Optional[str]) -> Optional[str]:
         tail = NAME_PART_COMMA_HINT if "," in bad else NAME_PART_SENTENCE
         raise ValueError(f"Middle name cannot contain {_shown(bad)}. {tail}")
     return v
+
+
+def check_student_number(v: Optional[str]) -> str:
+    """The Student No. REQUIRED, capped at the column width, no spaces.
+
+    Mirrors checkStudentNumber() in frontend/src/lib/textField.ts, including
+    the ORDER of the tests - required, length, at-least-one-alphanumeric,
+    characters - so the two never disagree about which message a bad value
+    earns.
+    """
+    v = tidy_text(v)
+    if not v:
+        raise ValueError("Student number is required.")
+    if len(v) > MAX_STUDENT_NUMBER_LENGTH:
+        raise ValueError(
+            f"Student number must be at most {MAX_STUDENT_NUMBER_LENGTH} characters.")
+    if not any(c.isalnum() for c in v):
+        raise ValueError("Student number must contain at least one letter or number.")
+    # The SPACE gets its own sentence, before the general character test.
+    # _shown() prints any whitespace as "a control character", which is true of
+    # a tab and nonsense to a teacher looking at "2021 - 00123" out of a
+    # spreadsheet - the single likeliest way this rule gets hit.
+    if " " in v:
+        raise ValueError(f"Student number cannot contain spaces. {STUDENT_NUMBER_SENTENCE}")
+    bad = sorted({c for c in v if not c.isalnum() and c not in _STUDENT_NUMBER_MARKS})
+    if bad:
+        raise ValueError(
+            f"Student number cannot contain {_shown(bad)}. {STUDENT_NUMBER_SENTENCE}")
+    return v
+
 
 
 def middle_initial(v: Optional[str]) -> str:

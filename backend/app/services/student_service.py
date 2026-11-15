@@ -28,7 +28,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Student, TestPaper
-from app.schemas._text import check_name_part, check_middle_name
+from app.schemas._text import (check_name_part, check_middle_name,
+                              check_student_number)
 
 MAX_NUMBER_LEN = 50
 MAX_BULK_ROWS = 300
@@ -70,7 +71,10 @@ def check_number(v: str) -> str:
     s = tidy_number(v)
     if not s:
         raise ValueError("Student number is required.")
-    return s
+    # CHANGED 2026-11-15: the rule lives in schemas/_text.py beside the other
+    # field rules, and is mirrored character for character in textField.ts.
+    # tidy_number first, so what is STORED keeps its case.
+    return check_student_number(s)
 
 
 async def by_number(
@@ -182,7 +186,7 @@ async def create_student(
     first = check_name_part(first_name, "First name")
     # NEW 2026-11-14. check_middle_name returns None for blank, so an empty box
     # stores NULL rather than "" - see schemas/_text.py.
-    middle = check_middle_name(middle_name)
+    middle = check_middle_name(middle_name, required=True)
     sect = " ".join((section or "").split()) or None
 
     existing = await by_number(db, owner_id, number)
@@ -213,7 +217,7 @@ async def update_student(
     number = check_number(student_number)
     last = check_name_part(last_name, "Last name")
     first = check_name_part(first_name, "First name")
-    middle = check_middle_name(middle_name)
+    middle = check_middle_name(middle_name, required=True)
     sect = " ".join((section or "").split()) or None
 
     student = await get_student(db, owner_id, student_id)
@@ -309,7 +313,7 @@ async def bulk_create(
             number = check_number(str(raw.get("student_number", "")))
             last = check_name_part(str(raw.get("last_name", "")), "Last name")
             first = check_name_part(str(raw.get("first_name", "")), "First name")
-            middle = check_middle_name(str(raw.get("middle_name", "") or ""))
+            middle = check_middle_name(str(raw.get("middle_name", "") or ""), required=True)
         except ValueError as e:
             failed.append({"line": line, "student_number":
                            tidy_number(str(raw.get("student_number", ""))),

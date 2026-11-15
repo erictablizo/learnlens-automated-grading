@@ -122,7 +122,11 @@ class PaperUpdate(BaseModel):
 
     last_name:  str
     first_name: str
-    middle_name: Optional[str] = None
+    # CHANGED 2026-11-15: REQUIRED. Edit Paper sends all three name parts on
+    # every save, and rename_paper writes the column unconditionally - an
+    # omitted key would be pydantic's default None, which is a "clear it" the
+    # teacher never asked for.
+    middle_name: str
 
     @field_validator("last_name")
     @classmethod
@@ -136,8 +140,8 @@ class PaperUpdate(BaseModel):
 
     @field_validator("middle_name")
     @classmethod
-    def _middle(cls, v: Optional[str]) -> Optional[str]:
-        return check_middle_name(v)
+    def _middle(cls, v: str) -> str:
+        return check_middle_name(v, required=True) or ""
 
 
 class PaperResponse(BaseModel):
