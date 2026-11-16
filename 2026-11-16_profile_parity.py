@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+r"""
 Profile-field parity: the server rule vs the browser rule.        2026-11-16
 
     python measure/2026-11-16_profile_parity.py \

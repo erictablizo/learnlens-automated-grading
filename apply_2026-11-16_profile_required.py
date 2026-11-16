@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+r"""
 LearnLens - every field on Setup and Edit Profile gets a rule.   2026-11-16
 
 Grace, post-UAT:
