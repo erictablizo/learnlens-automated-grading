@@ -13,7 +13,7 @@ frontend/src/lib/personName.ts and backend/app/schemas/profile.py, both of
 which delegate to the one student name-part rule as of today.  This script
 wires the BLANK half into the two forms:
 
-    frontend/src/app/setup/page.tsx                 "Set up your profile"
+    frontend/src/app/(auth)/setup/page.tsx          "Set up your profile"
     frontend/src/app/(dashboard)/profile/page.tsx   "Edit Profile"
 
 BOTH FILES ARE CALLED page.tsx, so this tool does not pick its rules by file
@@ -52,6 +52,7 @@ WHAT THIS DOES *NOT* DO, stated rather than hidden:
     Optional deliberately - see the docstring on that class.
 """
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -106,9 +107,68 @@ NEW = (
     '    if (fieldError) { setError(fieldError); return; }'
 )
 
+# ── ADDED 2026-11-16, after the dry run on the real Edit Profile screen ────
+#
+# MEASURED on Grace's file:
+#     141:    if (!firstName.trim()) { setError("First name is required."); return; }
+#     169:        first_name: firstName.trim(),
+#
+# So that screen carries the 2026-10-22 CHARACTER block (or the anchor above
+# would not have matched) but NOT that patch's PAYLOAD fix. Whatever the
+# history, apply_2026-10-22_profile_screens_fix.py cannot repair it: that tool
+# exits early when "@/lib/personName" is already in the file, which it is. It
+# would print "already done" and change nothing.
+#
+# WHY IT MATTERS, and it is small but real. The browser validates the TIDIED
+# value and then posts the TRIMMED one, so "Eric  Bernard" is shown as
+# acceptable, posted with two spaces, and stored by the server as
+# "Eric Bernard" - a silent difference between what the teacher typed, what she
+# was told was fine, and what the sidebar then shows her on every screen.
+#
+# THESE THREE ARE OPTIONAL. A screen that already had the 2026-10-22 payload
+# fix applied has none of them, and that is a clean pass, not a problem. What
+# is NOT optional is the selfcheck below: if a .trim() is still feeding the
+# payload after this runs, the file is refused.
+#
+# REGEX, not an exact string, for the alignment only - `last_name:  ` carries
+# two spaces in one file and one in another. The captured whitespace is put
+# back unchanged; nothing else in the line is allowed to differ.
+PAYLOAD_EDITS = [
+    ("first_name", re.compile(r"(first_name:\s*)firstName\.trim\(\),"),
+     r"\1tidyName(firstName),"),
+    ("last_name", re.compile(r"(last_name:\s*)lastName\.trim\(\),"),
+     r"\1tidyName(lastName),"),
+    ("position", re.compile(r"(position:\s*)position\.trim\(\)"),
+     r"\1tidyName(position)"),
+]
+
+
+# The import, as both screens carry it after 2026-10-22 - the names in braces
+# and the module on the NEXT line:
+#
+#     import { checkPersonName, checkPosition, tidyName }
+#       from "@/lib/personName";
+#
+# This is tested against the text as READ, never against the patched text.
+# FOUND BY THE AUDIT 2026-11-16: the first version of this guard asked whether
+# "tidyName" appeared in the patched text - which it always does, because the
+# comment this patch inserts says "empty after tidyName()". The guard was
+# reading my own comment, so it could not fail, and it let a fixture WITHOUT
+# the import through to a file that calls tidyName() and does not compile.
+# Exactly the shape this project keeps finding: a check that passes because it
+# is measuring the wrong text.
+PERSONNAME_IMPORT = re.compile(
+    r"import\s*\{([^}]*)\}\s*from\s*[\"']@/lib/personName[\"']")
+
+
+def imports_tidyname(original: str) -> bool:
+    m = PERSONNAME_IMPORT.search(original)
+    return bool(m) and "tidyName" in m.group(1)
+
+
 FINGERPRINTS = {
     "setup": ("Set up your profile",
-              'frontend/src/app/setup/page.tsx  ("Set up your profile")'),
+              'the Setup screen  ("Set up your profile")'),
     "edit":  ("PROFILE_UPDATED_EVENT",
               'frontend/src/app/(dashboard)/profile/page.tsx  ("Edit Profile")'),
 }
@@ -127,8 +187,7 @@ If the variable is a number-or-empty-string, `!yearLevel` is right. If it is
 `number | null`, use `yearLevel === null`. If it is a string, `!yearLevel` is
 right again. Grep for it first:
 
-    grep -n "earLevel\\|year_level" frontend/src/app/setup/page.tsx \\
-        "frontend/src/app/(dashboard)/profile/page.tsx"
+    grep -rn "earLevel\\|year_level" frontend/src/app
 
 Then type-check, because this change alters an expression, not a string:
 
@@ -147,8 +206,20 @@ def selfcheck(text):
         return "expected exactly one `const fieldError`."
     if "charError" in text:
         return "a reference to the old charError survived."
-    if "firstName.trim()" in text:
-        return "a .trim() blank check survived in handleSave()."
+    # NARROWED 2026-11-16, same day, after a FALSE REFUSAL on the real Edit
+    # Profile screen. This used to test for `firstName.trim()` ANYWHERE in the
+    # file, which refused a file whose handleSave() was patched perfectly
+    # because something else on the screen - an initials preview, a
+    # has-it-changed comparison - legitimately calls .trim() too. The two
+    # things that really must be gone are the blank check this patch replaces
+    # and the save payload the 2026-10-22 patch replaced. Nothing else.
+    if "if (!firstName.trim())" in text:
+        return "the old `if (!firstName.trim())` blank check survived."
+    for field, call in (("first_name", "firstName.trim()"),
+                        ("last_name", "lastName.trim()"),
+                        ("position", "position.trim()")):
+        if re.search(rf"{field}:\s*{re.escape(call)}", text):
+            return f"the save payload still sends {call}."
     if 'checkPosition(position)' in text:
         return "checkPosition is still called without the required flag."
     if "@/lib/personName" not in text:
@@ -198,7 +269,29 @@ def patch(path, dry):
               "goes into the applier properly.")
         return 2
 
+    # Computed BEFORE the replacement, from the text as read.
+    tidy_ok = imports_tidyname(work)
+
     work = work.replace(OLD, NEW, 1)
+    done = ["the handleSave() validation block"]
+
+    for name, rx, repl in PAYLOAD_EDITS:
+        hits = len(rx.findall(work))
+        if hits > 1:
+            print(f"  REFUSED  {path}\n           the {name} payload line occurs "
+                  f"{hits} times, expected 0 or 1.\n           Nothing was written.")
+            return 2
+        if hits == 1:
+            if not tidy_ok:
+                print(f"  REFUSED  {path}")
+                print(f"           the {name} payload needs tidyName(), which this "
+                      f"screen does not import.")
+                print('           Add it to the import from "@/lib/personName" and '
+                      "run this again.")
+                print("           Nothing was written.")
+                return 2
+            work = rx.sub(repl, work, count=1)
+            done.append(f"{name}: .trim() -> tidyName()")
 
     problem = selfcheck(work)
     if problem:
@@ -210,12 +303,17 @@ def patch(path, dry):
     if dry:
         print(f"  WOULD PATCH  {path}\n               {label}"
               f"{'   (CRLF preserved)' if crlf else ''}")
+        for d in done:
+            print(f"                 - {d}")
     else:
         backup = path.with_suffix(path.suffix + f".bak-{STAMP}")
         shutil.copy2(path, backup)
         path.write_bytes(out.encode("utf-8"))
-        print(f"  patched  {path}   (1 block, backup: {backup.name})")
+        print(f"  patched  {path}   ({len(done)} "
+              f"edit{'' if len(done) == 1 else 's'}, backup: {backup.name})")
         print(f"             {label}")
+        for d in done:
+            print(f"               - {d}")
     return 0
 
 
