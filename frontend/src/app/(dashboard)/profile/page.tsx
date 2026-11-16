@@ -138,17 +138,33 @@ export default function EditProfilePage() {
 
   const handleSave = async () => {
     setError(null); setSaved(false);
-    if (!firstName.trim()) { setError("First name is required."); return; }
-    if (!lastName.trim())  { setError("Last name is required.");  return; }
-    if (!college)          { setError("Please select your college."); return; }
-    if (!course)           { setError("Please select your course / program."); return; }
-    // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and special
-    // characters. Same rules, same order and same words as
-    // _check_person_name() / _check_position() in schemas/profile.py.
-    const charError = checkPersonName(firstName, "First name")
-                   ?? checkPersonName(lastName, "Last name")
-                   ?? checkPosition(position);
-    if (charError) { setError(charError); return; }
+    // REWRITTEN 2026-11-16 (Grace, post-UAT): "validation for all fields
+    // if blank for setup and edit".
+    //
+    // ONE expression, one sentence per field, in the order the fields
+    // appear on the form. The blank test and the character test are now
+    // the SAME call - checkPersonName and checkPosition each take a
+    // `required` flag as of today - which closes two gaps that the two
+    // separate blocks left open:
+    //
+    //   POSITION had no blank check at all, on either screen. A teacher
+    //   could save a profile with no position and the sidebar rendered
+    //   the empty string after her course.
+    //
+    //   FIRST / LAST NAME were blank-checked with !x.trim(), which is a
+    //   different test from the one the server runs: "\u00a0" (a non-breaking
+    //   space) is truthy after .trim() and empty after tidyName().
+    //
+    // Same rules, same order and same words as _check_person_name() and
+    // _check_position() in backend/app/schemas/profile.py - measured, 404
+    // values, 1212 checks, zero disagreements.
+    const fieldError =
+         checkPersonName(firstName, "First name", true)
+      ?? checkPersonName(lastName,  "Last name",  true)
+      ?? (!college ? "Please select your college." : null)
+      ?? (!course  ? "Please select your course / program." : null)
+      ?? checkPosition(position, true);
+    if (fieldError) { setError(fieldError); return; }
 
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
@@ -166,11 +182,11 @@ export default function EditProfilePage() {
       if (avatarFile) uploaded = await profileService.uploadAvatar(avatarFile, token);
 
       const updated = await profileService.save({
-        first_name: firstName.trim(),
-        last_name:  lastName.trim(),
+        first_name: tidyName(firstName),
+        last_name:  tidyName(lastName),
         college:    college as College,
         course,
-        position:   position.trim() || undefined,
+        position:   tidyName(position) || undefined,
         // FIX 2026-11-03: was never sent, so Year Level could be set during
         // /setup and then never changed from here.
         year_level: year === "" ? undefined : year,
