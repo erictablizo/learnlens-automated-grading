@@ -87,8 +87,12 @@ verdicts = run(lambda c: (_check_person_name(c["value"], "First name",
                           else _check_position(c["value"], required=c["required"])))
 student = run(lambda c: check_name_part(c["value"], "Last name"))
 tidied = [tidy_text(c["value"]) for c in cases]
+# ensure_ascii=True, deliberately. On Windows a child process inherits a
+# cp1252 stdout, and "\u0141" (the L in Lukasz) is not in cp1252 - writing it
+# raised UnicodeEncodeError and killed the python arm outright. Pure-ASCII
+# JSON cannot hit that on any console.
 json.dump({"verdicts": verdicts, "tidied": tidied, "student": student},
-          sys.stdout, ensure_ascii=False)
+          sys.stdout, ensure_ascii=True)
 '''
 
 TS_HARNESS = r'''
@@ -103,7 +107,12 @@ const verdicts = CASES.map(c => c.kind === "name"
   : checkPosition(c.value as string, c.required));
 const tidied  = CASES.map(c => tidyName(c.value as string));
 const student = CASES.map(c => checkNamePart(c.value as string, "Last name"));
-console.log(JSON.stringify({ verdicts, tidied, student }));
+// Escaped to ASCII for the same reason as the python arm: node writes UTF-8
+// but the parent must decode it on a console that may not be.
+const ascii = (s: string) =>
+  s.replace(/[\u0080-\uffff]/g,
+            c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+console.log(ascii(JSON.stringify({ verdicts, tidied, student })));
 '''
 
 TSCONFIG = {
@@ -122,7 +131,7 @@ def build_corpus(root: Path):
     cases += [{"value": None, "kind": k, "required": r}
               for k in ("name", "position") for r in (False, True)]
     (root / "corpus.json").write_text(
-        json.dumps(cases, ensure_ascii=False), encoding="utf-8")
+        json.dumps(cases, ensure_ascii=True), encoding="utf-8")
     return cases
 
 
@@ -143,7 +152,7 @@ def stage(root: Path, files: dict):
         "export type Case = { value: string | null; "
         'kind: "name" | "position"; required: boolean };\n'
         "export const CASES: Case[] = "
-        + json.dumps(cases, ensure_ascii=False) + ";\n", encoding="utf-8")
+        + json.dumps(cases, ensure_ascii=True) + ";\n", encoding="utf-8")
     (root / "ts/tsconfig.json").write_text(json.dumps(TSCONFIG), encoding="utf-8")
     # personName.ts imports "@/lib/textField"; inside this throwaway tree the
     # file sits beside it, so the specifier is rewritten in the COPY only.
@@ -155,7 +164,8 @@ def stage(root: Path, files: dict):
 
 def run_py(root: Path):
     r = subprocess.run([sys.executable, "-I", str(root / "py/harness.py")],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if r.returncode:
         return None, (r.stderr or r.stdout).strip().splitlines()[-1]
     return json.loads(r.stdout), None
@@ -168,12 +178,14 @@ def run_ts(root: Path):
     if not npx:
         return None, "npx not found on PATH - install Node.js to run the browser arm"
     r = subprocess.run([npx, "tsc", "-p", "tsconfig.json"],
-                       cwd=ts, capture_output=True, text=True)
+                       cwd=ts, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if r.returncode:
         return None, "tsc: " + (r.stdout or r.stderr).strip().splitlines()[0]
     node = shutil.which("node") or shutil.which("node.exe")
     r = subprocess.run([node, str(ts / "out/src/harness.js")],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if r.returncode:
         return None, "node: " + (r.stderr or r.stdout).strip().splitlines()[-1]
     return json.loads(r.stdout), None
@@ -194,7 +206,9 @@ def compare(cases, py, ts):
 def shorten(v):
     if v is None:
         return "None/null"
-    s = repr(v)
+    s = ascii(v)          # not repr(): ascii() escapes every non-ASCII char,
+                          # so a mismatch on a unicode value prints instead of
+                          # raising UnicodeEncodeError on a cp1252 console.
     return s if len(s) <= 46 else s[:43] + "..."
 
 
