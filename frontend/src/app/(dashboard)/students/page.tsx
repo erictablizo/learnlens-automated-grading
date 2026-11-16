@@ -44,6 +44,8 @@ import Navbar from "@/components/ui/Navbar";
 import Button from "@/components/ui/Button";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import PasteStudentsModal from "@/components/students/PasteStudentsModal";
+// NEW 2026-11-16 - Recommendations page 5, "Select Option".
+import SectionPickerModal from "@/components/students/SectionPickerModal";
 import { studentService } from "@/services/studentService";
 import type { Student, StudentBulkResult } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
@@ -128,6 +130,15 @@ export default function StudentsPage() {
 
   const [section, setSection] = useState("");
   const [query, setQuery] = useState("");
+
+  // NEW 2026-11-16 - Recommendations page 5.
+  //
+  // NULL means "has not chosen yet", which is what puts the modal on
+  // screen. It is deliberately NOT the same thing as `section`: the
+  // teacher can clear the filter back to every section afterwards without
+  // the dialog reappearing, because `picked` stays set. The empty string
+  // would have conflated the two.
+  const [picked, setPicked] = useState<string | null>(null);
 
   const [form, setForm] = useState({ ...BLANK });
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -283,7 +294,13 @@ export default function StudentsPage() {
                       alignItems: "center", marginBottom: "0.25rem" }}>
           <h1 style={{ fontFamily: "var(--font-heading)", fontSize: "1.5rem",
                        fontWeight: 700, color: "var(--navy)" }}>
-            Students
+            {/* CHANGED 2026-11-16 - Recommendations page 5. It follows the
+                FILTER, not the modal's answer, so clearing the filter puts
+                the plain title back rather than leaving a heading that
+                names one section above a list showing all of them. */}
+            {section
+              ? `List of Students under section ${section}`
+              : "Students"}
           </h1>
           <Button variant="secondary" onClick={() => setShowPaste(true)}
                   style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem",
@@ -370,7 +387,10 @@ export default function StudentsPage() {
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
           <select className="form-input" value={section} style={{ flex: "0 1 180px" }}
                   onChange={e => setSection(e.target.value)} aria-label="Filter by section">
-            <option value="">All sections</option>
+            {/* CHANGED 2026-11-16 (Grace): "Select Section", not "All
+                sections" - this list is now how a section is chosen, not
+                merely how it is filtered away. */}
+            <option value="">Select Section</option>
             {sections.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <input className="form-input" value={query} style={{ flex: "1 1 220px" }}
@@ -467,6 +487,28 @@ export default function StudentsPage() {
             knownSections={sections}
             onClose={() => setShowPaste(false)}
             onAdded={handleBulkAdded}
+          />
+        )}
+
+        {/* NEW 2026-11-16 - Recommendations page 5. Mounted with the page
+            rather than hung off the sidebar click, so a reload or a typed
+            URL asks the same question. Cancel leaves for Manage Exams,
+            which is where the sidebar click came from. */}
+        {picked === null && (
+          <SectionPickerModal
+            sections={sections}
+            loading={loading}
+            onCancel={() => router.push("/exams")}
+            onProceed={s => {
+              setPicked(s);
+              setSection(s);
+              // Pre-fill the Add-a-student Section box too. For a NEW
+              // section this is the only place the name survives until a
+              // student is saved into it; for an existing one it saves the
+              // teacher retyping what she just chose.
+              setForm(p => ({ ...p, section: s }));
+              setFieldErrors(p => (p.section ? { ...p, section: undefined } : p));
+            }}
           />
         )}
 
