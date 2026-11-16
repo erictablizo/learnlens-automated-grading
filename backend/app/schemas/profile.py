@@ -1,41 +1,38 @@
-import re
-import unicodedata
+# NO `import re` and NO `import unicodedata` as of 2026-11-16: both were
+# only ever used by this file's own four character sets and its own
+# whitespace-collapsing helper, all three of which are gone. tidy_text()
+# in schemas/_text.py does the normalising now and imports them there.
 from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime
-from enum import Enum
- 
- 
-# NO LONGER THE GATE, as of 2026-11-14.
-#
-# The colleges live in the `colleges` table and are validated against it by
-# reference_service.validate_selection(). This enum is KEPT only because other
-# modules may still import the name, and removing it would break them at
-# import time rather than visibly.
-#
-# DO NOT reintroduce it as a type on ProfileSetup.college: that re-freezes the
-# list at these four values and silently breaks every college an administrator
-# has added since. Check what still needs it with
-#
-#     grep -rn "CollegeEnum" backend/app
-#
-# and if the only hit is this file, delete the class.
-#
+
+# NEW 2026-11-16. The character rule for a person's name now has exactly ONE
+# definition in the backend, and this file borrows it instead of spelling out
+# a second one. See _check_person_name() below.
+from app.schemas._text import check_name_part, tidy_text
+
+
 # The cap below is user_profiles.college's own varchar(20).
 MAX_COLLEGE_CODE_LENGTH = 20
 
-
-class CollegeEnum(str, Enum):
-    CVMAS = "CVMAS"
-    CBMA  = "CBMA"
-    CoEd  = "CoEd"
-    CAST  = "CAST"
+# REMOVED 2026-11-16: class CollegeEnum.
+#
+# It stopped being the gate on 2026-11-14, when the colleges became a table
+# validated by reference_service.validate_selection(). It was kept that day
+# only in case another module still imported the name. MEASURED 2026-11-15:
+#
+#     grep -rn "CollegeEnum" backend/app
+#
+# found three hits and all three were inside this file - the class itself and
+# two comments. Nothing imported it, so it is gone rather than left as a
+# frozen list of four colleges for someone to reintroduce as a type.
 
 
 # Added on 2026-10-04 — only 1st..6th year exist. CVMAS reaches 6th year
 # (Doctor of Veterinary Medicine); the other colleges reach 3rd. The
-# per-college limit is enforced in the UI, which knows the college; here we
-# only reject values that are not a year level at all.
+# per-college limit is enforced against the database by
+# reference_service.validate_selection(); here we only reject values that are
+# not a year level at all.
 MIN_YEAR_LEVEL = 1
 MAX_YEAR_LEVEL = 6
 
@@ -48,19 +45,44 @@ def _check_year_level(v: Optional[int]) -> Optional[int]:
     return v
 
 
-# ── Added on 2026-10-22 (Doc Rubrica, after the demo) ───────────────────────
+# ── Added 2026-10-22 (Doc Rubrica, after the demo), REWRITTEN 2026-11-16 ────
+#
 # "case sensitive (UPPERCASE, LOWERCASE, and Special Characters like not
-#  letters and not numbers.  Not for just password but when you're Setting up
+#  letters and not numbers. Not for just password but when you're Setting up
 #  your profile)"
 #
-# Until today ProfileSetup had exactly one validator - _year, added on 4 Oct -
-# and NOTHING on the three text fields. first_name="123", first_name="   " and
-# position="!!!!" were all accepted, stored, and then rendered in the sidebar
-# on every screen of the system. This is the same "strip before you test for
-# blank" rule schemas/exam.py and schemas/paper.py got on 1 Oct, plus the
-# character classes she named.
+# Until 2026-10-22 ProfileSetup had exactly one validator - _year - and
+# NOTHING on the three text fields. first_name="123", first_name="   " and
+# position="!!!!" were all accepted, stored, and rendered in the sidebar on
+# every screen.
 #
-# The caps are from learnlens_schema.sql, not from taste:
+# WHAT 2026-11-16 CHANGED, and it is a deletion rather than an addition.
+#
+# This file used to carry four character sets of its own -
+# _STRICT_NAME_MARKS, _STRICT_POSITION_MARKS and two relaxed variants - plus a
+# shared _check_chars() to apply them, and frontend/src/lib/personName.ts
+# carried four more. Eight hand-maintained definitions for one idea, which is
+# how the profile set drifted away from the student set without anyone
+# noticing.
+#
+# All three fields now delegate to check_name_part() in schemas/_text.py - the
+# rule every STUDENT name already uses, and already the browser/server parity
+# pair. Two consequences, both deliberate:
+#
+#   NOW ACCEPTED. The old profile set was " ." - letters, space, period.
+#   MEASURED 2026-11-04 over 28 realistic Filipino names it refused 7,
+#   including EVERY hyphenated surname: Dela Cruz-Santos, Reyes-Ramos,
+#   Villanueva-Lim, Anne-Marie, O'Brien. A teacher with one of those names
+#   could not complete Setup at all. "Asst. Prof." is a legal Position now too.
+#
+#   NOW REFUSED. The old position set allowed DIGITS, with the reason written
+#   down: "Philippine academic ranks are written both ways ('Instructor II',
+#   'Teacher 1')". Grace chose the narrower reading on 2026-11-16 - no special
+#   characters AND no numbers - so "Teacher 1" is refused. "Instructor II" is
+#   unaffected; Roman numerals are letters.
+#
+# THE CAPS STAY HERE. They are the one thing about these fields that is not
+# shared: check_name_part's own cap is 255, the student column, while
 #     user_profiles.first_name   character varying(100)
 #     user_profiles.last_name    character varying(100)
 #     user_profiles."position"   character varying(255)
@@ -70,95 +92,69 @@ def _check_year_level(v: Optional[int]) -> Optional[int]:
 MAX_NAME_LENGTH = 100
 MAX_POSITION_LENGTH = 255
 
-# str.isalpha() is True for letters in ANY alphabet - "N", "Ñ", "e", "é" -
-# and False for "1" and "@", so "Niño" and "José" still pass: an accented
-# letter is a letter, not a special character. Digits are not allowed in a
-# NAME at all. A POSITION may hold digits, because Philippine academic ranks
-# are written both ways ("Instructor II", "Teacher 1").
-# Doc Rubrica, 2026-10-22: "it should not accept special characters and
-# combination of special characters and Letter". STRICT = letters and the
-# space between words; a Position may also hold numbers, because Philippine
-# ranks are written both ways ("Instructor II", "Teacher 1").
-#
-# MEASURED COST against learnlens_schema.sql: first_name 3 of 6 rows refused
-# ("Eric Bernard R." - the period), last_name 0 of 6, position 0 of 6.
-# A refused value is UN-EDITABLE, so rename those rows before you demo.
-#
-# CHANGED 2026-10-23 - the PERIOD is allowed in a NAME again, and only in a
-# name: "Name in Set Up and Edit Profile can accept . for the Middle Initial of
-# the Teacher". So "Eric Bernard R." is accepted, and so is "Ma. Teresa", while
-# "Eric@" and "O'Brien" stay refused. This is a deliberate, named exception to
-# the 2026-10-22 rule, not a rollback of it - every other mark is still out,
-# and POSITION is unchanged, so "Asst. Prof." is still refused there.
-#
-# MEASURED COST, re-run against learnlens_schema.sql after this change:
-# first_name 0 of 6 refused (was 3 of 6 - all three were the middle-initial
-# period), last_name 0 of 6, position 0 of 6.
-#
-# Keep in step with STRICT_PERSON_NAME in frontend/src/lib/personName.ts.
-STRICT_PERSON_NAME = True
-
-# The two strict sets differ by exactly one character: a NAME may hold a
-# period for a middle initial, a POSITION may not. They used to share one
-# constant; splitting them is what lets the period in without also loosening
-# Position.
-_STRICT_NAME_MARKS = " ."
-_STRICT_POSITION_MARKS = " "
-_RELAXED_NAME_MARKS = " '\u2019.,-"
-_RELAXED_POSITION_MARKS = " '\u2019.,&/()-"
-_NAME_MARKS = _STRICT_NAME_MARKS if STRICT_PERSON_NAME else _RELAXED_NAME_MARKS
-_POSITION_MARKS = _STRICT_POSITION_MARKS if STRICT_PERSON_NAME else _RELAXED_POSITION_MARKS
-
 
 def _tidy(v: str) -> str:
-    """Collapse runs of whitespace and trim.  NFC so an accent typed as a
-    combining mark counts as one character - the same thing tidyName() does in
-    personName.ts."""
-    return unicodedata.normalize("NFC", re.sub(r"\s+", " ", v or "")).strip()
+    """Kept as an alias, not a second implementation - it is tidy_text() from
+    schemas/_text.py, which personName.ts mirrors as tidyText()."""
+    return tidy_text(v)
 
 
-def _check_chars(v: str, label: str, marks: str, digits_ok: bool, cap: int) -> Optional[str]:
-    """Shared by the name and position rules so they cannot drift apart.
+def _check_person_name(v: Optional[str], label: str,
+                       required: bool = False) -> Optional[str]:
+    """One name part of a TEACHER's own name.
 
-    A BLANK value is NOT an error - it means "not filled in yet", which
-    "Skip for now" on /setup relies on. It becomes None instead of being
-    stored as "   ". Required-ness stays where it already is: the two forms,
-    and profile_complete."""
-    v = _tidy(v)
-    if not v:
-        return None
-    if len(v) > cap:
-        raise ValueError(f"{label} must be at most {cap} characters.")
-    if not any(c.isalpha() for c in v):
-        raise ValueError(f"{label} must contain at least one letter.")
-    ok = (lambda c: c.isalnum()) if digits_ok else (lambda c: c.isalpha())
-    bad = sorted({c for c in v if not ok(c) and c not in marks})
-    if bad:
-        if STRICT_PERSON_NAME:
-            # Must match checkPersonName() / checkPosition() in personName.ts
-            # word for word - the browser and the server say the same thing.
-            allowed = ("letters, numbers and spaces only." if digits_ok
-                       else "letters and spaces, and a period for a middle "
-                            "initial.")
-        else:
-            allowed = ("letters, numbers, spaces, and ' - . , & / ( ) only."
-                       if digits_ok else "letters, spaces, and ' - . , only.")
-        shown = ", ".join(f'"{c}"' for c in bad)
-        raise ValueError(f"{label} cannot contain {shown}. Use {allowed}")
-    return v
+    `required` is NEW 2026-11-16. It is NOT used by ProfileSetup - see the
+    note on that class - and exists so the rule and its sentence have one
+    home when a caller does want it.
+    """
+    if v is None:
+        return None if not required else _raise_required(label)
+    s = _tidy(v)
+    if not s:
+        return None if not required else _raise_required(label)
+    # The CAP IS CHECKED FIRST and locally: check_name_part's own cap is 255.
+    if len(s) > MAX_NAME_LENGTH:
+        raise ValueError(f"{label} must be at most {MAX_NAME_LENGTH} characters.")
+    return check_name_part(s, label)
 
 
-def _check_person_name(v: Optional[str], label: str) -> Optional[str]:
-    return None if v is None else _check_chars(v, label, _NAME_MARKS, False,
-                                               MAX_NAME_LENGTH)
+def _check_position(v: Optional[str], required: bool = False) -> Optional[str]:
+    if v is None:
+        return None if not required else _raise_required("Position")
+    s = _tidy(v)
+    if not s:
+        return None if not required else _raise_required("Position")
+    if len(s) > MAX_POSITION_LENGTH:
+        raise ValueError(f"Position must be at most {MAX_POSITION_LENGTH} characters.")
+    # comma_hint=False: a comma is still REFUSED here, but with the general
+    # sentence. The name hint talks about surname/first-name boxes, which do
+    # not exist on this field.
+    return check_name_part(s, "Position", comma_hint=False)
 
 
-def _check_position(v: Optional[str]) -> Optional[str]:
-    return None if v is None else _check_chars(v, "Position", _POSITION_MARKS,
-                                               True, MAX_POSITION_LENGTH)
- 
- 
+def _raise_required(label: str):
+    raise ValueError(f"{label} is required.")
+
+
 class ProfileSetup(BaseModel):
+    """The PUT /profile body.
+
+    EVERY FIELD STAYS OPTIONAL HERE, and that is not an oversight in a change
+    whose brief was "validation for all fields if blank".
+
+    Grace's words were "for setup and edit" - the two FORMS - and those two
+    screens now refuse to submit a blank field, with the asterisks to say so.
+    Making the model itself required would be a stronger rule, but it would
+    also break any PUT that sends a subset, and update_profile() is written
+    to leave an omitted field alone. Changing both at once, three weeks before
+    a defence, on a model whose service I have not read, is the trade I am
+    not making.
+
+    HONEST LIMIT, recorded rather than hidden: a request made outside those
+    two screens can still store a blank name. The CHARACTER rules below are
+    enforced here for everyone; the required-ness is enforced by the forms.
+    """
+
     first_name: Optional[str] = None
     last_name:  Optional[str] = None
     # CHANGED 2026-11-14 - was Optional[CollegeEnum].
@@ -169,12 +165,12 @@ class ProfileSetup(BaseModel):
     # refused here, by pydantic, with a 422 - before any of the new code ran.
     #
     # The real check has not gone away, it has MOVED. update_profile() calls
-    # reference_service.validate_selection(), which asks the database whether this
-    # college exists and is active, and does the same for the course and the year
-    # level. That is strictly stronger than the enum: it also catches a course
-    # that is not listed under the chosen college, which the enum never looked at.
+    # reference_service.validate_selection(), which asks the database whether
+    # this college exists and is active, and does the same for the course and
+    # the year level. That is strictly stronger than the enum: it also catches
+    # a course that is not listed under the chosen college.
     college:    Optional[str] = None
-    course:     Optional[str] = None     # ← new
+    course:     Optional[str] = None
     position:   Optional[str] = None
     year_level: Optional[int] = None     # Added on 2026-10-04
 
@@ -183,16 +179,12 @@ class ProfileSetup(BaseModel):
     def _year(cls, v: Optional[int]) -> Optional[int]:
         return _check_year_level(v)
 
-    # Added on 2026-10-22 — the first rules these three fields have ever had.
-
-
     # NEW 2026-11-14. Shape only - "is this a plausible code at all" - not
     # membership, which needs the database and happens in update_profile().
     #
     # The cap is 20 because user_profiles.college is varchar(20). Without it a
-    # longer code reaches PostgreSQL and comes back as a driver error instead of a
-    # sentence a teacher can read. Blank becomes None, the same rule the three
-    # text fields follow, so "Skip for now" on /setup keeps working.
+    # longer code reaches PostgreSQL and comes back as a driver error instead
+    # of a sentence a teacher can read.
     @field_validator("college")
     @classmethod
     def _college(cls, v: Optional[str]) -> Optional[str]:
@@ -205,7 +197,6 @@ class ProfileSetup(BaseModel):
             raise ValueError(
                 f"College code must be at most {MAX_COLLEGE_CODE_LENGTH} characters.")
         return s
-
 
     @field_validator("first_name")
     @classmethod
@@ -221,15 +212,15 @@ class ProfileSetup(BaseModel):
     @classmethod
     def _position(cls, v: Optional[str]) -> Optional[str]:
         return _check_position(v)
- 
- 
+
+
 class ProfileResponse(BaseModel):
     profile_id:       int
     user_id:          int
     first_name:       Optional[str] = None
     last_name:        Optional[str] = None
     college:          Optional[str] = None
-    course:           Optional[str] = None    # ← new
+    course:           Optional[str] = None
     position:         Optional[str] = None
     year_level:       Optional[int] = None    # Added on 2026-10-04
     avatar_path:      Optional[str] = None
@@ -240,5 +231,5 @@ class ProfileResponse(BaseModel):
     # would keep showing the cached old one. The frontend appends this as a
     # cache-busting query (?v=…), which changes whenever the profile is saved.
     updated_at:       Optional[datetime] = None
- 
+
     model_config = {"from_attributes": True}

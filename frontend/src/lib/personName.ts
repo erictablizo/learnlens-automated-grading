@@ -6,119 +6,113 @@
  *    letters and not numbers. NOT FOR JUST PASSWORD but when you're Setting
  *    up your profile)"
  *
- * Before today `ProfileSetup` in backend/app/schemas/profile.py had NO
- * validators of any kind — not one. It is the only text-field surface in
- * LearnLens that never got the 1 Oct "strip before you test for blank" work
- * that schemas/exam.py and schemas/paper.py did. So the API accepted
- * first_name = "123", "<script>alert(1)</script>", "!!!!" or "   ", and the
- * sidebar renders that on EVERY screen of the system.
+ * Before that, `ProfileSetup` in backend/app/schemas/profile.py had NO
+ * validators of any kind — the API accepted first_name = "123",
+ * "<script>alert(1)</script>", "!!!!" or "   ", and the sidebar rendered that
+ * on EVERY screen of the system.
  *
- * These rules MUST stay identical to _check_person_name() / _check_position()
- * in backend/app/schemas/profile.py — same order, same wording. The browser
- * copy is so the teacher is told before the round trip; the server copy is the
- * one that protects the data. Change one, change the other.
+ * ────────────────────────────────────────────────────────────────────────────
+ * REWRITTEN 2026-11-16 (Grace, post-UAT): "First Name, Last Name, and Position
+ * should have validation like terms of special characters and numbers for
+ * setup and edit; validation for all fields if blank for setup and edit."
  *
- *     Save as: frontend/src/lib/personName.ts
+ * THE TWO CHARACTER SETS IN THIS FILE ARE GONE. They used to be spelled out
+ * here as NOT_IN_NAME_STRICT and NOT_IN_POSITION_STRICT, with relaxed
+ * variants beside them, and the same four sets were spelled out again in
+ * schemas/profile.py. Four hand-maintained regexes for one idea.
+ *
+ * All three fields now delegate to checkNamePart() in lib/textField.ts — the
+ * rule every STUDENT name already uses: letters, space, period, apostrophe,
+ * hyphen; no digits, no comma, no parentheses.
+ *
+ * WHAT CHANGES FOR A TEACHER, and both directions matter:
+ *
+ *   NOW ACCEPTED, and these were real refusals measured on 2026-11-04 over 28
+ *   realistic Filipino names — the old set refused 7 of them:
+ *       Dela Cruz-Santos    O'Brien    Reyes-Ramos    Anne-Marie
+ *   A teacher with a hyphenated surname could not complete Setup at all.
+ *   "Asst. Prof." is now a legal Position for the first time, too.
+ *
+ *   NOW REFUSED:
+ *       Teacher 1    Instructor 2
+ *   The old position set deliberately allowed digits — schemas/profile.py
+ *   recorded "Philippine academic ranks are written both ways". Grace chose
+ *   the narrower reading on 2026-11-16: no special characters AND no numbers.
+ *   Ranks in Roman numerals ("Instructor II") are unaffected, because those
+ *   are letters.
+ *
+ * THE LENGTH CAPS STAY HERE, because they are the only thing about these
+ * fields that is NOT shared: a name part may be 255 characters, but
+ * user_profiles.first_name is varchar(100).
+ *
+ * Keep in step with _check_person_name() / _check_position() in
+ * backend/app/schemas/profile.py — same order, same wording.
  */
-
 // CORRECTED 2026-10-22 against learnlens_schema.sql, which is the only thing
-// that settles these. The first version guessed 100 for BOTH and was half
-// right: position is varchar(255), so a 150-character title was refused by
-// the app for no reason the database would have agreed with.
+// that settles these:
 //     user_profiles.first_name   character varying(100)
 //     user_profiles.last_name    character varying(100)
 //     user_profiles."position"   character varying(255)
 export const MAX_NAME_LENGTH = 100;
 export const MAX_POSITION_LENGTH = 255;
 
+import { checkNamePart, tidyText } from "@/lib/textField";
+
 /** Letters in ANY alphabet. "Ñ", "é", "ü" are letters; "1" and "@" are not. */
 const A_LETTER = /\p{L}/u;
 
-/** A NAME may contain letters, spaces, and the four marks that appear in real
- *  names: apostrophe (O'Brien), hyphen (Dela Cruz-Santos), period (Ben R.)
- *  and comma. Digits are NOT allowed — no person's name is "Eric 2". */
-const NOT_IN_NAME_RELAXED = /[^\p{L} '’.,-]/gu;
-
-/** A POSITION may also contain digits, because Philippine academic ranks are
- *  written both ways: "Instructor I" and "Teacher 1". It also allows & / ( )
- *  for things like "Professor (Part-time)" and "Dean & Professor". */
-const NOT_IN_POSITION_RELAXED = /[^\p{L}\p{N} '’.,&/()-]/gu;
-
-/** Doc Rubrica, 2026-10-22: "it should not accept special characters and
- *  combination of special characters and Letter". STRICT = letters and the
- *  space between words; a Position may also hold numbers ("Instructor II",
- *  "Teacher 1"). Keep in step with STRICT_PERSON_NAME in schemas/profile.py.
+/**
+ * Collapse runs of whitespace and trim, NFC-normalised.
  *
- *  CHANGED 2026-10-23 — the PERIOD is allowed in a NAME again, and only in a
- *  name: "Name in Set Up and Edit Profile can accept . for the Middle Initial
- *  of the Teacher". So "Eric Bernard R." is accepted, and so is "Ma. Teresa",
- *  while "Eric@" and "O'Brien" stay refused. This is a deliberate, named
- *  exception to the 2026-10-22 rule, not a rollback of it — every other mark
- *  is still out, and POSITION is unchanged (no period there).
- *
- *  MEASURED COST, re-run against learnlens_schema.sql after this change:
- *  first_name 0 of 6 refused (was 3 of 6 — all three were the middle-initial
- *  period), last_name 0 of 6, position 0 of 6. Nothing in the profile table
- *  is un-editable any more. */
-export const STRICT_PERSON_NAME = true;
-/** The period is here for a middle initial — "Eric Bernard R.". */
-const NOT_IN_NAME_STRICT = /[^\p{L} .]/gu;
-const NOT_IN_POSITION_STRICT = /[^\p{L}\p{N} ]/gu;
-const NOT_IN_NAME = STRICT_PERSON_NAME ? NOT_IN_NAME_STRICT : NOT_IN_NAME_RELAXED;
-const NOT_IN_POSITION = STRICT_PERSON_NAME ? NOT_IN_POSITION_STRICT : NOT_IN_POSITION_RELAXED;
-
-/** Collapse runs of whitespace and trim. "  Eric   Bernard " -> "Eric Bernard".
- *  NFC so that an accent typed as a combining mark counts as one character. */
+ * KEPT AS A RE-EXPORT, not a second implementation: it is tidyText() from
+ * textField.ts, which is itself the browser copy of tidy_text() in
+ * schemas/_text.py. The name stays because two screens import `tidyName`.
+ */
 export function tidyName(v: string): string {
-  return v.normalize("NFC").replace(/\s+/g, " ").trim();
-}
-
-function listBad(v: string, re: RegExp): string[] {
-  const seen = new Set<string>(v.match(re) ?? []);
-  return [...seen].sort();
+  return tidyText(v ?? "");
 }
 
 /**
  * Returns null when acceptable, or the message to show.
+ *
  * `label` is what the teacher sees: "First name", "Last name".
- * A blank value is NOT an error here — it means "not filled in yet", which
- * Skip for now relies on. Required-ness is a separate rule, enforced by the
- * form, exactly as it is today.
+ *
+ * `required` is NEW 2026-11-16. Blank used to be silently acceptable here,
+ * with required-ness living separately in each form — which is how /setup and
+ * /profile ended up with four hand-written `if (!x.trim())` checks between
+ * them and none at all for Position or Year Level. One flag, one sentence,
+ * both screens.
  */
-export function checkPersonName(raw: string, label: string): string | null {
+export function checkPersonName(raw: string, label: string,
+                                required = false): string | null {
   const v = tidyName(raw ?? "");
-  if (!v) return null;
+  if (!v) return required ? `${label} is required.` : null;
+  // The CAP IS CHECKED FIRST and locally, because checkNamePart's own cap is
+  // 255 — the student column — and these columns are varchar(100). A limit
+  // the API states as a sentence beats one PostgreSQL refuses as a driver
+  // error.
   if (v.length > MAX_NAME_LENGTH) {
     return `${label} must be at most ${MAX_NAME_LENGTH} characters.`;
   }
-  if (!A_LETTER.test(v)) {
-    return `${label} must contain at least one letter.`;
-  }
-  const bad = listBad(v, NOT_IN_NAME);
-  if (bad.length) {
-    return `${label} cannot contain ${bad.map(c => `"${c}"`).join(", ")}. ` +
-      (STRICT_PERSON_NAME ? "Use letters and spaces, and a period for a middle initial."
-                          : `Use letters, spaces, and ' - . , only.`);
-  }
-  return null;
+  // NO at-least-one-letter test here. checkNamePart() runs it, in that
+  // order, with this exact sentence - and the backend's _check_person_name()
+  // has no copy of it either. One test, one place.
+  return checkNamePart(v, label);
 }
 
-export function checkPosition(raw: string): string | null {
+/**
+ * POSITION. Same characters as a name as of 2026-11-16 — see the header.
+ * Its own cap, because the column is varchar(255).
+ */
+export function checkPosition(raw: string, required = false): string | null {
   const v = tidyName(raw ?? "");
-  if (!v) return null;
+  if (!v) return required ? "Position is required." : null;
   if (v.length > MAX_POSITION_LENGTH) {
     return `Position must be at most ${MAX_POSITION_LENGTH} characters.`;
   }
-  if (!A_LETTER.test(v)) {
-    return "Position must contain at least one letter.";
-  }
-  const bad = listBad(v, NOT_IN_POSITION);
-  if (bad.length) {
-    return `Position cannot contain ${bad.map(c => `"${c}"`).join(", ")}. ` +
-      (STRICT_PERSON_NAME ? "Use letters, numbers and spaces only."
-                          : `Use letters, numbers, spaces, and ' - . , & / ( ) only.`);
-  }
-  return null;
+  // Same as above: checkNamePart() owns the at-least-one-letter test.
+  // commaHint=false - a comma is still refused, with the general sentence.
+  return checkNamePart(v, "Position", false);
 }
 
 /**
@@ -132,8 +126,7 @@ export function checkPosition(raw: string): string | null {
  * "O'Brien" into "O'brien". Real names are not title case, and a system that
  * "corrects" a teacher's own name is a worse bug than the one it fixes.
  *
- * So: say something, change nothing. Show this beside the "Sidebar will show:"
- * preview that /setup already renders.
+ * So: say something, change nothing.
  */
 export function looksMiscased(raw: string): string | null {
   const v = tidyName(raw ?? "");

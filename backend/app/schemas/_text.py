@@ -78,57 +78,10 @@ STRICT_STUDENT_NAME = True
 STRICT_SUBJECT = True             # NEW 2026-11-04
 STRICT_SCHEDULE = True            # NEW 2026-11-04
 
-# STRICT, 2026-10-23. Letters, numbers, the space between words, and a CLOSED
-# LIST OF FIVE MARKS. Not "punctuation" - these five and nothing else.
-#
-# Taken from the values the teacher actually types, not from taste:
-#
-#     Midterm - Alcantara, Ben R.    hyphen, comma, period (middle initial)
-#     Eric Tablizo                   nothing
-#     Midterm (Set A)                parentheses
-#     Prelim - Math                  hyphen
-#
-# One set covers Exam Name, Description, Student Name and Subject, because the
-# same string can legitimately be typed in any of them - "Prelim - Math" is as
-# good an exam name as it is a description. Earlier versions gave Student Name
-# its own set; that split is gone, and with it the `student` flag that threaded
-# through _marks / _bad_chars / _allowed.
-#
-# STILL REFUSED, so Doc Rubrica's 2026-10-22 rule holds where it was aimed:
-#     @ # $ % ^ & * / \ ' " _ + = : ; ! ? [ ] { } < > ~ | and the en-dash.
-# "Ben@", "Eric@#$" and "@@@" all fail exactly as they did.
-#
-# A person's NAME is stricter still and lives in schemas/profile.py:
-# letters, space and a period, with no digits and no parentheses.
-#
-# SCHEDULE is the one exception and has its own set below.  A STUDENT'S NAME
-# PART - first_name / last_name - has its own set too, at the bottom of this
-# file; it is NOT the profile set, for the reason recorded there.
-#
-# The HYPHEN is written last so it is a literal hyphen, not a range.
-# Matches NOT_IN_LABEL_STRICT in frontend/src/lib/textField.ts.
 _STRICT_MARKS = " .,()-"
-
-# RELAXED: used only when the matching switch above is False. Taken from the
-# rows already in the database plus the near neighbours a teacher would reach
-# for. Angle brackets are never allowed either way.
 _RELAXED_MARKS = " '’‘\"“”.,:;!?()[]/&+#@_-–—"
-
-# NEW 2026-11-04. SCHEDULE is a time range the teacher types by hand, so it
-# needs a COLON, which _STRICT_MARKS deliberately refuses everywhere else.
-# MEASURED against Doc Rubrica's own examples:
-#
-#     2pm to 3pm        accepted by both sets
-#     1:00pm to 12pm    REFUSED by _STRICT_MARKS  ->  needs ":"
-#     11:00AM - 7pm     REFUSED by _STRICT_MARKS  ->  needs ":"
-#     12:00 PM          REFUSED by _STRICT_MARKS  ->  needs ":"
-#     1:00 - 3:00       REFUSED by _STRICT_MARKS  ->  needs ":"
-#
-# Its own set, not a looser shared one: widening _STRICT_MARKS would let a
-# colon into Exam Name and Description, which is exactly what the 2026-10-22
-# rule was aimed at. Matches NOT_IN_SCHEDULE_STRICT in textField.ts.
 _SCHEDULE_STRICT_MARKS = _STRICT_MARKS + ":"
-_SCHEDULE_RELAXED_MARKS = _RELAXED_MARKS            # already contains ":"
+_SCHEDULE_RELAXED_MARKS = _RELAXED_MARKS
 
 
 def _marks(strict: bool) -> str:
@@ -146,8 +99,6 @@ def tidy_text(v: Optional[str]) -> str:
 
 
 def tidy_multiline(v: Optional[str]) -> str:
-    """Keep paragraph breaks; squeeze runs of spaces and tabs.  Matches
-    tidyMultiline() in textField.ts."""
     s = unicodedata.normalize("NFC", v or "")
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
@@ -171,15 +122,12 @@ def _shown(bad) -> str:
 
 
 def _allowed(strict: bool) -> str:
-    """Must match allowedSentence() in textField.ts word for word - the
-    browser and the server say the same thing."""
     return ("Use letters, numbers, spaces, and . , - ( ) only."
             if strict else
             "Use letters, numbers, spaces and ordinary punctuation.")
 
 
 def _allowed_schedule(strict: bool) -> str:         # NEW 2026-11-04
-    """Must match allowedScheduleSentence() in textField.ts word for word."""
     return ("Use letters, numbers, spaces, and . , - ( ) : only."
             if strict else
             "Use letters, numbers, spaces and ordinary punctuation.")
@@ -241,13 +189,7 @@ def check_student_name(v: Optional[str]) -> str:
     return v
 
 
-# ── NEW 2026-11-04 (Doc Rubrica, consultation) ───────────────────────────────
-# "2 additional Fields in Exam Info Table": Subject and Schedule.
-
-
 def check_subject(v: Optional[str]) -> str:
-    """SUBJECT uses the SHARED marks. A subject is "English101" or
-    "Math 101 (Set A)" and needs nothing an exam name does not."""
     v = tidy_text(v)
     if not v:
         raise ValueError("Subject is required.")
@@ -264,13 +206,6 @@ def check_subject(v: Optional[str]) -> str:
 
 
 def check_schedule(v: Optional[str]) -> str:
-    """SCHEDULE uses its own marks, which add the COLON - see
-    _SCHEDULE_STRICT_MARKS above.
-
-    Note what is NOT here: the "must contain at least one letter" test every
-    other field carries. "1:00 - 3:00" is a legitimate schedule with no
-    letters in it, and refusing it would be refusing the teacher's own
-    shorthand."""
     v = tidy_text(v)
     if not v:
         raise ValueError("Schedule is required.")
@@ -284,47 +219,10 @@ def check_schedule(v: Optional[str]) -> str:
     return v
 
 
-# ── NEW 2026-11-04 (Doc Rubrica, consultation, page 4) ───────────────────────
-# "Split Name to Last Name & First Name" / "1 additional field: First Name"
-#
-# A STUDENT'S NAME PART gets its OWN set - a third one. Neither of the two
-# that already exist in this codebase fits.
-#
-# NOT the profile set (" ." in schemas/profile.py). MEASURED 2026-11-04 over
-# 28 realistic Filipino names: it refuses 7, including EVERY hyphenated
-# surname -
-#
-#     Dela Cruz-Santos    refused by the profile set
-#     Reyes-Ramos         refused by the profile set
-#     Villanueva-Lim      refused by the profile set
-#     Anne-Marie          refused by the profile set
-#     O'Brien, D'Souza    refused by the profile set AND by _STRICT_MARKS
-#
-# - and test_papers.student_name accepts all of those TODAY under
-# _STRICT_MARKS. Reusing the profile set would be a REGRESSION: "Dela
-# Cruz-Santos, Maria" is a legal paper name right now and would stop being one.
-#
-# NOT _STRICT_MARKS either. That allows digits, parentheses, and above all the
-# COMMA - and the comma is the character the split is being made ON. A comma
-# inside last_name means the teacher typed both names into one box, which is
-# worth catching rather than storing.
-#
-# So: letters, space, period, apostrophe, hyphen. No digits, no comma, no
-# parentheses. Of the 28 names it refuses exactly one, "Eric 2", which is the
-# digit-in-a-name case Doc Rubrica objected to.
-#
-# KNOWN LIMITATION, recorded honestly: "Midterm - Alcantara" PASSES this set.
-# It is name-shaped - letters, space, hyphen - so no character rule can catch
-# the exam-name-baked-into-the-field mistake. What prevents it recurring is
-# Add Paper having two separate boxes labelled Last name and First name.
-#
-# The HYPHEN is written last, same reason as _STRICT_MARKS.
-# Matches NOT_IN_NAME_PART in frontend/src/lib/textField.ts.
 _NAME_PART_MARKS = " .'’-"
 
 NAME_PART_SENTENCE = "Use letters, spaces, and . ' - only."
 
-# The one mistake a validator can actually help with.
 NAME_PART_COMMA_HINT = (
     "Enter the surname and the first name in their own boxes, "
     "not \"Surname, First name\" in one."
@@ -332,13 +230,20 @@ NAME_PART_COMMA_HINT = (
 
 
 def _name_part_bad(v: str):
-    """isalpha(), not isalnum(): a digit in a name is refused, unlike every
-    other field in this file."""
     return sorted({c for c in v if not c.isalpha() and c not in _NAME_PART_MARKS})
 
 
-def check_name_part(v: Optional[str], label: str) -> str:
-    """label is what the teacher sees: "Last name" / "First name"."""
+def check_name_part(v: Optional[str], label: str,
+                    comma_hint: bool = True) -> str:
+    """label is what the teacher sees: "Last name" / "First name".
+
+    comma_hint is NEW 2026-11-16 and defaults to the old behaviour, so every
+    existing caller is untouched. It exists because schemas/profile.py now
+    borrows this rule for the teacher's POSITION, and on that field
+    NAME_PART_COMMA_HINT - "enter the surname and the first name in their own
+    boxes" - is a sentence about a different screen. MEASURED: "Head, Science
+    Dept." earned exactly that message before this flag existed.
+    """
     v = tidy_text(v)
     if not v:
         raise ValueError(f"{label} is required.")
@@ -348,30 +253,12 @@ def check_name_part(v: Optional[str], label: str) -> str:
         raise ValueError(f"{label} must contain at least one letter.")
     bad = _name_part_bad(v)
     if bad:
-        tail = NAME_PART_COMMA_HINT if "," in bad else NAME_PART_SENTENCE
+        tail = (NAME_PART_COMMA_HINT
+                if ("," in bad and comma_hint) else NAME_PART_SENTENCE)
         raise ValueError(f"{label} cannot contain {_shown(bad)}. {tail}")
     return v
 
 
-# ── NEW 2026-11-14 (Alex Passion / Julius Bancud, Recommendations page 1) ────
-# "Student Middle Name" on the class list, shown on the screens as Middle
-# Initial.
-#
-# IT REUSES _NAME_PART_MARKS, not a fourth set. A middle name IS a name part -
-# "Reyes", "R.", "Dela Cruz" - and every argument recorded above for that set
-# applies unchanged: letters, space, period, apostrophe, hyphen; no digits, no
-# comma, no parentheses.
-#
-# TWO THINGS DIFFER FROM check_name_part, and both are deliberate:
-#
-#   1. IT IS OPTIONAL. Blank is not an error, it is "not stated" - and it
-#      returns None rather than "", so a student with no middle name and a
-#      student with an empty one cannot both exist in the column. The same
-#      distinction _section() keeps in schemas/student.py.
-#
-#   2. THE CAP IS 100, not 255, because students.middle_name and
-#      test_papers.middle_name are varchar(100). A limit the API states as a
-#      sentence beats one PostgreSQL refuses as a driver error.
 MAX_MIDDLE_NAME_LENGTH = 100
 
 
@@ -461,19 +348,7 @@ def check_section(v: Optional[str], required: bool = False) -> Optional[str]:
 
 
 def middle_initial(v: Optional[str]) -> str:
-    """How a middle name is WRITTEN inside a composed name: "R." or "Reyes".
-
-    A SINGLE LETTER gains a period, because that is how a teacher writes an
-    initial and because _STRICT_MARKS already allows the period in
-    student_name for exactly this case - "Midterm - Alcantara, Ben R." is in
-    the comment at the top of this file.
-
-    Anything longer, and anything already ending in a period, is left exactly
-    as typed. This function ADDS punctuation; it never rewrites a name.
-    "Dela Cruz" stays "Dela Cruz".
-
-    Matches middleInitial() in frontend/src/lib/textField.ts.
-    """
+    """How a middle name is WRITTEN inside a composed name: "R." or "Reyes"."""
     s = tidy_text(v)
     if not s:
         return ""
@@ -482,21 +357,7 @@ def middle_initial(v: Optional[str]) -> str:
 
 def compose_student_name(last_name: Optional[str], first_name: Optional[str],
                          middle_name: Optional[str] = None) -> str:
-    """student_name is KEPT, not dropped, and written from the two parts.
-
-    It is read in at least six places - the paper label under the image, the
-    "no pages" fallback, the page-nav caption and the delete-confirmation
-    message on exams/[id]/page.tsx, plus PapersTable and the toasts - so
-    letting it go stale would mean a fallback branch at every one of them.
-    It is also the rollback the 2026-11-04 migration comment promises.
-
-    Matches composeStudentName() in frontend/src/lib/textField.ts."""
-    # CHANGED 2026-11-14: a THIRD, OPTIONAL part, appended after the given
-    # name - "Alcantara, Ben R."
-    #
-    # The parameter has a default, so every existing two-argument call site keeps
-    # working AND keeps producing exactly the string it produced before. A paper
-    # or student with no middle name composes byte-for-byte as it did.
+    """student_name is KEPT, not dropped, and written from the two parts."""
     base = f"{tidy_text(last_name)}, {tidy_text(first_name)}"
     mid = middle_initial(middle_name)
     return f"{base} {mid}" if mid else base
