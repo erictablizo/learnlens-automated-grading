@@ -97,6 +97,10 @@ export default function ProfileSetupPage() {
       ?? checkPersonName(lastName,  "Last name",  true)
       ?? (!college ? "Please select your college." : null)
       ?? (!course  ? "Please select your course / program." : null)
+      // !year is correct for BOTH screens: `year` is YearLevel | "", the
+      // empty string is falsy, and year levels start at 1 - so there is no
+      // legal value that this test mistakes for "not chosen".
+      ?? (!year ? "Please select a year level." : null)
       ?? checkPosition(position, true);
     if (fieldError) { setError(fieldError); return; }
     // Year level is optional — it is a default, not part of a complete profile.
@@ -331,6 +335,7 @@ export default function ProfileSetupPage() {
                 setYear(v === "" ? "" : (Number(v) as YearLevel));
               }}
               aria-label="Year level you usually teach"
+              aria-required="true"
               style={selectStyle(year !== "")}
               disabled={saving}
             >
@@ -350,6 +355,7 @@ export default function ProfileSetupPage() {
             value={position}
             onChange={e => setPosition(e.target.value)}
             aria-label="Position or title"
+            aria-required="true"
             disabled={saving}
           />
         </div>

@@ -163,6 +163,10 @@ export default function EditProfilePage() {
       ?? checkPersonName(lastName,  "Last name",  true)
       ?? (!college ? "Please select your college." : null)
       ?? (!course  ? "Please select your course / program." : null)
+      // !year is correct for BOTH screens: `year` is YearLevel | "", the
+      // empty string is falsy, and year levels start at 1 - so there is no
+      // legal value that this test mistakes for "not chosen".
+      ?? (!year ? "Please select a year level." : null)
       ?? checkPosition(position, true);
     if (fieldError) { setError(fieldError); return; }
 
@@ -335,15 +339,22 @@ export default function EditProfilePage() {
               {/* Added on 2026-10-04 — the year level this teacher usually teaches */}
               {/* FIX 2026-10-22: every other label on this form is a short
                   noun phrase - First Name, Last Name, College, Position. */}
-              <label className="form-label" htmlFor="year-level" style={labelGap}>Year Level</label>
+              <label className="form-label" htmlFor="year-level" style={labelGap}>
+                Year Level <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+              </label>
               <select id="year-level" className="form-input" value={year === "" ? "" : String(year)}
                 disabled={saving || !college}
                 onChange={e => {
                   const v = e.target.value;
                   setYear(v === "" ? "" : (Number(v) as YearLevel));
                   setError(null); setSaved(false);
-                }}>
-                <option value="">{college ? "No default" : "Select a college first"}</option>
+                }}
+                aria-required="true">
+                {/* CHANGED 2026-11-16: this option used to offer the teacher
+                    no year at all, which told her the field was optional - and
+                    it stopped being optional the moment handleSave() started
+                    requiring it. */}
+                <option value="">{college ? "Select your year level\u2026" : "Select a college first"}</option>
                 {lists.yearLevelsFor(college || null).map(y => (
                   <option key={y} value={y}>{lists.yearLabel(college || null, y)}</option>
                 ))}
@@ -354,12 +365,20 @@ export default function EditProfilePage() {
                 The year level you usually teach. Saved to your profile.
               </p>
 
-              <label className="form-label" htmlFor="position" style={labelGap}>Position</label>
+              <label className="form-label" htmlFor="position" style={labelGap}>
+                Position <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
+              </label>
+              {/* CHANGED 2026-11-16: the placeholder was "Teacher", which is
+                  the value this box used to fall back to when left blank. */}
               <input id="position" className="form-input" value={position} disabled={saving}
-                placeholder="Teacher"
+                placeholder="e.g. Instructor II"
+                aria-required="true"
                 onChange={e => { setPosition(e.target.value); setError(null); setSaved(false); }} />
               <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
-                Shown in the sidebar under your name, above your course. Leave blank to use &ldquo;Teacher&rdquo;.
+                {/* CHANGED 2026-11-16: this sentence told the teacher to do the
+                    one thing handleSave() now refuses. The "Teacher" fallback
+                    is gone with it. */}
+                Shown in the sidebar under your name, above your course.
               </p>
 
               {error && (
