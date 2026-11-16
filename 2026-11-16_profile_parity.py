@@ -212,17 +212,36 @@ def shorten(v):
     return s if len(s) <= 46 else s[:43] + "..."
 
 
-def measure(files, quiet=False):
+def say(msg, end="\n"):
+    """Progress, flushed. This tool shells out to `npx tsc` FIVE times - once
+    for the real comparison and once per negative control - and on Windows
+    that is minutes of silence. A measurement nobody can tell from a hang is
+    one people kill halfway."""
+    print(msg, end=end, flush=True)
+
+
+def measure(files, label="", quiet=False):
     root = Path(tempfile.mkdtemp(prefix="ll-profile-parity-"))
     try:
         cases = build_corpus(root)
         stage(root, files)
+        if not quiet:
+            say(f"    {label}server arm (python) ... ", end="")
         py, err = run_py(root)
         if err:
+            if not quiet:
+                say("failed")
             return None, cases, f"python arm failed: {err}"
+        if not quiet:
+            say("ok")
+            say(f"    {label}browser arm (npx tsc, the slow step) ... ", end="")
         ts, err = run_ts(root)
         if err:
+            if not quiet:
+                say("failed")
             return None, cases, f"browser arm failed: {err}"
+        if not quiet:
+            say("ok")
         return (compare(cases, py, ts), py), cases, None
     finally:
         shutil.rmtree(root, ignore_errors=True)
@@ -285,6 +304,8 @@ def main(argv):
         print(f"  reading  {files[k]}")
     print()
 
+    print("  this runs `npx tsc` 5 times - once for real and once per negative")
+    print("  control. On Windows expect a few minutes.\n")
     res, cases, err = measure(files)
     if err:
         print("  " + err)
@@ -334,16 +355,18 @@ def main(argv):
             continue
         mfiles, d = made
         try:
-            r, _, merr = measure(mfiles)
+            say(f"    [{CONTROLS.index((name, which, old, new)) + 1}/"
+                f"{len(CONTROLS)}] {name}")
+            r, _, merr = measure(mfiles, label="  ")
             if merr:
                 print(f"    SKIPPED  {name}: {merr}")
                 blind.append(name)
             else:
                 mbad = r[0]
                 if mbad:
-                    print(f"    caught   {name}  ({len(mbad)} disagreements)")
+                    say(f"      -> caught ({len(mbad)} disagreements)")
                 else:
-                    print(f"    BLIND    {name}  -> the bench did NOT notice")
+                    say("      -> BLIND: the bench did NOT notice")
                     blind.append(name)
         finally:
             shutil.rmtree(d, ignore_errors=True)
