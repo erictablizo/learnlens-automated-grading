@@ -41,6 +41,7 @@ that message.  The comma is still refused, with the general sentence.
 Matches check_name_part(..., comma_hint=) in backend/app/schemas/_text.py.
 """
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -68,7 +69,30 @@ NEW_TAIL = ('    const tail = (bad.includes(",") && commaHint)\n'
 # file is almost certainly that short copy rather than the real one, and
 # patching it would leave the build broken in exactly the way this tool exists
 # to undo.
-REAL_FILE_MARKERS = ("bySurname", "paperLastName", "paperFirstName", "needsNameSplit")
+REAL_FILE_MARKERS = (
+    # the paper/roster helpers
+    "bySurname", "paperLastName", "paperFirstName", "needsNameSplit",
+    # the exam-form rules - the browser halves of check_exam_name(),
+    # check_description(), check_subject(), check_schedule() and
+    # tidy_multiline() in backend/app/schemas/_text.py
+    "checkExamName", "checkDescription", "checkSubject", "checkSchedule",
+    "tidyMultiline",
+)
+
+
+def exports(text: str, name: str) -> bool:
+    """Is `name` really EXPORTED here?
+
+    NOT a substring test. `name in text` was the first version and it is wrong
+    twice over: "checkSchedule" is satisfied by "checkScheduleX", and any of
+    these names mentioned in a COMMENT would satisfy it too - the same mistake
+    that made the tidyName guard in apply_2026-11-16_profile_required.py
+    unable to fail, on the same day.
+    """
+    return re.search(
+        rf"^export\s+(?:async\s+)?"
+        rf"(?:function|const|let|var|class|type|interface)\s+{re.escape(name)}\b",
+        text, re.M) is not None
 
 
 def patch(path: Path, dry: bool) -> int:
@@ -87,25 +111,47 @@ def patch(path: Path, dry: bool) -> int:
               f"no checkNamePart().\n           Nothing was written.")
         return 2
 
-    if MARKER in work:
-        print(f"  ok       {path}\n           already carries the {STAMP} "
-              f"commaHint flag - nothing written.")
-        return 1
-
-    missing = [m for m in REAL_FILE_MARKERS if m not in work]
-    if len(missing) == len(REAL_FILE_MARKERS):
-        print(f"  REFUSED  {path}")
-        print("           This file has none of bySurname / paperLastName /")
-        print("           paperFirstName / needsNameSplit, so it is the SHORT copy")
-        print("           I wrongly delivered, not your real file. Patching it would")
-        print("           leave analytics/page.tsx broken.")
-        print("\n             git checkout -- frontend/src/lib/textField.ts")
-        print("\n           then run this again. Nothing was written.")
-        return 2
+    # COMPLETENESS FIRST. This used to run AFTER the "already patched" check,
+    # which meant the single most dangerous file - my short copy with the flag
+    # already in it - was reported as "already done" and the damage stayed
+    # invisible. MEASURED 2026-11-16: that is exactly what happened, and the
+    # real damage was NINE missing functions and 23 TS2305 errors in 6 files.
+    missing = [m for m in REAL_FILE_MARKERS if not exports(work, m)]
     if missing:
-        print(f"  note     {path}")
-        print(f"           these are absent but expected: {', '.join(missing)}")
-        print("           Patching anyway - say so if that is a surprise.")
+        print(f"  REFUSED  {path}")
+        print(f"           {len(missing)} of {len(REAL_FILE_MARKERS)} expected "
+              f"functions are NOT in this file:")
+        line = "             "
+        for m in missing:
+            if len(line) + len(m) > 74:
+                print(line); line = "             "
+            line += m + "  "
+        if line.strip():
+            print(line)
+        print("           This is the SHORT copy I wrongly delivered on 2026-11-16,")
+        print("           not your real textField.ts. Patching it would leave the")
+        print("           frontend broken.")
+        print("")
+        print("           `git checkout --` will NOT help if the short copy was")
+        print("           committed. Find the last good revision by line count:")
+        print("")
+        print("             git log --format=%h -- frontend/src/lib/textField.ts |")
+        print("               while read c; do echo \"$c $(git show "
+              "$c:frontend/src/lib/textField.ts | wc -l)\"; done")
+        print("")
+        print("           then restore it:")
+        print("")
+        print("             git show <good>:frontend/src/lib/textField.ts \\")
+        print("               > frontend/src/lib/textField.ts")
+        print("")
+        print("           Nothing was written.")
+        return 2
+
+    if MARKER in work:
+        print(f"  ok       {path}\n           complete ({len(REAL_FILE_MARKERS)} "
+              f"of {len(REAL_FILE_MARKERS)} functions present) and already "
+              f"carries\n           the {STAMP} commaHint flag - nothing written.")
+        return 1
 
     todo = []
     for old, new, what in ((OLD_SIG, NEW_SIG, "the checkNamePart signature"),
@@ -144,9 +190,8 @@ def patch(path: Path, dry: bool) -> int:
         shutil.copy2(path, backup)
         path.write_bytes(out.encode("utf-8"))
         print(f"  patched  {path}   (2 edits, backup: {backup.name})")
-        for m in REAL_FILE_MARKERS:
-            if m in work:
-                print(f"             kept: {m}()")
+        print(f"             all {len(REAL_FILE_MARKERS)} other exports kept: "
+              f"{', '.join(REAL_FILE_MARKERS)}")
     return 0
 
 
