@@ -48,12 +48,21 @@ import { bySurname, paperLastName, paperFirstName } from "@/lib/textField";
  * The passing mark, as a PERCENTAGE of the exam's item count.
  *
  * Her lines 4 and 5 ask for "passed" and "failed" and do not say what passing
- * is. 75% is the common Philippine mark and is the default, but it is a
- * CONTROL rather than a constant: a wrong guess would put a wrong number on a
- * report she signs, and "what counts as passing?" is the first thing a
- * panellist asks. With the control on screen, the answer is on screen too.
+ * is. It is a CONTROL rather than a constant: a wrong guess would put a wrong
+ * number on a report she signs, and "what counts as passing?" is the first
+ * thing a panellist asks. With the control on screen, the answer is on screen
+ * too.
+ *
+ * CHANGED 2026-11-17 (Grace): 75 → 60. 75 was a guess at the common
+ * Philippine mark; 60 is what this school actually passes at. Only the
+ * STARTING value moves — the control itself is untouched, so a teacher can
+ * still type any mark for one exam.
+ *
+ * Math.ceil, not round, so the boundary never drifts BELOW the percentage
+ * typed: 60% of 15 items is 9.0 and the mark is 9; 60% of 16 is 9.6 and the
+ * mark is 10.
  */
-const DEFAULT_PASS_PERCENT = 75;
+const DEFAULT_PASS_PERCENT = 60;
 
 /**
  * NEW 2026-11-15 (Grace, post-UAT):
