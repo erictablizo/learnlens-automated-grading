@@ -46,6 +46,9 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import PasteStudentsModal from "@/components/students/PasteStudentsModal";
 // NEW 2026-11-16 - Recommendations page 5, "Select Option".
 import SectionPickerModal from "@/components/students/SectionPickerModal";
+// NEW 2026-11-17 - Recommendations page 6, the administrator's half.
+import AdminStudentsPanel from "@/components/students/AdminStudentsPanel";
+import { adminService } from "@/services/adminService";
 import { studentService } from "@/services/studentService";
 import type { Student, StudentBulkResult } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
@@ -140,6 +143,27 @@ export default function StudentsPage() {
   // would have conflated the two.
   const [picked, setPicked] = useState<string | null>(null);
 
+  // NEW 2026-11-17 - Recommendations page 6.
+  //
+  // NULL means "not known yet", which is NOT the same as false: rendering
+  // the teacher roster while the answer is in flight would flash the wrong
+  // screen at an administrator, and rendering the panel would flash the
+  // wrong one at a teacher. The sidebar made the opposite choice on
+  // 2026-11-13 - it assumes NOT an admin until told - because a link that
+  // appears late is better than one that appears wrongly. Here a whole
+  // screen is at stake, so it waits.
+  //
+  // adminService.isAdmin() never throws; a dead backend answers false.
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) { setIsAdmin(false); return; }
+    let alive = true;
+    adminService.isAdmin(token).then(v => { if (alive) setIsAdmin(v); });
+    return () => { alive = false; };
+  }, []);
+
   const [form, setForm] = useState({ ...BLANK });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -171,8 +195,13 @@ export default function StudentsPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
+    // CHANGED 2026-11-17: only a TEACHER loads this roster. Hooks run
+    // before any return, so without this an administrator would fetch
+    // GET /students and GET /students/sections on every mount and throw
+    // both away - the panel reads /admin/students instead.
+    if (isAdmin !== false) return;
     load();
-  }, [load, router]);
+  }, [load, router, isAdmin]);
 
   const resetForm = () => {
     setForm({ ...BLANK }); setEditingId(null);
@@ -285,6 +314,36 @@ export default function StudentsPage() {
     });
     await load();
   };
+
+  // NEW 2026-11-17 - Recommendations page 6: "For ADMIN Page ONLY ...
+  // Remove this Pop-up Page ... Instead display this Page ONLY".
+  //
+  // AFTER every hook, never inside a condition: React requires the same
+  // hooks in the same order on every render, and an early return above
+  // them would change that between the two branches.
+  if (isAdmin === null) {
+    return (
+      <div className="dashboard-layout">
+        <Navbar />
+        <main className="main-content"
+              style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <span className="spinner spinner-dark" />
+          <span style={{ color: "var(--text-muted)" }}>Loading…</span>
+        </main>
+      </div>
+    );
+  }
+
+  if (isAdmin) {
+    return (
+      <div className="dashboard-layout">
+        <Navbar />
+        <main className="main-content">
+          <AdminStudentsPanel />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-layout">
@@ -494,7 +553,7 @@ export default function StudentsPage() {
             rather than hung off the sidebar click, so a reload or a typed
             URL asks the same question. Cancel leaves for Manage Exams,
             which is where the sidebar click came from. */}
-        {picked === null && (
+        {picked === null && isAdmin === false && (
           <SectionPickerModal
             sections={sections}
             loading={loading}

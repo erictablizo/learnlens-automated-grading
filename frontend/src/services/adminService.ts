@@ -33,6 +33,12 @@
  */
 import { api, ApiError } from "@/lib/api";
 import type { AdminExam, AdminOverview, AdminTeacher } from "@/types/admin";
+// NEW 2026-11-17 - the global student table is made of the same records
+// the teacher screens show, so it reuses their types rather than
+// declaring a second shape for one row.
+import type {
+  Student, StudentDetail, StudentPayload, StudentDeleteResult,
+} from "@/types/student";
 
 export const adminService = {
   /** Totals for the whole installation. 403 for a teacher. */
@@ -43,6 +49,37 @@ export const adminService = {
 
   /** Every exam in the installation and whose it is. */
   exams: (token: string) => api.get<AdminExam[]>("/admin/exams", token),
+
+  /**
+   * NEW 2026-11-17 - the GLOBAL student table (Recommendations page 6).
+   *
+   * Nested under `students` rather than flattened into adminStudentsList,
+   * adminStudentsCreate and so on: five calls that share a prefix read
+   * better as one object, and it keeps `adminService.students.*` saying
+   * out loud, at every call site, that this is the administrator path.
+   *
+   * NO ORDER PARAMETER. The server returns them ascending by
+   * lower(trim(student_number)) - what ux_students_number indexes - and a
+   * second opinion about the order would be one more thing to disagree.
+   */
+  students: {
+    list: (token: string, q?: string) =>
+      api.get<Student[]>(
+        `/admin/students${q ? `?q=${encodeURIComponent(q)}` : ""}`, token),
+
+    get: (studentId: number, token: string) =>
+      api.get<StudentDetail>(`/admin/students/${studentId}`, token),
+
+    create: (body: StudentPayload, token: string) =>
+      api.post<Student>("/admin/students", body, token),
+
+    update: (studentId: number, body: StudentPayload, token: string) =>
+      api.put<Student>(`/admin/students/${studentId}`, body, token),
+
+    /** Removes from the SCHOOL roster, not from one class list. */
+    remove: (studentId: number, token: string) =>
+      api.delete<StudentDeleteResult>(`/admin/students/${studentId}`, token),
+  },
 
   /**
    * Is the signed-in user an administrator? Never throws.
