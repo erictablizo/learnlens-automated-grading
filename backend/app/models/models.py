@@ -22,7 +22,12 @@ class User(Base):
 
     profile         = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete")
     exams           = relationship("Exam", back_populates="creator", cascade="all, delete")
-    students        = relationship("Student", back_populates="creator", cascade="all, delete")   # NEW 2026-11-12
+    # CHANGED 2026-11-17: NO cascade. The database FK is ON DELETE SET
+    # NULL as of migrations/2026-11-17_global_students.sql; leaving
+    # cascade="all, delete" here would have SQLAlchemy delete the rows in
+    # Python anyway, re-creating in the ORM exactly the hazard the
+    # migration removed from the schema.
+    students        = relationship("Student", back_populates="creator")   # NEW 2026-11-12
     password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete")
 
 
@@ -153,15 +158,38 @@ class Student(Base):
         #
         # trim and not btrim: identical in PostgreSQL, SQL-standard, and it
         # lets the test harness run the real expression on SQLite too.
-        Index("ux_students_owner_number", "created_by",
+        # CHANGED 2026-11-17 - Recommendations page 6, and this reverses
+        # the note above it rather than contradicting it quietly.
+        #
+        # That note said: "UNIQUE PER TEACHER, not globally: two teachers
+        # at one school may hold the same student, and a global unique
+        # makes the second roster impossible to fill." That was right for
+        # a per-teacher roster. Page 6 replaces the per-teacher roster
+        # with ONE table the admin maintains - "This the GLOBAL info of
+        # Student Info" - so the second roster is no longer filled by
+        # re-entering the student; it is filled by adding the existing
+        # student to a class list.
+        #
+        # Matches migrations/2026-11-17_global_students.sql exactly. An
+        # index the model and the database disagree about is a phantom
+        # drift in every future schema comparison.
+        Index("ux_students_number",
               text("lower(trim(student_number))"), unique=True),
-        Index("ix_students_owner_section", "created_by", "section"),
+        Index("ix_students_section", "section"),
         CheckConstraint("trim(student_number) <> ''",
                         name="students_student_number_not_blank"),
     )
 
     student_id     = Column(Integer, primary_key=True, autoincrement=True)
-    created_by     = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    # CHANGED 2026-11-17. created_by stops meaning OWNER and starts
+    # meaning "who typed it in", so it is nullable and must not cascade.
+    #
+    # With a global roster, ON DELETE CASCADE here would mean that
+    # removing one teacher's account deletes students every other
+    # teacher depends on - and test_papers.student_id would go SET NULL
+    # across the system, silently unlinking graded papers from the people
+    # who sat them.
+    created_by     = Column(Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
     # varchar, NOT integer: real student numbers carry hyphens and leading
     # zeros - "2021-00123", "04512" - and an integer column eats both.
     student_number = Column(String(50), nullable=False)

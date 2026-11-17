@@ -37,7 +37,13 @@ MAX_BULK_ROWS = 300
 
 
 class DuplicateStudent(Exception):
-    """This teacher already has a student with that number."""
+    """That student number is already on the roster.
+
+    CHANGED 2026-11-17: it used to say "this teacher already has". The
+    roster is global now, so the holder may be another teacher or the
+    administrator - and the message already names them, which is why it
+    needs no change.
+    """
 
     def __init__(self, existing: Student):
         self.existing = existing
@@ -81,7 +87,19 @@ def check_number(v: str) -> str:
 async def by_number(
     db: AsyncSession, owner_id: int, student_number: str,
 ) -> Optional[Student]:
-    """This teacher's student with that number, or None.
+    """THE student with that number, or None. GLOBAL as of 2026-11-17.
+
+    `owner_id` is KEPT in the signature and deliberately unused, so that
+    every call site stays valid and this change is one function rather
+    than nine. It is not a leftover.
+
+    WHY IT HAD TO STOP FILTERING. student_number is UNIQUE GLOBALLY as of
+    migrations/2026-11-17_global_students.sql. A per-owner lookup cannot
+    see a number the admin holds, so create_student found no duplicate,
+    inserted, and died on ux_students_number as an unhandled
+    IntegrityError - a 500 where the teacher should have been told who
+    already has that number. A duplicate check must be exactly as wide as
+    the constraint it is reporting on.
 
     `.limit(1).scalars().first()` and not `scalar_one_or_none()`: the unique
     index makes two rows impossible in a correct database, but this function
@@ -92,9 +110,9 @@ async def by_number(
     key = norm_number(student_number)
     if not key:
         return None
+    del owner_id          # global as of 2026-11-17 - see the docstring
     return (await db.execute(
         select(Student).where(
-            Student.created_by == owner_id,
             func.lower(func.trim(Student.student_number)) == key,
         ).limit(1)
     )).scalars().first()
