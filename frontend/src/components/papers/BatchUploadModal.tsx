@@ -31,7 +31,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { paperService } from "@/services/paperService";
-import { studentService } from "@/services/studentService";
+// CHANGED 2026-11-17 — the roster is built from this teacher's CLASS LISTS,
+// not from GET /students, which returns only students they created and is
+// therefore empty since the global-students migration. See classListRoster().
+import { classListService } from "@/services/classListService";
 import { getToken } from "@/lib/auth";
 import {
   matchFilesToStudents, planUpload, toUpload, planSummary,
@@ -46,6 +49,43 @@ interface Props {
   onClose: () => void;
   /** Called once at the end so the exam page can reload its paper list. */
   onFinished: (summary: string, clean: boolean) => void;
+}
+
+/**
+ * Every student on THIS TEACHER'S class lists, de-duplicated by student_id.
+ *
+ * NEW 2026-11-17. Filename matching needs a LIST, and GET /students/lookup
+ * deliberately cannot enumerate — GLOBAL-STUDENTS-2026-11-17.md: "It cannot
+ * list, search or enumerate." Widening it, or adding a teacher-visible
+ * all-students endpoint, would hand every teacher the whole school roster and
+ * reverse that decision. A teacher's own class lists are the set they are
+ * entitled to and the set an exam is actually for.
+ *
+ * ONE REQUEST PER LIST. A teacher has a handful, so the N+1 is a handful.
+ * If that ever stops being true, the fix is a members endpoint that takes
+ * several ids, not a wider roster.
+ *
+ * A student on two lists appears ONCE: `byId` keeps the first and skips the
+ * rest, so a student taking two of this teacher's subjects cannot produce two
+ * rows and two papers from one photo.
+ */
+async function classListRoster(token: string): Promise<RosterEntry[]> {
+  const lists = await classListService.list(token);
+  const details = await Promise.all(
+    lists.map(l => classListService.get(l.class_list_id, token)));
+  const byId = new Map<number, RosterEntry>();
+  for (const d of details) {
+    for (const s of d.students) {
+      if (byId.has(s.student_id)) continue;
+      byId.set(s.student_id, {
+        student_id:     s.student_id,
+        student_number: s.student_number,
+        last_name:      s.last_name,
+        first_name:     s.first_name,
+      });
+    }
+  }
+  return Array.from(byId.values());
 }
 
 export default function BatchUploadModal({ examId, onClose, onFinished }: Props) {
@@ -67,12 +107,9 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
   useEffect(() => {
     const token = getToken();
     if (!token) { setLoadError("Your session has expired. Sign in again."); return; }
-    Promise.all([studentService.list(token), paperService.list(examId, token)])
-      .then(([students, papers]) => {
-        setRoster(students.map(s => ({
-          student_id: s.student_id, student_number: s.student_number,
-          last_name: s.last_name, first_name: s.first_name,
-        })));
+    Promise.all([classListRoster(token), paperService.list(examId, token)])
+    .then(([students, papers]) => {
+        setRoster(students);
         // Which roster students already have a paper here. Needs student_id on
         // PaperListResponse (added 2026-11-12); without it this set is empty
         // and every clash becomes a 409 mid-run instead of a preview line.
@@ -80,7 +117,7 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
           .map(p => p.student_id)
           .filter((id): id is number => typeof id === "number")));
       })
-      .catch(() => setLoadError("Could not load the roster for this exam."));
+      .catch(() => setLoadError("Could not load your class lists."));
   }, [examId]);
 
   const match = useMemo(
@@ -190,10 +227,19 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
             Name each photo after the student number written on the paper —
             <code> 2021-00000123.jpg</code>. For a two-page paper add the page:
             <code> 2021-00000123_p1.jpg</code>, <code>2021-00000123_p2.jpg</code>.
-            {roster !== null && ` ${roster.length} student(s) on your roster.`}
-          </p>
-        </>
-      )}
+            {roster !== null && roster.length > 0 &&
+              ` ${roster.length} student(s) across your class lists.`}
+              </p>
+              {roster !== null && roster.length === 0 && (
+                <div role="status" className="alert alert-error"
+                style={{ marginBottom: "1rem", fontSize: "0.82rem" }}>
+                  You have no students on any class list yet, so no photo can be
+                  matched. Build a list under <strong>List of Students</strong>
+                  {" "}first — add each student by their number.
+                  </div>
+                )}
+                </>
+              )}
 
       {files.length > 0 && step !== "done" && (
         <>

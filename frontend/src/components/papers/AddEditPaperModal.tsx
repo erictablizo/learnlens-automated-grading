@@ -68,13 +68,17 @@
  * never sent - the server reads all three off the roster row - so their
  * asterisks mark fields that must be POPULATED, which matching guarantees.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { paperService } from "@/services/paperService";
 // NEW 2026-11-14 — the roster, for the Student No. lookup.
 import { studentService } from "@/services/studentService";
 import { getToken } from "@/lib/auth";
+// NEW 2026-11-17 — a 404 from the lookup is an ANSWER ("nobody has that
+// number"), not a failure. Telling it apart from a dead backend needs the
+// status, so that a missing student does not raise a connection banner.
+import { ApiError } from "@/lib/api";
 import { PageUploadState, GradeResult } from "@/types/paper";
 // CHANGED 2026-11-04: checkNamePart replaces checkStudentName. student_name is
 // no longer typed by the teacher, so validating it as user input is now wrong -
@@ -148,24 +152,63 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   const [gradeError,  setGradeError]  = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
-  // NEW 2026-11-14. Once, on open. A failure here is NOT fatal and is not even
-  // shown as an error: the dialog still works exactly as it did before, by
-  // name. It would be wrong to block adding a paper because a roster this
-  // teacher may never have filled in could not be read.
+    // CHANGED 2026-11-17 — ONE NUMBER AT A TIME, AGAINST THE GLOBAL TABLE.
+  //
+  // This used to fetch GET /students once on open and match in the browser.
+  // That endpoint returns only students whose created_by is THIS TEACHER, and
+  // since the 2026-11-17 global-students migration every student is entered by
+  // the administrator - so the list came back EMPTY for every teacher, every
+  // number was unmatched, and because 2026-11-15 made an unmatched number a
+  // blocking error, no teacher could add a paper at all.
+  //
+  // GET /students/lookup?number= is the endpoint stage 3b built for the List
+  // of Students screen: read-only, one number, and it reads the global table.
+  // Using it here rather than widening GET /students keeps the decision
+  // recorded in GLOBAL-STUDENTS-2026-11-17.md - "it cannot list, search or
+  // enumerate" - intact.
+  //
+  // DEBOUNCED 400ms AND SEQUENCE-GUARDED, for the reason the class-lists
+  // screen records: a reply for "2026-0000004" can land after the reply for
+  // "2026-00000041", and clearing a timer does not cancel a request already in
+  // flight. Measured both ways - measure/2026-11-17_paper_lookup.mjs.
+  const lookupSeq = useRef(0);
+
   useEffect(() => {
+    const typed = studentNumber.trim();
+    // An empty box is not "nobody has that number" - it is "nothing asked
+    // yet", which is what null means to the hint below.
+    if (!typed) { setRoster(null); setRosterError(null); return; }
     const token = getToken();
     if (!token) return;
-    studentService.list(token)
-      .then(list => setRoster(list.map(s => ({
-        student_id:     s.student_id,
-        student_number: s.student_number,
-        last_name:      s.last_name,
-        first_name:     s.first_name,
-        middle_name:    s.middle_name ?? null,
-        section:        s.section ?? null,
-      }))))
-      .catch(() => { setRoster([]); setRosterError("Your student list could not be loaded, so numbers cannot be looked up. You can still type the names."); });
-  }, []);
+    setRoster(null);
+    setRosterError(null);
+    const mine = ++lookupSeq.current;
+    const timer = setTimeout(() => {
+      studentService.lookup(typed, token)
+        .then(s => {
+          if (mine !== lookupSeq.current) return;   // a newer keystroke overtook this
+          setRoster([{
+            student_id:     s.student_id,
+            student_number: s.student_number,
+            last_name:      s.last_name,
+            first_name:     s.first_name,
+            middle_name:    s.middle_name ?? null,
+            section:        s.section ?? null,
+          }]);
+        })
+        .catch((e: unknown) => {
+          if (mine !== lookupSeq.current) return;
+          setRoster([]);
+          // 404 means nobody holds that number. That is an answer, and the
+          // hint below says so; it must not raise the connection banner.
+          if (e instanceof ApiError && e.status === 404) return;
+          setRosterError(
+            "That number could not be looked up just now — check your " +
+            "connection and try again.");
+        });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [studentNumber]);
 
   const matched = useMemo<RosterStudent | null>(() => {
     const key = numberKey(studentNumber);
@@ -251,15 +294,17 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       setNumberError(numMsg);
       ok = false;
     } else if (roster === null) {
-      // The fetch has not landed. Saying "not on your list" here would be a
-      // claim we cannot support yet.
-      setNumberError("Still reading your student list — try again in a moment.");
+      // The lookup has not landed. Saying "nobody has that number" here would
+      // be a claim we cannot support yet.
+      setNumberError("Still looking that number up — try again in a moment.");
       ok = false;
     } else if (!matched) {
+      // CHANGED 2026-11-17: the same sentence /class-lists uses. The old one
+      // sent the teacher to a Students page that page 10 removed for them.
       setNumberError(
-        "That number is not on your student list. Add the student on the " +
-        "Students page first, then come back — the paper is linked to them " +
-        "by number, not by name.");
+        `No student with number ${studentNumber.trim()} has been added yet. ` +
+        "Ask your administrator to add them first — the paper is linked to " +
+        "them by number, not by name.");
       ok = false;
     }
     const checked = pages.map(p => ({
@@ -314,7 +359,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       // be a promise about a race (the roster reloading between validate and
       // save) that nothing in this file actually prevents.
       if (!matched) {
-        setGlobalError("That student number is no longer on your list. Close this and try again.");
+        setGlobalError("That student number could not be confirmed. Close this and try again.");
         setStep("form");
         return;
       }
@@ -415,8 +460,8 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               : studentNumber.trim()
               ? (roster === null
                   ? "Looking that number up…"
-                  : "Not on your student list. Add the student on the Students page first.")
-              : "Type the number written on the paper. The names fill in from your student list."}
+                  : "No student with that number has been added yet. Ask your administrator to add them first.")
+              : "Type the number written on the paper. The names fill in from the school roster."}
           </p>
 
           {/* CHANGED 2026-11-04. The old placeholder was "e.g. Tablizo, Eric",
@@ -432,14 +477,14 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
             Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
           <input id="last-name" className="form-input" value={lastName} readOnly
-            placeholder="fills in from your student list" aria-required="true"
+            placeholder="fills in from the school roster" aria-required="true"
             style={lockedInput} />
 
           <label className="form-label" htmlFor="first-name">
             First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
           <input id="first-name" className="form-input" value={firstName} readOnly
-            placeholder="fills in from your student list" aria-required="true"
+            placeholder="fills in from the school roster" aria-required="true"
             style={lockedInput} />
 
           {/* NEW 2026-11-14 (Alex & Bancud, Recommendations page 1, "Student
@@ -460,7 +505,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
             Middle Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
           <input id="middle-name" className="form-input" value={middleName} readOnly
-            placeholder="fills in from your student list" aria-required="true"
+            placeholder="fills in from the school roster" aria-required="true"
             style={lockedInput} />
 
           <div style={{ marginBottom: "1rem" }}>
