@@ -249,6 +249,16 @@ export default function Navbar() {
   // the roster is deliberately a top-level screen rather than a tab inside an
   // exam, because a class list outlives any single exam.
   const onStudents  = pathname.startsWith("/students");
+  // NEW 2026-11-17 (Recommendations page 7). Same one-const pattern as
+  // the five around it, same reason: the className and the aria-current
+  // read one value, so the highlight and the announced state cannot
+  // drift apart.
+  //
+  // "/class-lists" shares no prefix with "/exams", "/reports",
+  // "/analytics", "/students" or "/admin" - and note it is not a prefix
+  // of "/students" nor "/students" of it, so this tab and Students never
+  // light up together.
+  const onClassLists = pathname.startsWith("/class-lists");
   // NEW 2026-11-13. Same one-const pattern as the four above, same reason:
   // the className and the aria-current read one value, so the highlight and
   // the announced state cannot drift apart.
@@ -455,6 +465,30 @@ export default function Navbar() {
       >
         <IconStudents />
         Students
+      </Link>
+
+      {/* NEW 2026-11-17 (Recommendations page 7): "Additional Option in
+          Side Bar after "Student" Options ... This reflect students for
+          each subject and specific schedule a Teacher handles."
+
+          Immediately below Students, which is where page 7's arrow
+          points. A SETUP screen like the one above it, so it belongs
+          with Manage Exams rather than with the two report screens.
+
+          The icon is written inline rather than as another module-level
+          const: it is used once, and a sixth Icon* beside the five above
+          would be five lines of ceremony for one call site. */}
+      <Link
+        href="/class-lists"
+        className={`sidebar-item${onClassLists ? " active" : ""}`}
+        aria-current={onClassLists ? "page" : undefined}
+      >
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" strokeWidth={2} aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+        </svg>
+        List of Students
       </Link>
 
       {/* NEW 2026-11-04 (Doc Rubrica, page 4): "Add Additional TAB for Summary
