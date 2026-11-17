@@ -118,9 +118,19 @@ async def by_number(
     )).scalars().first()
 
 async def get_student(
-    db: AsyncSession, owner_id: int, student_id: int,
+    db: AsyncSession, owner_id: Optional[int], student_id: int,
 ) -> Optional[Student]:
-    """This teacher's student by row id, or None — the 404 shape.
+    """A student by row id, or None — the 404 shape.
+
+    CHANGED 2026-11-17: `owner_id=None` means ANY student, which is the
+    administrator path (routes/admin_students.py). A teacher still passes
+    their own id and still sees only their own rows, so no existing
+    caller changes behaviour.
+
+    One function rather than an admin copy, because update_student and
+    delete_student re-validate every field and raise the same
+    DuplicateStudent - a second copy is a second place for those rules to
+    drift, which is the whole reason schemas/_text.py exists.
 
     EXTRACTED 2026-11-12: update_student and delete_student each carried this
     select inline, and routes/students.py needed a third copy. Three copies of
@@ -128,12 +138,10 @@ async def get_student(
     days (PAPERS-AUTHZ-REGRESSION-2026-11-11.md) - one source of truth, as with
     `_owned_exam` in analytics.
     """
-    return (await db.execute(
-        select(Student).where(
-            Student.student_id == student_id,
-            Student.created_by == owner_id,
-        )
-    )).scalars().first()
+    stmt = select(Student).where(Student.student_id == student_id)
+    if owner_id is not None:
+        stmt = stmt.where(Student.created_by == owner_id)
+    return (await db.execute(stmt)).scalars().first()
 
 
 async def list_students(
@@ -183,6 +191,41 @@ async def sections(db: AsyncSession, owner_id: int) -> list[str]:
     return [s for s in rows if s]
 
 
+async def all_students(
+    db: AsyncSession,
+    query: Optional[str] = None,
+) -> list[Student]:
+    """EVERY student, ascending by number. The administrator's view.
+
+    NEW 2026-11-17 - Recommendations page 6: "This list reflects the
+    Student Numbers for All students, arranged in ascending order."
+
+    Ordered by lower(trim(student_number)) and NOT by the raw column,
+    because that is exactly what ux_students_number indexes. The order an
+    administrator reads and the order the uniqueness rule uses are then
+    the same order, so "2021-A123" and "2021-a123" sit next to each other
+    rather than in two different halves of the list - which is where a
+    near-duplicate is noticed.
+
+    No `section` filter. The admin screen is the whole table; narrowing
+    it is the teacher's class list, which is a different screen.
+    """
+    stmt = select(Student)
+    if query:
+        q = f"%{' '.join(query.split()).lower()}%"
+        stmt = stmt.where(
+            func.lower(Student.last_name).like(q)
+            | func.lower(Student.first_name).like(q)
+            | func.lower(func.coalesce(Student.middle_name, "")).like(q)
+            | func.lower(Student.student_number).like(q)
+        )
+    stmt = stmt.order_by(
+        func.lower(func.trim(Student.student_number)),
+        Student.student_id,
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
 async def create_student(
     db: AsyncSession,
     owner_id: int,
@@ -224,7 +267,7 @@ async def create_student(
 
 async def update_student(
     db: AsyncSession,
-    owner_id: int,
+    owner_id: Optional[int],      # None = any student (administrator)
     student_id: int,
     student_number: str,
     last_name: str,
@@ -259,7 +302,8 @@ async def update_student(
     return student
 
 
-async def delete_student(db: AsyncSession, owner_id: int, student_id: int) -> bool:
+async def delete_student(db: AsyncSession, owner_id: Optional[int],
+                         student_id: int) -> bool:
     """Remove one student from the roster.
 
     Their PAPERS SURVIVE. `test_papers.student_id` is ON DELETE SET NULL, and

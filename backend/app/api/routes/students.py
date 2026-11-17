@@ -59,6 +59,42 @@ async def list_sections(uid: int = Depends(_uid), db: AsyncSession = Depends(get
     return await student_service.sections(db, uid)
 
 
+@router.get("/lookup", response_model=StudentResponse)
+async def lookup_student(
+    number: str = Query(..., description="The student number to look up."),
+    uid: int = Depends(_uid),
+    db: AsyncSession = Depends(get_db),
+):
+    """NEW 2026-11-17 - Recommendations page 6, the teacher's auto-fill.
+
+        "Once you input the Student number, it will auto-populate the
+         Student Name Info (Last Name, First Name and Middle Name) and
+         Section Name from GLOBAL Database input of ADMIN ID."
+
+    READ ONLY, and deliberately the ONLY place a teacher sees a student
+    somebody else entered. It answers one question about one number the
+    teacher already typed; it cannot list, search or enumerate the table.
+    A teacher who guesses a number learns that the number exists and whose
+    it is - which is the same thing the duplicate message on Add Student
+    has told them since 2026-11-12, and is the point of a shared roster.
+
+    404 when there is no such student, NOT an empty 200: the screen has to
+    tell the difference between "nobody has that number" and "here is who
+    does", and a 200 with empty fields would quietly blank the boxes the
+    teacher had already filled in.
+
+    DECLARED BEFORE /{student_id} like the other literal paths - see the
+    note above.
+    """
+    del uid          # any signed-in user may look a number up
+    student = await student_service.by_number(db, None, number)
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No student with number {number.strip()} has been added yet.")
+    return student
+
+
 @router.post("/bulk", response_model=StudentBulkResponse)
 async def bulk_add_students(
     data: StudentBulkRequest,
