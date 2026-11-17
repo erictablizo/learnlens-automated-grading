@@ -206,6 +206,91 @@ class Student(Base):
     test_papers = relationship("TestPaper", back_populates="student")
 
 
+class ClassList(Base):
+    """NEW 2026-11-17 — Recommendations page 7.
+
+    A teacher's list of students for ONE subject at ONE schedule:
+    "English101" / "MWF 7:30AM to 9:30AM".
+
+    NOT A SECTION. A section is a property of the STUDENT, set by the
+    administrator on the global table, and page 7 has it auto-populate from
+    there. A class list is a property of the TEACHER.
+
+    OWNERSHIP LIVES HERE, which is the whole shape of pages 6 and 7 together:
+    `students` stopped being owned on 2026-11-17 and became one school-wide
+    table; `class_lists` is owned, and every query in class_list_service.py
+    filters on created_by. One roster, many private lists over it.
+
+    ON DELETE CASCADE is right here, unlike on students: a list is the
+    teacher's own and means nothing without them. Deleting the teacher
+    deletes their lists and the membership rows, and touches no student.
+
+    Matches migrations/2026-11-17_global_students.sql exactly - the index
+    name included, for the reason ux_students_number is named explicitly: an
+    index name SQLAlchemy invents makes every future schema comparison report
+    a phantom drift.
+    """
+
+    __tablename__ = "class_lists"
+    __table_args__ = (
+        # lower(trim(...)) on BOTH columns, for the reason
+        # ux_students_number uses it: "English101" and "english101  " are one
+        # class, and finding that out from a roster split in half at grading
+        # time is finding out too late.
+        Index("ux_class_lists_owner_subject_schedule", "created_by",
+              text("lower(trim(subject))"), text("lower(trim(schedule))"),
+              unique=True),
+        CheckConstraint("trim(subject) <> ''",
+                        name="class_lists_subject_not_blank"),
+        CheckConstraint("trim(schedule) <> ''",
+                        name="class_lists_schedule_not_blank"),
+    )
+
+    class_list_id = Column(Integer, primary_key=True, autoincrement=True)
+    created_by    = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"),
+                           nullable=False)
+    subject       = Column(String(255), nullable=False)
+    schedule      = Column(String(255), nullable=False)
+    created_at    = Column(UTCDateTime(), server_default=func.now(), nullable=False)
+    updated_at    = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
+
+    members = relationship("ClassListStudent", back_populates="class_list",
+                           cascade="all, delete-orphan")
+
+
+class ClassListStudent(Base):
+    """Membership. A student is on as many lists as they take subjects.
+
+    A subject column on `students` could hold exactly one of those, which is
+    how a roster starts lying: the same person sits in English101 MWF and
+    Math2 TTh and both are true at once.
+
+    BOTH sides CASCADE, and neither reaches a student. Deleting a list drops
+    its membership rows; deleting a student from the GLOBAL table drops
+    theirs. Neither direction can delete a student, and nothing here touches
+    test_papers - a teacher tidying a class list must not be able to unlink a
+    graded paper.
+    """
+
+    __tablename__ = "class_list_students"
+    __table_args__ = (
+        # Read both ways: "who is on this list" is the primary key's job,
+        # "which lists is this student on" is this index's, and a delete has
+        # to ask that one.
+        Index("ix_class_list_students_student", "student_id"),
+    )
+
+    class_list_id = Column(Integer,
+                           ForeignKey("class_lists.class_list_id", ondelete="CASCADE"),
+                           primary_key=True)
+    student_id    = Column(Integer,
+                           ForeignKey("students.student_id", ondelete="CASCADE"),
+                           primary_key=True)
+    added_at      = Column(UTCDateTime(), server_default=func.now(), nullable=False)
+
+    class_list = relationship("ClassList", back_populates="members")
+
+
 class TestPaper(Base):
     __tablename__ = "test_papers"
     __table_args__ = (

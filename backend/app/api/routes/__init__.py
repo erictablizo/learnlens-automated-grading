@@ -12,6 +12,7 @@ from app.api.routes.admin import router as admin_router    # NEW 2026-11-13
 from app.api.routes.reference import router as reference_router    # NEW 2026-11-14
 from app.api.routes.admin_reference import router as admin_reference_router    # NEW 2026-11-14
 from app.api.routes.admin_students import router as admin_students_router    # NEW 2026-11-17
+from app.api.routes.class_lists import router as class_lists_router    # NEW 2026-11-17
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -27,3 +28,4 @@ router.include_router(admin_router)       # NEW 2026-11-13 — administrator vie
 router.include_router(reference_router)        # NEW 2026-11-14 — the three dropdown lists, read by any teacher
 router.include_router(admin_reference_router)  # NEW 2026-11-14 — maintaining them, administrators only
 router.include_router(admin_students_router)   # NEW 2026-11-17 — the global student table, administrators only
+router.include_router(class_lists_router)      # NEW 2026-11-17 — a teacher's lists by subject and schedule
