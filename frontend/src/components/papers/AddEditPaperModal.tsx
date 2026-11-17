@@ -383,7 +383,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
           </label>
           <input id="student-number" className="form-input" value={studentNumber}
             onChange={e => { setStudentNumber(e.target.value); setNumberError(null); setGlobalError(null); }}
-            placeholder="e.g. 2021-00123" autoComplete="off"
+            placeholder="e.g. 2021-00000123" autoComplete="off"
             aria-required="true" aria-invalid={!!numberError}
             style={numberError ? { borderBottomColor: "var(--error)" } : undefined}
             aria-describedby="student-number-hint" />

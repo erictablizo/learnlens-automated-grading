@@ -57,9 +57,9 @@ interface Props {
 
 // CHANGED 2026-11-15: full middle names, and every line carries one, because
 // the example is the format most lists will be typed to match.
-const EXAMPLE = `2021-00123, Cruz, Ana, Reyes
-2021-00124, Dela Cruz, Jose, Pascual
-2021-00125, Santos, Maria, Lim`;
+const EXAMPLE = `2021-00000123, Cruz, Ana, Reyes
+2021-00000124, Dela Cruz, Jose, Pascual
+2021-00000125, Santos, Maria, Lim`;
 
 export default function PasteStudentsModal({
   defaultSection = "", knownSections, onClose, onAdded,
