@@ -105,7 +105,7 @@ const FIELDS: ReadonlyArray<{
   key: FieldKey; label: string; placeholder: string; width: number;
   required: boolean; check: (v: string) => string | null;
 }> = [
-  { key: "student_number", label: "Student No.", placeholder: "2021-00123", width: 160,
+  { key: "student_number", label: "Student No.", placeholder: "2021-00000123", width: 160,
     required: true,  check: v => checkStudentNumber(v) },
   { key: "last_name", label: "Last Name", placeholder: "Cruz", width: 170,
     required: true,  check: v => checkNamePart(v, "Last name") },

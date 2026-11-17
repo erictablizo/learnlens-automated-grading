@@ -217,7 +217,7 @@ export default function ClassListsPage() {
                   id="cl-number"
                   className="form-input"
                   value={number}
-                  placeholder="2021-00123"
+                  placeholder="2021-00000123"
                   aria-required="true"
                   aria-invalid={!!lookupMsg}
                   style={lookupMsg ? { borderBottomColor: "var(--error)" } : undefined}

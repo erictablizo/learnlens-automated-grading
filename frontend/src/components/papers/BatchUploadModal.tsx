@@ -188,8 +188,8 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
           />
           <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0.3rem 0 1rem" }}>
             Name each photo after the student number written on the paper —
-            <code> 2021-00123.jpg</code>. For a two-page paper add the page:
-            <code> 2021-00123_p1.jpg</code>, <code>2021-00123_p2.jpg</code>.
+            <code> 2021-00000123.jpg</code>. For a two-page paper add the page:
+            <code> 2021-00000123_p1.jpg</code>, <code>2021-00000123_p2.jpg</code>.
             {roster !== null && ` ${roster.length} student(s) on your roster.`}
           </p>
         </>
