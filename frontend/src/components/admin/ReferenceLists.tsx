@@ -201,16 +201,32 @@ export default function ReferenceLists() {
                           onClick={() => { setEditing({ kind: "college", id: c.college_id }); setEditText(c.name); }}>
                     Rename
                   </button>{" "}
-                  {/* Offered ONLY at zero. The backend refuses the rest anyway;
+                  {/* CHANGED 2026-11-17. Delete is RENDERED ALWAYS and hidden
+                      when it does not apply, instead of being left out of the
+                      tree. This cell is right-aligned, so on a row where Delete
+                      was absent — CAST, the only college a profile is standing
+                      on — Rename slid across into Delete's place and stopped
+                      lining up with the Rename buttons above it.
+
+                      visibility: hidden rather than a fixed-width spacer,
+                      because it is the SAME button: it reserves exactly its own
+                      width at any font size, with no measurement to get wrong.
+                      Disabled and aria-hidden, so it is out of the tab order
+                      and silent to a screen reader — the row still offers
+                      exactly one action, as it did before.
+
+                      Offered ONLY at zero. The backend refuses the rest anyway;
                       hiding the button means the refusal is never a surprise. */}
-                  {c.in_use === 0 && (
-                    <button style={{ ...mini, color: "#b42318" }} disabled={busy}
-                            onClick={() => run(
-                              () => adminReferenceService.deleteCollege(c.college_id, token()),
-                              () => { if (selected === c.college_id) setSelected(null); refresh(); })}>
-                      Delete
-                    </button>
-                  )}
+                  <button style={{ ...mini, color: "#b42318",
+                                   visibility: c.in_use === 0 ? "visible" : "hidden" }}
+                          disabled={busy || c.in_use !== 0}
+                          aria-hidden={c.in_use !== 0 || undefined}
+                          tabIndex={c.in_use !== 0 ? -1 : undefined}
+                          onClick={() => run(
+                            () => adminReferenceService.deleteCollege(c.college_id, token()),
+                            () => { if (selected === c.college_id) setSelected(null); refresh(); })}>
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))}

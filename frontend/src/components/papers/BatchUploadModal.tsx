@@ -255,11 +255,17 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
           <div className="table-wrapper" style={{ maxHeight: 240, overflowY: "auto" }}>
             <table aria-label="Papers to upload">
               <thead>
+                                {/* CHANGED 2026-11-17: Files is capped and Status widened.
+                    In auto table layout a `width` is only a suggestion, so an
+                    unmatched row's long file name was holding the Files column
+                    open and squeezing Status to about 90px — the one column a
+                    teacher reads when something goes wrong, stacked one word
+                    per line. Capping Files is what actually frees the space. */}
                 <tr>
-                  <th style={{ width: 120 }}>Student No.</th>
+                  <th style={{ width: 110 }}>Student No.</th>
                   <th>Student</th>
-                  <th>Files</th>
-                  <th style={{ width: 150 }}>Status</th>
+                  <th style={{ width: 150 }}>Files</th>
+                  <th style={{ width: 210 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -271,7 +277,9 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
                   <tr key={u.file.name} style={{ background: "var(--error-bg)" }}>
                     <td style={{ color: "var(--text-muted)" }}>—</td>
                     <td style={{ color: "var(--text-muted)" }}>Not recognised</td>
-                    <td style={{ fontSize: "0.78rem" }}>{u.file.name}</td>
+                    <td style={{ fontSize: "0.78rem", wordBreak: "break-word" }}>
+                      {u.file.name}
+                    </td>
                     <td style={{ fontSize: "0.75rem", color: "var(--error)" }}>{u.reason}</td>
                   </tr>
                 ))}
