@@ -35,7 +35,7 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
 function ManageExamsContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const { exams, isLoading, error, usingDemo, fetchExams, deleteExam } = useExams();
+    const { exams, isLoading, error, fetchExams, deleteExam } = useExams();
   const { hasCheckedPapers } = useExamCheckedPapers();
  
   const [mounted, setMounted] = useState(false);
@@ -112,7 +112,7 @@ function ManageExamsContent() {
       <main className="main-content" aria-label="Manage Exams">
         <h1 className="page-title">Exams</h1>
  
-        {usingDemo && !isLoading && (
+        {/* {usingDemo && !isLoading && (
           <div
             role="status"
             aria-live="polite"
@@ -126,7 +126,7 @@ function ManageExamsContent() {
             <span>💡</span>
             <span>Showing demo exams — click <strong>+</strong> to create your first real exam.</span>
           </div>
-        )}
+        )} */}
  
         <div aria-live="polite" aria-atomic="true">
           {isLoading && (
