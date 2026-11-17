@@ -91,7 +91,7 @@ export default function ExamPicker({
         onChange={e => { setSubject(e.target.value); setError(null); }}
         style={{ width: "100%", marginBottom: "1rem" }}
       >
-        <option value={ANY}>All subjects</option>
+        <option value={ANY}>Select Subject</option>
         {subjects.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
@@ -101,7 +101,7 @@ export default function ExamPicker({
         onChange={e => { setSchedule(e.target.value); setError(null); }}
         style={{ width: "100%", marginBottom: "1rem" }}
       >
-        <option value={ANY}>All schedules</option>
+        <option value={ANY}>Select Schedule</option>
         {schedules.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 

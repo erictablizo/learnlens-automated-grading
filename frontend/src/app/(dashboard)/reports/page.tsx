@@ -124,7 +124,7 @@ function ExamPickerDialog({ exams, current, onCreate, onClose }: PickerProps) {
         onChange={e => { setSubject(e.target.value); setError(null); }}
         style={{ width: "100%", marginBottom: "1rem" }}
       >
-        <option value={ANY}>Input subject</option>
+        <option value={ANY}>Select subject</option>
         {subjects.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
@@ -136,7 +136,7 @@ function ExamPickerDialog({ exams, current, onCreate, onClose }: PickerProps) {
         onChange={e => { setSchedule(e.target.value); setError(null); }}
         style={{ width: "100%", marginBottom: "1rem" }}
       >
-        <option value={ANY}>Input schedule</option>
+        <option value={ANY}>Select schedule</option>
         {schedules.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
