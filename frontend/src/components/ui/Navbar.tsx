@@ -458,14 +458,27 @@ export default function Navbar() {
           report screens below. The student number entered here is what links a
           test paper to a student - the prerequisite for batch upload, Alex &
           Bancud page 2 item 7. */}
-      <Link
-        href="/students"
-        className={`sidebar-item${onStudents ? " active" : ""}`}
-        aria-current={onStudents ? "page" : undefined}
-      >
-        <IconStudents />
-        Students
-      </Link>
+            {/* CHANGED 2026-11-17 — Recommendations page 10: "remove the visibility
+          of this Option 'Students' in the Side Bar because ONLY Admin ID can
+          access this Option. Similar to the behavior of this Option
+          'Administrator' that only ADMIN ID can access."
+
+          The same {isAdmin && ...} guard the Administrator link has carried
+          since 2026-11-13, with the same property: isAdmin starts false, so
+          nothing flashes at a teacher before the probe answers.
+
+          A HIDDEN LINK IS NOT ACCESS CONTROL. The route itself is guarded in
+          app/(dashboard)/students/page.tsx — see the edit below. */}
+      {isAdmin && (
+        <Link
+          href="/students"
+          className={`sidebar-item${onStudents ? " active" : ""}`}
+          aria-current={onStudents ? "page" : undefined}
+        >
+          <IconStudents />
+          Students
+        </Link>
+      )}
 
       {/* NEW 2026-11-17 (Recommendations page 7): "Additional Option in
           Side Bar after "Student" Options ... This reflect students for

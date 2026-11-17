@@ -193,15 +193,18 @@ export default function StudentsPage() {
     } finally { setLoading(false); }
   }, [router, section, query]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
-    // CHANGED 2026-11-17: only a TEACHER loads this roster. Hooks run
-    // before any return, so without this an administrator would fetch
-    // GET /students and GET /students/sections on every mount and throw
-    // both away - the panel reads /admin/students instead.
+    // CHANGED 2026-11-17 — Recommendations page 10: "ONLY Admin ID can access
+    // this Option." Hiding the sidebar link is not access control; this is.
+    //
+    // A teacher is sent to List of Students — the screen page 7 gave them in
+    // place of this one. load() is no longer called from here, so the teacher
+    // roster is never fetched; the rest of the teacher branch below is left
+    // in place and simply unreached, rather than deleted.
     if (isAdmin !== false) return;
-    load();
-  }, [load, router, isAdmin]);
+    router.replace("/class-lists");
+  }, [router, isAdmin]);
 
   const resetForm = () => {
     setForm({ ...BLANK }); setEditingId(null);
@@ -321,7 +324,12 @@ export default function StudentsPage() {
   // AFTER every hook, never inside a condition: React requires the same
   // hooks in the same order on every render, and an early return above
   // them would change that between the two branches.
-  if (isAdmin === null) {
+    // CHANGED 2026-11-17 (page 10): `!== true` rather than `=== null`, so a
+  // TEACHER also gets this spinner instead of the roster while the
+  // router.replace above takes effect. Rendering the teacher screen for even
+  // one frame would show them, briefly, exactly the screen page 10 says they
+  // should not reach.
+  if (isAdmin !== true) {
     return (
       <div className="dashboard-layout">
         <Navbar />
