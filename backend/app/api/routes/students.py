@@ -91,7 +91,8 @@ async def lookup_student(
     if not student:
         raise HTTPException(
             status_code=404,
-            detail=f"No student with number {number.strip()} has been added yet.")
+            detail=(f"No student with number {number.strip()} has been added yet. "
+                    f"Ask your administrator to add them first."))
     return student
 
 
