@@ -40,6 +40,7 @@ import { studentService } from "@/services/studentService";
 import type { ClassList } from "@/types/classList";
 import type { Student } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
+import Link from "next/link";
 
 const IconTrash = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -296,7 +297,14 @@ export default function ClassListsPage() {
                     </td></tr>
                   ) : members.map(s => (
                     <tr key={s.student_id}>
-                      <td style={{ fontWeight: 600, color: "var(--navy)" }}>{s.student_number}</td>
+                      {/* NEW 2026-11-17 — Recommendations page 11: clicking the
+                      Student No. opens that student's exam record. */}
+                      <td style={{ fontWeight: 600 }}>
+                        <Link href={`/class-lists/student/${s.student_id}`}
+                              style={{ color: "var(--navy)", textDecoration: "underline" }}>
+                          {s.student_number}
+                        </Link>
+                      </td>
                       <td>{s.last_name}</td>
                       <td>{s.first_name}</td>
                       <td style={{ color: "var(--text-muted)" }}>{s.middle_name ?? "—"}</td>
