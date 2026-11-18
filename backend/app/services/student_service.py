@@ -27,7 +27,7 @@ from typing import Iterable, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Student, TestPaper, PaperScore
+from app.models.models import Student, TestPaper, PaperScore, AnswerKey, Exam
 from app.schemas._text import (check_name_part, check_middle_name,
                               check_section,
                               check_student_number)
