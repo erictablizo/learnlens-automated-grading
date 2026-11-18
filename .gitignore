@@ -148,3 +148,7 @@ backend/uploads/
 *.bak
 *.swp
 backup*.sql
+venv/
+__pycache__/
+*.pyc
+.next/
