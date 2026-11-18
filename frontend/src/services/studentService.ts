@@ -5,7 +5,7 @@
  */
 import { api } from "@/lib/api";
 import type {
-  Student, StudentDetail, StudentPayload, StudentBulkResult, StudentDeleteResult,
+  Student, StudentDetail, StudentPayload, StudentBulkResult, StudentDeleteResult, StudentExamRecord
 } from "@/types/student";
 
 function qs(params: Record<string, string | undefined>): string {
@@ -45,7 +45,13 @@ export const studentService = {
   lookup: (studentNumber: string, token: string) =>
     api.get<Student>(
       `/students/lookup?number=${encodeURIComponent(studentNumber)}`, token),
-
+    /**
+     * NEW 2026-11-17 — Recommendations page 11. The student and every paper
+     * THIS TEACHER'S exams hold for them. Read-only; 404 only when no student
+     * has that id.
+     */
+    exams: (studentId: number, token: string) =>
+      api.get<StudentExamRecord>(`/students/${studentId}/exams`, token),
   get: (studentId: number, token: string) =>
     api.get<StudentDetail>(`/students/${studentId}`, token),
 

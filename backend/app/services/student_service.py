@@ -27,7 +27,7 @@ from typing import Iterable, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Student, TestPaper
+from app.models.models import Student, TestPaper, PaperScore
 from app.schemas._text import (check_name_part, check_middle_name,
                               check_section,
                               check_student_number)
@@ -442,3 +442,52 @@ def _bulk_message(created: int, skipped: int, failed: int) -> str:
     if failed:
         bits.append(f"{failed} line(s) could not be read")
     return " · ".join(bits) + "."
+
+async def exams_for_student(db: AsyncSession, owner_id: int, student_id: int):
+    """Every paper on THIS TEACHER'S exams for one student, newest exam first.
+
+    NEW 2026-11-17 — Recommendations page 11.
+
+    SCOPED TO THE TEACHER, deliberately. `Exam.created_by == owner_id` is the
+    same line routes/papers.py `_owned_paper` draws, and the 2026-11-06 audit
+    measured that a teacher cannot read another teacher's papers. Page 11 says
+    "all the exams uploaded related to this Student Number"; read inside
+    "Teacher Page Access" that is the teacher's own exams. Widening it to a
+    full academic record is deleting one WHERE clause, and it should be a
+    decision rather than a side effect.
+
+    TWO CORRELATED SUBQUERIES rather than two GROUP BYs. `total_items` counts
+    the exam's answer keys and `under_review` counts this paper's review rows;
+    grouping would need the aggregate over a join that multiplies rows
+    together - 15 answer keys times 2 review rows is 30, and both counts come
+    back wrong. Measured: measure/2026-11-17_student_exams.py.
+    """
+    under_review = (
+        select(func.count(PaperScore.score_id))
+        .where(PaperScore.paper_id == TestPaper.paper_id,
+               PaperScore.verdict == "review")
+        .correlate(TestPaper).scalar_subquery().label("under_review")
+    )
+    total_items = (
+        select(func.count(AnswerKey.answer_key_id))
+        .where(AnswerKey.exam_id == Exam.exam_id)
+        .correlate(Exam).scalar_subquery().label("total_items")
+    )
+    rows = (await db.execute(
+        select(TestPaper.paper_id, Exam.exam_id, Exam.exam_name, Exam.subject,
+               Exam.schedule, TestPaper.total_score, TestPaper.checked,
+               total_items, under_review)
+        .join(Exam, Exam.exam_id == TestPaper.exam_id)
+        .where(TestPaper.student_id == student_id, Exam.created_by == owner_id)
+        .order_by(Exam.created_at.desc(), Exam.exam_id.desc())
+    )).all()
+    return [
+        {
+            "paper_id": r.paper_id, "exam_id": r.exam_id,
+            "exam_name": r.exam_name, "subject": r.subject,
+            "schedule": r.schedule, "total_score": r.total_score,
+            "checked": r.checked, "total_items": r.total_items,
+            "under_review": r.under_review,
+        }
+        for r in rows
+    ]

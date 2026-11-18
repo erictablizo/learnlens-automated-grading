@@ -273,3 +273,52 @@ class StudentDeleteResponse(BaseModel):
     student_id: int
     papers_unlinked: int
     message: str
+
+# ---------------------------------------------------------------------------
+# NEW 2026-11-17 — Recommendations page 11, the per-student record.
+#
+#   "If I clicked the 'Student No', it will show a 'new Page' reflecting all
+#    the exams uploaded related to this Student Number."
+# ---------------------------------------------------------------------------
+
+class StudentExamScore(BaseModel):
+    """One of this teacher's exams, and what this student scored on it.
+
+    THREE STATES, and the screen must be able to tell them apart:
+
+      checked and total_score is not None   a RESULT      "13 / 15"
+      total_score is not None, not checked  a FLOOR       "28-30 / 30"
+      total_score is None                   not graded    "Not checked yet"
+
+    grade_paper leaves `checked` False while any item is under review - see
+    routes/papers.py, the review-queue comment - so `checked` alone cannot
+    separate "nobody has graded this" from "graded, waiting on you".
+    `total_score` is what separates them.
+
+    `under_review` is the count of this paper's PaperScore rows with
+    verdict == 'review', the same test the review queue uses. It is the
+    distance between the floor and the ceiling: a student has at least
+    total_score and at most total_score + under_review.
+    """
+    paper_id:     int
+    exam_id:      int
+    exam_name:    str
+    subject:      Optional[str] = None
+    schedule:     Optional[str] = None
+    total_score:  Optional[int] = None
+    checked:      bool
+    total_items:  int
+    under_review: int
+
+
+class StudentExamRecord(BaseModel):
+    """The whole page in one response.
+
+    The student comes back WITH the list rather than being fetched separately,
+    because GET /students/{id} is owner-scoped and every student now belongs to
+    the administrator - a teacher asking for one by id gets 404. This is no
+    wider than GET /students/lookup, which already turns a number into a name
+    for any teacher.
+    """
+    student: StudentResponse
+    exams:   List[StudentExamScore] = []

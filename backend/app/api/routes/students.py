@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentDetailResponse,
-    StudentBulkRequest, StudentBulkResponse, StudentDeleteResponse,
+    StudentBulkRequest, StudentBulkResponse, StudentDeleteResponse, StudentExamRecord
 )
 from app.services import student_service
 from app.services.auth_service import get_current_user
@@ -265,4 +265,25 @@ async def remove_student(
     return StudentDeleteResponse(
         success=True, student_id=student_id,
         papers_unlinked=count, message=message,
+    )
+
+@router.get("/{student_id}/exams", response_model=StudentExamRecord)
+async def student_exam_record(
+    student_id: int,
+    uid: int = Depends(_uid),
+    db: AsyncSession = Depends(get_db),
+):
+    """NEW 2026-11-17 — Recommendations page 11. READ ONLY.
+
+    404 when nobody holds that id. An EMPTY `exams` list is not a 404: the
+    student exists and this teacher simply has no papers for them, which the
+    screen says in words. Conflating the two would show "student not found"
+    for a student plainly sitting on the class list.
+    """
+    student = await student_service.get_student(db, None, student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return StudentExamRecord(
+        student=student,
+        exams=await student_service.exams_for_student(db, uid, student_id),
     )

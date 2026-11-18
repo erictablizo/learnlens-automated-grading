@@ -72,3 +72,21 @@ export interface StudentDeleteResult {
   papers_unlinked: number;
   message: string;
 }
+
+/** NEW 2026-11-17 — Recommendations page 11. Mirrors schemas/student.py. */
+export interface StudentExamScore {
+  paper_id:     number;
+  exam_id:      number;
+  exam_name:    string;
+  subject:      string | null;
+  schedule:     string | null;
+  total_score:  number | null;
+  checked:      boolean;
+  total_items:  number;
+  under_review: number;
+}
+
+export interface StudentExamRecord {
+  student: Student;
+  exams:   StudentExamScore[];
+}
