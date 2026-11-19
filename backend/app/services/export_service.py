@@ -138,9 +138,11 @@ def build_workbook(
         ]
         ws.append(row)
 
-    # Found by NAME, not by a hardcoded index: the column moves by one when
-    # Student No. is dropped, and a fixed 7 would format the Total Items
-    # column as a percentage on exactly the exams that drop it.
+    # Found by NAME, not by a hardcoded index. The reason used to be that
+    # Student No. was dropped on exams with no linked papers, moving every
+    # later column by one; that drop was removed on 2026-11-19. Kept anyway -
+    # a header list is a thing people reorder, and an index that is wrong
+    # silently formats the wrong column as a percentage.
     pct_col = header.index("Percentage") + 1
     for r in range(2, ws.max_row + 1):
         ws.cell(r, pct_col).number_format = PERCENT_FORMAT
