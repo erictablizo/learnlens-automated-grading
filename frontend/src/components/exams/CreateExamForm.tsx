@@ -259,6 +259,25 @@ export default function CreateExamForm() {
             page order by file name.
           </p>
 
+          {/* NEW 2026-11-19 (Sir Alex, page 1 point 8): "Put instructions if
+              lower case or upper case. Be specific."
+              Here rather than in a help page, because this is the moment a
+              teacher is about to photograph handwriting — the only moment the
+              advice can still change what is on the paper. */}
+          <p style={{ fontSize: "0.78rem", color: "var(--navy)",
+                      background: "var(--orange-light)",
+                      border: "1px solid var(--orange)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "0.5rem 0.7rem", margin: "0.6rem 0 0", lineHeight: 1.6 }}>
+            Write every answer in <strong>CAPITAL LETTERS</strong>, on the
+            answer key and on the students&rsquo; papers. The scanner reads
+            capitals far more reliably: a lower-case <code>l</code> and the
+            digit <code>1</code> are the same shape to it, and so are
+            <code> o</code> and <code>0</code>. For True or False, write the
+            whole word — <strong>TRUE</strong> or <strong>FALSE</strong>, not
+            T or F.
+          </p>
+
           <div className="table-wrapper" style={{ marginTop: "0.5rem" }}>
             <table>
               <thead>
