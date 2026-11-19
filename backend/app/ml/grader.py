@@ -67,6 +67,25 @@ def _norm(ans: str) -> str:
         return "F"
     return a
 
+def _is_true_false(raw_key: str) -> bool:
+    """Is this a TRUE/FALSE item? Decided by the KEY, never by the student.
+
+    NEW 2026-11-19. "F" is a legal option on a matching-type page -
+    MIXED_LETTERS is "ABCDEFT" - so a student's bare F says nothing about
+    which kind of item it is. The answer key is the only thing on the page
+    that knows, and generate_answer_key stores the word it read: TRUE, not T.
+    """
+    return (raw_key or "").strip().upper() in ("TRUE", "FALSE")
+
+
+def _expand(a: str) -> str:
+    """The inverse of _norm, for DISPLAY only. Never used in a comparison."""
+    if a == "T":
+        return "TRUE"
+    if a == "F":
+        return "FALSE"
+    return a
+
 
 def grade_detected(
     detected: dict[int, tuple[str, float, int]],   # {q: (answer, conf, page_number)}
@@ -134,8 +153,25 @@ def grade_detected(
             answered += 1
         ok = bool(student) and student == key
         correct += ok
+        # NEW 2026-11-19 (Sir Alex, page 1 point 3): "Correct display in Test
+        # Paper -> TRUE instead of T".
+        #
+        # THE COMPARISON ABOVE IS UNTOUCHED. It still runs on the normalised
+        # single letters, so no score and no verdict moves. What changes is the
+        # pair that is STORED - paper_scores is what the Test Paper screen
+        # renders, and it has held "T" ever since _norm() was written. The
+        # screen was faithfully showing the database; the database was the
+        # thing that had lost the word.
+        #
+        # Measured, with a matching-type "F" as the control:
+        # measure/2026-11-19_true_false_display.py
+        if _is_true_false(raw_key):
+            shown_student, shown_key = _expand(student), _expand(key)
+        else:
+            shown_student, shown_key = student, key
         questions.append(QuestionResult(
-            question_number=q, student_answer=student or BLANK, correct_answer=key,
+            question_number=q, student_answer=shown_student or BLANK,
+            correct_answer=shown_key,
             is_correct=ok, ocr_confidence=conf if student else 0.0, page_number=page_no,
             verdict=CORRECT if ok else WRONG, similarity=1.0 if ok else 0.0,
         ))
