@@ -478,7 +478,8 @@ async def override_paper_answer(
     paper = await _owned_paper(db, paper_id, uid)
 
     result = await paper_answer_service.override_answer(
-        db, paper, question_number, data.student_answer
+        db, paper, question_number, data.student_answer,
+        corrected_by=uid,          # NEW 2026-11-19
     )
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("reason", "Could not correct this answer."))

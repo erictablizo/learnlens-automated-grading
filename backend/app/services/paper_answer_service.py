@@ -50,6 +50,7 @@ next to it and covers any item on the paper, reviewed or not.
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from sqlalchemy import select
@@ -58,6 +59,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import AnswerKey, PaperScore, TestPaper
 from app.ml.grader import CORRECT, REVIEW
 from app.services.answer_key_service import recheck_answer, _identification_items
+from app.services.correction_service import build_sample
+
+logger = logging.getLogger(__name__)
 
 # Matches app/services/ocr_service.py and the String(100) columns in models.py.
 MAX_ANSWER_LEN = 100
@@ -98,6 +102,7 @@ async def override_answer(
     paper: TestPaper,
     question_number: int,
     student_answer: str,
+    corrected_by: Optional[int] = None,
 ) -> dict:
     """Correct what this one student wrote for this one item, and re-grade it.
 
@@ -136,6 +141,29 @@ async def override_answer(
 
     old_answer = score.student_answer
     verdict, is_correct = recheck_answer(new_answer, raw_key, is_identification)
+
+    # NEW 2026-11-19 — keep the pair. Alex, points 5 and 6: "training set,
+    # datasets, sample specimen". The reader saw `score.student_answer`, a
+    # human says the page said `new_answer`. Both values exist right here and
+    # until now the first was thrown away on the next line.
+    #
+    # READ BEFORE THE OVERWRITE, deliberately: build_sample needs
+    # `score.ocr_confidence`, which is set to None four lines below precisely
+    # because the reading no longer stands. That NULL is also what stops an
+    # already-corrected item from being counted as evidence about the reader.
+    #
+    # A SAVEPOINT, so this can never cost a teacher their correction. If the
+    # samples table is missing - deployed before its migration, which has
+    # happened - only the nested block rolls back and the override proceeds.
+    sample = build_sample(score, paper.exam_id, new_answer, corrected_by)
+    if sample is not None:
+        try:
+            async with db.begin_nested():
+                db.add(sample)
+        except Exception:                                    # noqa: BLE001
+            logger.warning("Could not record OCR correction sample for "
+                           "paper %s item %s", paper.paper_id, question_number,
+                           exc_info=True)
 
     score.student_answer = new_answer
     score.correct_answer = (raw_key or "")[:MAX_ANSWER_LEN]

@@ -93,7 +93,8 @@ from app.ml.grader import BLANK
 from app.ml.ocr_identification import (
     grade_identification, CORRECT as IDENT_CORRECT, REVIEW as IDENT_REVIEW,
 )
-from app.models.models import PaperScore, TestPaper, OCRCorrection
+from app.models.models import (PaperScore, TestPaper, OCRCorrection,
+                               OCRCorrectionSample)
 
 # Present only once migrations/2026-11-02_parts_and_answer_length.sql has run.
 _HAS_VERDICT = hasattr(PaperScore, "verdict")
@@ -358,3 +359,112 @@ async def rescore_for(db: AsyncSession, seen: str, means: str) -> RescoreReport:
         rep.paper_ids = sorted(touched)
 
     return rep
+
+
+# ============================================================================
+# 3. THE DATASET.  Samples collected from teachers correcting scanned answers.
+# ============================================================================
+@dataclass
+class Suggestion:
+    """A pair teachers have corrected, with the weight of evidence behind it."""
+    seen:        str = ""
+    means:       str = ""
+    times:       int = 0
+    exams:       int = 0
+    papers:      int = 0
+    avg_confidence: Optional[float] = None
+    last_seen:   Optional[str] = None
+    already:     bool = False     # a correction for this reading already exists
+
+
+def sample_worth_keeping(seen: str, means: str, confidence) -> bool:
+    """Is this correction evidence about the READER?
+
+    Four refusals, the same four the correction pass makes, plus one more that
+    only applies here:
+
+      `confidence is None` means the value being replaced was typed by a
+      person, not produced by the reader - override_answer nulls the
+      confidence precisely because the reading no longer stands. Correcting an
+      already-corrected item says nothing about the recogniser, and counting
+      it would let one teacher's repeated edits manufacture a suggestion.
+    """
+    if confidence is None:
+        return False
+    a, b = norm_seen(seen), norm_seen(means)
+    if not a or not b or a == b:
+        return False
+    if a == norm_seen(BLANK) or b == norm_seen(BLANK):
+        return False
+    if CONTESTED_SEP in a or CONTESTED_SEP in b:
+        return False
+    return True
+
+
+def build_sample(score: PaperScore, exam_id: int, means: str,
+                 user_id: Optional[int]) -> Optional[OCRCorrectionSample]:
+    """The row to record, or None when this correction is not evidence.
+
+    Pure: takes the PaperScore as it stands BEFORE it is overwritten. The
+    caller owns the transaction and decides how to insert it - see the
+    paper_answer_service hook, which uses a SAVEPOINT so that a failure here
+    can never cost a teacher their correction.
+    """
+    seen = score.student_answer
+    if not sample_worth_keeping(seen, means, score.ocr_confidence):
+        return None
+    return OCRCorrectionSample(
+        score_id=score.score_id,
+        exam_id=exam_id,
+        question_number=score.question_number,
+        seen=(seen or "").strip()[:100],
+        means=(means or "").strip()[:100],
+        confidence=score.ocr_confidence,
+        corrected_by=user_id,
+    )
+
+
+async def suggestions(db: AsyncSession, min_times: int = 1) -> list[Suggestion]:
+    """What teachers keep correcting, most-corrected first.
+
+    This is the "dataset" half of Alex's points 5 and 6, and it is deliberately
+    only a SUGGESTION. Nothing here creates a correction. The administrator
+    sees the pair, how many times it has happened, across how many exams, and
+    how confident the reader was while being wrong - then decides, with the
+    outcome preview in front of them.
+    """
+    # The expressions are built ONCE and used in both SELECT and GROUP BY.
+    # Grouping by the label STRINGS ("seen", "means") looks equivalent and is
+    # not: the table has columns of those names, so the strings bound to the
+    # raw columns and 't'->'b' came out as a different claim from 'T'->'B'.
+    # Measured - the case-variant check in the bench caught it.
+    seen_e = func.upper(func.trim(OCRCorrectionSample.seen))
+    means_e = func.upper(func.trim(OCRCorrectionSample.means))
+    times_e = func.count(OCRCorrectionSample.sample_id)
+    rows = (await db.execute(
+        select(
+            seen_e.label("seen"),
+            means_e.label("means"),
+            times_e.label("times"),
+            func.count(func.distinct(OCRCorrectionSample.exam_id)).label("exams"),
+            func.count(func.distinct(OCRCorrectionSample.score_id)).label("papers"),
+            func.avg(OCRCorrectionSample.confidence).label("avg_conf"),
+            func.max(OCRCorrectionSample.created_at).label("last_seen"),
+        )
+        .group_by(seen_e, means_e)
+        .having(times_e >= min_times)
+        .order_by(times_e.desc())
+    )).all()
+
+    existing = {norm_seen(k) for k in
+                (await db.execute(select(OCRCorrection.seen))).scalars().all()}
+    out = []
+    for seen, means, times, exams, papers, avg_conf, last_seen in rows:
+        out.append(Suggestion(
+            seen=seen, means=means, times=int(times), exams=int(exams or 0),
+            papers=int(papers or 0),
+            avg_confidence=round(float(avg_conf), 2) if avg_conf is not None else None,
+            last_seen=last_seen.isoformat() if last_seen else None,
+            already=norm_seen(seen) in existing,
+        ))
+    return out

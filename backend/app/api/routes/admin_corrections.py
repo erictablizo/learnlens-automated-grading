@@ -48,8 +48,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.models import OCRCorrection, User
 from app.schemas.ocr_correction import (
-    AffectedCount, OCRCorrectionCreate, OCRCorrectionResponse,
-    OCRCorrectionSaved, OCRCorrectionUpdate, RescoreSummary,
+    AffectedCount, CorrectionSuggestion, OCRCorrectionCreate,
+    OCRCorrectionResponse, OCRCorrectionSaved, OCRCorrectionUpdate,
+    RescoreSummary,
 )
 from app.services import correction_service
 from app.api.routes.admin import _admin
@@ -111,6 +112,26 @@ async def affected(
         would_be_correct=pv.would_be_correct, would_be_wrong=pv.would_be_wrong,
         would_need_review=pv.would_need_review, detailed=pv.detailed,
     )
+
+
+@router.get("/suggestions", response_model=List[CorrectionSuggestion])
+async def suggestions(
+    min_times: int = Query(1, ge=1, le=100,
+                           description="Only pairs corrected at least this often."),
+    admin: User = Depends(_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """What teachers keep correcting — the dataset, collected by marking.
+
+    Read-only, and it creates nothing. Every row here is a pair a human has
+    overruled the reader on; the administrator decides whether any of them
+    deserves to become a rule. Pressing one on the screen fills the form
+    rather than saving, so a suggestion still goes through the outcome
+    preview before it can touch a single paper.
+    """
+    del admin
+    return [CorrectionSuggestion(**vars(s)) for s in
+            await correction_service.suggestions(db, min_times=min_times)]
 
 
 @router.post("", response_model=OCRCorrectionSaved, status_code=201)

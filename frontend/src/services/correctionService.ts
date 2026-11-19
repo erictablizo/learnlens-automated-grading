@@ -14,7 +14,8 @@
  */
 import { api } from "@/lib/api";
 import type {
-  AffectedCount, OCRCorrection, OCRCorrectionPayload, OCRCorrectionSaved,
+  AffectedCount, CorrectionSuggestion, OCRCorrection, OCRCorrectionPayload,
+  OCRCorrectionSaved,
 } from "@/types/correction";
 
 export const correctionService = {
@@ -34,6 +35,17 @@ export const correctionService = {
     api.get<AffectedCount>(
       `/admin/corrections/affected?seen=${encodeURIComponent(seen)}`
       + `&means=${encodeURIComponent(means)}`, token),
+
+  /**
+   * What teachers keep correcting. Read-only; creates nothing.
+   *
+   * The screen uses these to FILL THE FORM, never to save directly — so a
+   * suggestion still passes through the outcome preview before it can touch
+   * a paper. A rule nobody chose is a rule nobody can defend.
+   */
+  suggestions: (token: string, minTimes = 1) =>
+    api.get<CorrectionSuggestion[]>(
+      `/admin/corrections/suggestions?min_times=${minTimes}`, token),
 
   /** 409 when another row already covers that reading. */
   create: (body: OCRCorrectionPayload, token: string) =>

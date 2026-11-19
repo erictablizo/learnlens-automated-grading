@@ -115,3 +115,22 @@ class AffectedCount(BaseModel):
 class OCRCorrectionSaved(BaseModel):
     correction: OCRCorrectionResponse
     rescore:    RescoreSummary
+
+
+class CorrectionSuggestion(BaseModel):
+    """A pair teachers keep correcting. Evidence, not a decision.
+
+    `times` is how often a human has overruled the reader on exactly this
+    glyph. `avg_confidence` is how sure the reader was while being wrong,
+    which is the number worth looking at: a confident wrong reading is the
+    kind a specimen row fixes, an unsure one may be better handled by a
+    clearer photograph.
+    """
+    seen:           str
+    means:          str
+    times:          int
+    exams:          int
+    papers:         int
+    avg_confidence: Optional[float] = None
+    last_seen:      Optional[str] = None
+    already:        bool = False

@@ -27,7 +27,7 @@ import { ApiError } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { correctionService } from "@/services/correctionService";
 import type {
-  AffectedCount, OCRCorrection, RescoreSummary,
+  AffectedCount, CorrectionSuggestion, OCRCorrection, RescoreSummary,
 } from "@/types/correction";
 
 const card: React.CSSProperties = {
@@ -75,6 +75,7 @@ const label: React.CSSProperties = {
 
 export default function SpecimenCorrections() {
   const [rows, setRows]       = useState<OCRCorrection[]>([]);
+  const [sugs, setSugs]       = useState<CorrectionSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string>("");
   const [busy, setBusy]       = useState(false);
@@ -90,13 +91,21 @@ export default function SpecimenCorrections() {
   const [notice, setNotice]   = useState("");
 
   const load = useCallback(async () => {
+    const token = getToken() ?? "";
     try {
-      setRows(await correctionService.list(getToken() ?? ""));
+      setRows(await correctionService.list(token));
       setError("");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load the specimen list.");
     } finally {
       setLoading(false);
+    }
+    // Separate try: the suggestions are useful but not essential, and a
+    // failure here must not make the list below look broken.
+    try {
+      setSugs(await correctionService.suggestions(token));
+    } catch {
+      setSugs([]);
     }
   }, []);
 
@@ -145,11 +154,23 @@ export default function SpecimenCorrections() {
         .sort((a, b) => a.seen.localeCompare(b.seen)));
       setResult(saved.rescore);
       setSeen(""); setMeans(""); setNote(""); setHits(null);
+      // The new rule changes which suggestions are already covered.
+      void load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not save that correction.");
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Fill the form from a suggestion. DELIBERATELY NOT a one-click save:
+   *  it goes through the outcome preview like anything typed by hand. */
+  function useSuggestion(s: CorrectionSuggestion) {
+    setSeen(s.seen);
+    setMeans(s.means);
+    setNote(`Corrected by hand ${s.times} time${s.times === 1 ? "" : "s"}`
+            + ` across ${s.exams} exam${s.exams === 1 ? "" : "s"}`);
+    setError(""); setNotice(""); setResult(null);
   }
 
   async function remove(row: OCRCorrection) {
@@ -233,6 +254,70 @@ export default function SpecimenCorrections() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* ── Suggested from teacher corrections ──────────────────────────
+          The connection between this screen and the Test Paper screen. Every
+          row here was produced by a teacher clicking an answer and fixing
+          what the scanner read — Alex's "training set / dataset", collected
+          by ordinary marking rather than by a labelling exercise.
+
+          Pressing one FILLS THE FORM. It does not save. A rule created by a
+          single click is a rule nobody weighed, and the outcome preview
+          exists precisely because an obvious-looking correction can cost
+          hundreds of marks. */}
+      {sugs.length > 0 && (
+        <div style={{ marginTop: "1.25rem" }}>
+          <h3 style={{ ...h2, fontSize: "0.9rem" }}>
+            Suggested from teacher corrections
+          </h3>
+          <p style={sub}>
+            What teachers have overruled the scanner on. Choose one to fill in
+            the form below — nothing is saved until you press Save.
+          </p>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, width: 120 }}>The reader saw</th>
+                <th style={{ ...th, width: 120 }}>Teachers said</th>
+                <th style={{ ...th, width: 90 }}>Times</th>
+                <th style={{ ...th, width: 110 }}>Reader was</th>
+                <th style={th} />
+              </tr>
+            </thead>
+            <tbody>
+              {sugs.map(sg => (
+                <tr key={`${sg.seen}>${sg.means}`}>
+                  <td style={td}><span style={mono}>{sg.seen}</span></td>
+                  <td style={td}><span style={mono}>{sg.means}</span></td>
+                  <td style={{ ...td, color: "var(--text-muted)" }}>
+                    {sg.times}× · {sg.exams} exam{sg.exams === 1 ? "" : "s"}
+                  </td>
+                  {/* A CONFIDENT wrong reading is the kind a specimen row
+                      fixes. An unsure one may just need a better photograph,
+                      so the number is shown rather than hidden behind a
+                      recommendation. */}
+                  <td style={{ ...td,
+                               color: sg.avg_confidence !== null && sg.avg_confidence >= 0.8
+                                 ? "var(--warning, #b54708)" : "var(--text-muted)" }}>
+                    {sg.avg_confidence === null ? "—"
+                      : `${Math.round(sg.avg_confidence * 100)}% sure`}
+                  </td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {sg.already ? (
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                        already a rule
+                      </span>
+                    ) : (
+                      <button style={mini} disabled={busy}
+                              onClick={() => useSuggestion(sg)}>Use this</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end",

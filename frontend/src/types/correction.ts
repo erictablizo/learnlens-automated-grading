@@ -59,3 +59,26 @@ export interface OCRCorrectionSaved {
   correction: OCRCorrection;
   rescore:    RescoreSummary;
 }
+
+
+/**
+ * A pair teachers keep correcting — the dataset, collected by marking.
+ *
+ * Every time someone clicks an answer on a Test Paper and fixes what the
+ * scanner read, they produce one of these. Evidence, not a decision: nothing
+ * here becomes a rule until an administrator says so, having seen the count
+ * and the outcome preview.
+ */
+export interface CorrectionSuggestion {
+  seen:            string;
+  means:           string;
+  /** How often a human has overruled the reader on exactly this glyph. */
+  times:           number;
+  exams:           number;
+  papers:          number;
+  /** How sure the reader was WHILE BEING WRONG. The number worth reading. */
+  avg_confidence:  number | null;
+  last_seen:       string | null;
+  /** A correction for this reading already exists. */
+  already:         boolean;
+}
