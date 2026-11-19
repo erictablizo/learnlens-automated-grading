@@ -94,8 +94,30 @@ export default function AnswerKeyPanel({
 
   const cancel = () => { setEditing(null); setDraft(""); };
 
+    /**
+   * NEW 2026-11-19. A lone T or F typed onto an item whose key is TRUE or
+   * FALSE becomes the whole word.
+   *
+   * THE GUARD IS THE ITEM'S CURRENT VALUE, which is exactly the authority
+   * _is_true_false() uses on the server: a key of "F" is a matching-type F, a
+   * key of "FALSE" is a true/false item. So an item currently reading "F" is
+   * left alone when "F" is typed into it — measured, with that as the control.
+   *
+   * An instruction alone would not hold. The hint asks for the whole word; a
+   * teacher in a hurry types one letter, and the item silently stops being a
+   * true/false item as far as the grader is concerned.
+   */
+  const expandTF = (typed: string, current: string | null | undefined): string => {
+    const cur = (current ?? "").trim().toUpperCase();
+    if (cur !== "TRUE" && cur !== "FALSE") return typed;
+    const up = typed.toUpperCase();
+    if (up === "T") return "TRUE";
+    if (up === "F") return "FALSE";
+    return typed;
+  };
+
   const save = async (ak: AnswerKey) => {
-    const value = draft.trim();
+    const value = expandTF(draft.trim(), ak.correct_answer);
     if (!value) {
       // The server refuses this too (grade_detected will not grade an exam
       // with a blank key item), but saying so here costs nothing and saves a
@@ -168,10 +190,34 @@ export default function AnswerKeyPanel({
     </Button>
   );
 
+    /**
+   * NEW 2026-11-19 (Sir Alex, page 1 point 8): "Put instructions if lower case
+   * or upper case. Be specific."
+   *
+   * Rendered in BOTH branches below — the empty-key branch returns early, and
+   * a teacher with no key yet is the one who most needs it.
+   *
+   * The second sentence is specific to THIS screen. _is_true_false() in
+   * app/ml/grader.py decides a true/false item by testing the key against the
+   * whole WORDS, so a key hand-corrected to "T" stops being one, and the Test
+   * Paper goes straight back to showing "T" — the fault removed today.
+   */
+  const caseHint = (
+    <p style={{ fontSize: "0.74rem", color: "var(--navy)",
+                background: "var(--orange-light)", border: "1px solid var(--orange)",
+                borderRadius: "var(--radius-sm)", padding: "0.45rem 0.65rem",
+                margin: "0 0 0.6rem", lineHeight: 1.6 }}>
+      Type corrections in <strong>CAPITAL LETTERS</strong>, exactly as written
+      on the paper. For True or False use the whole word —{" "}
+      <strong>TRUE</strong> or <strong>FALSE</strong>, not T or F.
+    </p>
+  );
+
   if (keys.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.6rem" }}>
         {filePicker}
+        {caseHint}
         <Button
           variant="primary" onClick={onGenerate} loading={generating} disabled={!canGenerate}
           style={{ width: "auto", padding: "0.65rem 1.25rem" }}
@@ -265,6 +311,8 @@ export default function AnswerKeyPanel({
           );
         })}
       </div>
+
+      {caseHint}
 
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
