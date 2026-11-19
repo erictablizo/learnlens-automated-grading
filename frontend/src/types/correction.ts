@@ -37,6 +37,8 @@ export interface RescoreSummary {
   papers_touched:      number;
   marks_gained:        number;
   marks_lost:          number;
+  /** Corrected into the 0.40-0.99 band: not marked, handed to the teacher. */
+  marks_to_review:     number;
   message:             string;
 }
 

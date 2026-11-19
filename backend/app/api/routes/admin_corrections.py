@@ -68,6 +68,7 @@ def _summary(rep: correction_service.RescoreReport) -> RescoreSummary:
         papers_touched=rep.papers_touched,
         marks_gained=rep.marks_gained,
         marks_lost=rep.marks_lost,
+        marks_to_review=rep.marks_to_review,
         message=rep.sentence(),
     )
 

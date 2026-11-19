@@ -162,6 +162,65 @@ except Exception as e:                                           # noqa: BLE001
     print(f"  !! grader could not be imported ({type(e).__name__}: {e})")
     sys.exit(2)
 
+# ocr_identification, for grade_identification / REVIEW_FLOOR. It imports
+# numpy at module level and cv2/pytesseract only inside functions, so it loads
+# on a machine with no OCR stack. If it cannot, the bench says so LOUDLY and
+# substitutes a stand-in - a silent substitution here would mean the whole
+# three-state claim was measured against a copy of itself.
+IDENT_IS_REAL = True
+try:
+    load_real("app.ml.ocr_identification",
+              os.path.join(APP, "ml", "ocr_identification.py"))
+    print("  grade_identification from: the real app/ml/ocr_identification.py")
+except Exception as e:                                           # noqa: BLE001
+    IDENT_IS_REAL = False
+    print(f"  !! ocr_identification could not be imported "
+          f"({type(e).__name__}: {e})")
+    print("  !! SUBSTITUTING A STAND-IN. The identification checks below are "
+          "measured against")
+    print("  !! a reconstruction, not your file. Re-run where it imports.")
+    stub = types.ModuleType("app.ml.ocr_identification")
+
+    def _edit_distance(a, b):
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            cur = [i]
+            for j, cb in enumerate(b, 1):
+                cur.append(min(prev[j] + 1, cur[j - 1] + 1,
+                               prev[j - 1] + (ca != cb)))
+            prev = cur
+        return prev[-1]
+
+    def normalize_answer(v):
+        return (v or "").strip().upper()
+
+    def similarity(student, key):
+        s_, k_ = normalize_answer(student), normalize_answer(key)
+        if not s_ and not k_:
+            return 1.0
+        if not s_ or not k_:
+            return 0.0
+        return 1.0 - _edit_distance(s_, k_) / max(len(s_), len(k_))
+
+    stub.CORRECT, stub.REVIEW, stub.WRONG = "correct", "review", "wrong"
+    stub.REVIEW_FLOOR = 0.40
+    stub.MAX_ANSWER_LEN = 100
+    stub.similarity = similarity
+    stub.normalize_answer = normalize_answer
+
+    def grade_identification(student, key):
+        sc = similarity(student, key)
+        if sc >= 1.0:
+            return stub.CORRECT
+        if sc >= stub.REVIEW_FLOOR:
+            return stub.REVIEW
+        return stub.WRONG
+
+    stub.grade_identification = grade_identification
+    sys.modules["app.ml.ocr_identification"] = stub
+
+IDENT = sys.modules["app.ml.ocr_identification"]
+
 CS = load_real("app.services.correction_service",
                os.path.join(APP, "services", "correction_service.py"))
 print(f"  under test        : {CS.__file__}")
@@ -191,6 +250,11 @@ ROWS = [
     (3, 2, "D",   "A",   False, "wrong"),
     (4, 1, "TRUE",  "TRUE",  True,  "correct"),
     (4, 2, "TRUE",  "FALSE", False, "wrong"),
+    # paper 5: IDENTIFICATION. Alex's point 4, and the band that exists
+    # between right and wrong for a word.
+    (5, 1, "MACHIN", "MACHINE", False, "wrong"),
+    (5, 2, "QQQ",    "MACHINE", False, "wrong"),
+    (5, 3, "ZZZ",    "ESSAY",   False, "wrong"),
 ]
 
 
@@ -200,7 +264,7 @@ async def fresh():
         await c.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
     db = Session()
-    for pid in (1, 2, 3, 4):
+    for pid in (1, 2, 3, 4, 5):
         db.add(TestPaper(paper_id=pid, exam_id=1, student_name=f"s{pid}",
                          total_score=0, checked=True))
     await db.flush()
@@ -208,7 +272,7 @@ async def fresh():
         db.add(PaperScore(paper_id=paper, question_number=q, student_answer=stud,
                           correct_answer=key, is_correct=ok, verdict=verdict))
     await db.flush()
-    for pid in (1, 2, 3, 4):
+    for pid in (1, 2, 3, 4, 5):
         n = sum(1 for r in ROWS if r[0] == pid and r[4])
         p = await db.get(TestPaper, pid)
         p.total_score = n
@@ -292,9 +356,11 @@ async def main():
     check("p2 total_score recounted 0 -> 1", after_t[2] == 1, f"{before_t[2]} -> {after_t[2]}")
     check("CONTROL p3 total_score unchanged", after_t[3] == before_t[3], f"{after_t[3]}")
     check("CONTROL p4 total_score unchanged", after_t[4] == before_t[4], f"{after_t[4]}")
+    check("CONTROL p5 (identification) total_score unchanged",
+          after_t[5] == before_t[5], f"{after_t[5]}")
     check("every total equals that paper's count of is_correct",
           all(after_t[p] == sum(1 for (pp, _), (_, ok, _) in after_s.items()
-                                if pp == p and ok) for p in (1, 2, 3, 4)),
+                                if pp == p and ok) for p in (1, 2, 3, 4, 5)),
           str(after_t))
     await db.close()
     await eng.dispose()
@@ -424,6 +490,83 @@ async def main():
     check("the cascade is a database statement, not a grading run",
           t_rescore < 30, f"{t_rescore:.1f}s for {rows} items",
           "if this ever approaches minutes, something is re-reading images")
+    await db.close(); await eng.dispose()
+
+    print("\n" + "=" * 74)
+    print("6.  IDENTIFICATION — three states, not two.  CHANGED 2026-11-19")
+    print("=" * 74)
+    print(f"  grade_identification is {'the REAL function' if IDENT_IS_REAL else 'A STAND-IN'};"
+          f" REVIEW_FLOOR = {IDENT.REVIEW_FLOOR}")
+
+    # The control FIRST, because it is the thing that could silently break:
+    # switching to grade_identification must not change ANY letter item.
+    eng, db = await fresh()
+    rep = await CS.rescore_for(db, "-", "E")
+    await db.commit()
+    s6 = await scores(db)
+    check("CONTROL letters unchanged: p1 q2 '-' -> 'E', key E, correct",
+          s6[(1, 2)] == ("E", True, "correct"), str(s6[(1, 2)]),
+          "equality and grade_identification must agree on single letters")
+    check("CONTROL letters unchanged: p1 q3 '-' -> 'E', key C, wrong",
+          s6[(1, 3)] == ("E", False, "wrong"), str(s6[(1, 3)]),
+          "two distinct letters score 0.0, far below the floor - never review")
+    check("CONTROL no letter item was pushed into review",
+          rep.marks_to_review == 0, f"{rep.marks_to_review}")
+    check("CONTROL counts identical to the equality version",
+          (rep.rows_examined, rep.rows_changed, rep.marks_gained, rep.marks_lost)
+          == (4, 3, 2, 0),
+          f"{rep.rows_examined}/{rep.rows_changed}/{rep.marks_gained}/{rep.marks_lost}")
+    await db.close(); await eng.dispose()
+
+    # Alex's point 4: the whole reason the table earns its place.
+    eng, db = await fresh()
+    before5 = await totals(db)
+    rep = await CS.rescore_for(db, "MACHIN", "MACHINE")
+    await db.commit()
+    s6, t6 = await scores(db), await totals(db)
+    check("ALEX p4: 'MACHIN' -> 'MACHINE' is now CORRECT, not review",
+          s6[(5, 1)] == ("MACHINE", True, "correct"), str(s6[(5, 1)]),
+          "exact after correction, so grade_identification returns CORRECT")
+    check("ALEX p4: it is reported as a mark gained",
+          rep.marks_gained == 1, f"{rep.marks_gained}")
+    check("ALEX p4: p5 total_score recounted", t6[5] == before5[5] + 1,
+          f"{before5[5]} -> {t6[5]}")
+    check("the uncorrected identification rows are untouched",
+          s6[(5, 2)][0] == "QQQ" and s6[(5, 3)][0] == "ZZZ",
+          f"{s6[(5, 2)][0]}, {s6[(5, 3)][0]}")
+    await db.close(); await eng.dispose()
+
+    # THE FAULT THIS CHANGE FIXES. A correction that moves a wrong answer
+    # CLOSER to the key without reaching it must become the teacher's
+    # decision, not a silent 'wrong'.
+    sim = IDENT.similarity("MACHIN", "MACHINE")
+    eng, db = await fresh()
+    rep = await CS.rescore_for(db, "QQQ", "MACHIN")
+    await db.commit()
+    s6 = await scores(db)
+    check(f"closer-but-not-exact -> REVIEW, not wrong  (similarity {sim:.3f})",
+          s6[(5, 2)] == ("MACHIN", False, "review"), str(s6[(5, 2)]),
+          "the old equality version marked this 'wrong' and said nothing")
+    check("and it is reported, so the teacher is told to look",
+          rep.marks_to_review == 1, f"{rep.marks_to_review}")
+    check("'now need a teacher's review' appears in the sentence",
+          "review" in rep.sentence(), rep.sentence())
+    check("is_correct stays False - review is not a mark",
+          s6[(5, 2)][1] is False, str(s6[(5, 2)][1]))
+    await db.close(); await eng.dispose()
+
+    # CONTROL: still far away -> still wrong. Review must not swallow
+    # everything.
+    eng, db = await fresh()
+    rep = await CS.rescore_for(db, "ZZZ", "XQV")
+    await db.commit()
+    s6 = await scores(db)
+    check("CONTROL far-from-the-key stays WRONG, not review",
+          s6[(5, 3)] == ("XQV", False, "wrong"), str(s6[(5, 3)]),
+          f"similarity('XQV','ESSAY') = {IDENT.similarity('XQV', 'ESSAY'):.3f}, "
+          f"below REVIEW_FLOOR")
+    check("CONTROL nothing reported to review", rep.marks_to_review == 0,
+          f"{rep.marks_to_review}")
     await db.close(); await eng.dispose()
 
     print("\n" + "=" * 74)

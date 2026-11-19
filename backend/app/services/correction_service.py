@@ -56,7 +56,8 @@ AND TWO THINGS THE CASCADE WILL NOT TOUCH
 ------------------------------------------
   * a row whose `verdict` is 'review'. That row is already flagged for the
     teacher to decide. Rewriting it would remove the very thing they were
-    asked to look at.
+    asked to look at. (A row this pass PUTS into review is a different thing:
+    it was wrong and silent, and is now visible.)
   * a row whose stored reading is the BLANK glyph, or contains the contested
     separator. Same four refusals as the pass itself.
 """
@@ -69,10 +70,29 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ml.ocr_item_numbers import CONTESTED_SEP
-# ONE definition of "does this answer match this key". grader._norm folds
-# TRUE->T and FALSE->F; recomputing is_correct with anything else would make a
-# rescored row disagree with a freshly graded one.
-from app.ml.grader import _norm as norm_answer, BLANK
+from app.ml.grader import BLANK
+# ONE definition of "is this answer this key", and it is the application's own.
+#
+# CHANGED 2026-11-19, and the reason is worth keeping. This used to recompute
+# is_correct with `grader._norm(a) == grader._norm(b)` - two states, correct or
+# wrong. Fresh grading of an IDENTIFICATION item does not work that way:
+# ocr_identification.grade_identification returns three states, and anything
+# short of an exact match but above REVIEW_FLOOR (0.40) is handed to the
+# teacher rather than marked. The two agreed whenever a correction produced an
+# exact match, which is the intended use - and disagreed in one case that
+# matters: an item currently WRONG which a correction moves CLOSER to the key
+# without reaching it. Fresh grading says "review, a human decides"; the old
+# code here said "wrong" and told nobody. That is the exact shape of fault the
+# 29 Sep refusal work was written to prevent, so this now calls the real
+# function instead of approximating it.
+#
+# For a SINGLE LETTER this reduces to equality: two distinct characters have
+# edit distance 1 over length 1, so similarity is 0.0 - far below the floor.
+# Letter items therefore behave exactly as they did, which the bench asserts
+# as a control rather than assuming.
+from app.ml.ocr_identification import (
+    grade_identification, CORRECT as IDENT_CORRECT, REVIEW as IDENT_REVIEW,
+)
 from app.models.models import PaperScore, TestPaper, OCRCorrection
 
 # Present only once migrations/2026-11-02_parts_and_answer_length.sql has run.
@@ -148,6 +168,7 @@ class RescoreReport:
     papers_touched: int = 0
     marks_gained:   int = 0
     marks_lost:     int = 0
+    marks_to_review: int = 0
     paper_ids:      list[int] = field(default_factory=list)
 
     def sentence(self) -> str:
@@ -158,6 +179,8 @@ class RescoreReport:
             bits.append(f"{self.marks_gained} became correct")
         if self.marks_lost:
             bits.append(f"{self.marks_lost} became wrong")
+        if self.marks_to_review:
+            bits.append(f"{self.marks_to_review} now need a teacher's review")
         if self.rows_skipped_review:
             bits.append(f"{self.rows_skipped_review} left alone because they are under review")
         return "; ".join(bits) + "."
@@ -217,16 +240,20 @@ async def rescore_for(db: AsyncSession, seen: str, means: str) -> RescoreReport:
                 rep.rows_skipped_review += 1
             continue
         was = bool(r.is_correct)
-        now = norm_answer(means) == norm_answer(r.correct_answer)
+        # The application's own three-state judgement, not a copy of it.
+        verdict = grade_identification(means, r.correct_answer)
+        now = verdict == IDENT_CORRECT
         r.student_answer = means[:100]
         r.is_correct = now
         if _HAS_VERDICT:
-            r.verdict = "correct" if now else "wrong"
+            r.verdict = verdict
         rep.rows_changed += 1
         if now and not was:
             rep.marks_gained += 1
         elif was and not now:
             rep.marks_lost += 1
+        if verdict == IDENT_REVIEW:
+            rep.marks_to_review += 1
         touched.add(r.paper_id)
 
     # Recount each touched paper from its own rows rather than adding a delta:

@@ -247,12 +247,23 @@ export default function SpecimenCorrections() {
         </p>
       )}
 
+      {/* Amber, not green, when the pass put items into review: that is an
+          action for a teacher, not a result to be pleased about. */}
       {result && (
-        <p style={{ fontSize: "0.8rem", marginTop: "0.6rem", color: "var(--success, #027a48)",
-                    background: "var(--success-bg, #ecfdf3)",
-                    border: "1px solid var(--success-border, #abefc6)",
+        <p style={{ fontSize: "0.8rem", marginTop: "0.6rem",
+                    color: result.marks_to_review > 0
+                      ? "var(--warning, #b54708)" : "var(--success, #027a48)",
+                    background: result.marks_to_review > 0
+                      ? "var(--warning-bg, #fffaeb)" : "var(--success-bg, #ecfdf3)",
+                    border: `1px solid ${result.marks_to_review > 0
+                      ? "var(--warning-border, #fedf89)"
+                      : "var(--success-border, #abefc6)"}`,
                     borderRadius: 6, padding: "8px 10px" }}>
           {result.message}
+          {result.marks_to_review > 0 && (
+            <><br />Those items are close to the answer but not exact, so they
+            were handed to the teacher to decide rather than marked.</>
+          )}
         </p>
       )}
 
@@ -273,6 +284,9 @@ export default function SpecimenCorrections() {
         For a true or false item, write the whole word — <span style={mono}>TRUE</span>,
         not <span style={mono}>T</span>. That is the form a recorded answer is
         stored in, so a correction written as a single letter will not find it.
+        For an identification item, a correction that makes the reading match
+        the answer exactly marks it correct; one that only gets it closer hands
+        it to the teacher to decide.
       </p>
     </section>
   );

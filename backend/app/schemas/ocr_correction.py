@@ -92,6 +92,7 @@ class RescoreSummary(BaseModel):
     papers_touched:      int = 0
     marks_gained:        int = 0
     marks_lost:          int = 0
+    marks_to_review:     int = 0
     message:             str = ""
 
 
