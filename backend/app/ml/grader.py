@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from app.ml.ocr_shared import OCRPageResult
+from app.ml.ocr_item_numbers import CONTESTED_SEP
 
 BLANK = "—"
 
@@ -79,12 +80,15 @@ def _is_true_false(raw_key: str) -> bool:
 
 
 def _expand(a: str) -> str:
-    """The inverse of _norm, for DISPLAY only. Never used in a comparison."""
-    if a == "T":
-        return "TRUE"
-    if a == "F":
-        return "FALSE"
-    return a
+    """The inverse of _norm, for DISPLAY only. Never used in a comparison.
+
+    SPLIT-AWARE. A student who circles both TRUE and FALSE arrives here as
+    "F|T" - assign_to_items joins contested readings rather than dropping one -
+    and that has to read "FALSE|TRUE" beside a key of "TRUE", not "F|T".
+    """
+    return CONTESTED_SEP.join(
+        "TRUE" if p == "T" else "FALSE" if p == "F" else p
+        for p in a.split(CONTESTED_SEP))
 
 
 def grade_detected(
@@ -151,20 +155,22 @@ def grade_detected(
         student = _norm(letter)
         if student:
             answered += 1
+        # A contested reading - "A|B", two options marked on one item - cannot
+        # equal any key, so it scores WRONG here with no branch of its own.
+        # DECIDED 2026-11-19: wrong rather than review, so the paper still
+        # finishes checking on its own. ocr_service names the items in its
+        # warning, so a phantom second circle is visible rather than silent.
+        key = _norm(raw_key)
+        student = _norm(letter)
+        if student:
+            answered += 1
+        # A contested reading - "A|B", two options marked on one item - cannot
+        # equal any key, so it scores WRONG here with no branch of its own.
+        # DECIDED 2026-11-19: wrong rather than review, so the paper still
+        # finishes checking on its own. ocr_service names the items in its
+        # warning, so a phantom second circle is visible rather than silent.
         ok = bool(student) and student == key
         correct += ok
-        # NEW 2026-11-19 (Sir Alex, page 1 point 3): "Correct display in Test
-        # Paper -> TRUE instead of T".
-        #
-        # THE COMPARISON ABOVE IS UNTOUCHED. It still runs on the normalised
-        # single letters, so no score and no verdict moves. What changes is the
-        # pair that is STORED - paper_scores is what the Test Paper screen
-        # renders, and it has held "T" ever since _norm() was written. The
-        # screen was faithfully showing the database; the database was the
-        # thing that had lost the word.
-        #
-        # Measured, with a matching-type "F" as the control:
-        # measure/2026-11-19_true_false_display.py
         if _is_true_false(raw_key):
             shown_student, shown_key = _expand(student), _expand(key)
         else:

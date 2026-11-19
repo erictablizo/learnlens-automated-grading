@@ -52,6 +52,13 @@ PITCH_TOLERANCE = 0.10
 # in ladder pitches. A wrapped question pushes its options down; 2.16 is the
 # largest measured. See the end-of-ladder rescue in assign_to_items.
 END_TAIL_PITCHES = 2.5
+# NEW 2026-11-19 (Sir Alex: "multiple answers -> revise (handling)", filed
+# under Accuracy). Two options marked on one item are joined with this, so the
+# ambiguity survives all the way to the grader instead of one of them being
+# dropped. "|" can never be a real answer: _LETTER_MAP in ocr_encircled.py
+# emits only A-D, and the one place a pipe is read - a bare capital I - is an
+# option LABEL, mapped to "I" by _LABEL_ALIASES before it leaves this module.
+CONTESTED_SEP = "|"
 
 
 def read_page_text(gray):
@@ -390,8 +397,19 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
 
     slots: dict[int, DetectedAnswer] = {}
     orphans: list[DetectedAnswer] = []
+    # NEW 2026-11-19. Which GROUP filled each slot. Two detections colliding on
+    # one item mean completely different things depending on whether they came
+    # from the same detector:
+    #
+    #   same group   the student marked two options. That is an answer the
+    #                system cannot resolve, and it must say so.
+    #   different    the priority ranking above already decided it on purpose -
+    #                a word beats a phantom circle fitted to round handwriting,
+    #                the 2026-10-26 fault. Merging those would turn every
+    #                identification page into a page of review items.
+    slot_group: dict[int, int] = {}
 
-    for group in groups:
+    for gi, group in enumerate(groups):
         for det in sorted(group, key=lambda a: (a.y, a.x)):
             # The NEAREST anchor above is the only candidate. Testing the
             # reach inside this loop was wrong - FIXED 2026-10-26 after it
@@ -409,10 +427,28 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
             if owner is not None and \
                     det.y - ladder[owner] > reach.get(owner, float("inf")) + tol:
                 owner = None          # would cross a missing number
-            if owner is None or owner in slots:
+            if owner is None:
                 orphans.append(det)
                 continue
+            if owner in slots:
+                # NEW 2026-11-19. A second mark on an item this same detector
+                # already filled. Joining them is what stops BOTH faults
+                # measured in 2026-11-19_multiple_circles.py: the silent one,
+                # where whichever circle sorted first was credited, and the
+                # loud one, where the loser became an orphan and the counting
+                # rule below installed it as a NEIGHBOURING item's answer.
+                if (slot_group.get(owner) == gi and det.letter
+                        and slots[owner].letter
+                        and det.letter != slots[owner].letter):
+                    slots[owner].letter = merge_contested(
+                        slots[owner].letter, det.letter)
+                    slots[owner].confidence = min(slots[owner].confidence,
+                                                  det.confidence)
+                else:
+                    orphans.append(det)
+                continue
             slots[owner] = det
+            slot_group[owner] = gi
 
     # An item number the OCR could not read leaves a hole between two anchors.
     # If the hole is m items wide and exactly m unclaimed detections fall
@@ -497,3 +533,8 @@ def assign_to_items(ladder: dict[int, float], groups, text_h: float
                       f"last number read on this page")
 
     return slots, orphans
+def merge_contested(a: str, b: str) -> str:
+    """Join two readings of one item. Sorted and de-duplicated, so the result
+    does not depend on which circle the page happened to yield first."""
+    return CONTESTED_SEP.join(sorted(set(a.split(CONTESTED_SEP)) |
+                                     set(b.split(CONTESTED_SEP))))

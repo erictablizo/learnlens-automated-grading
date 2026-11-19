@@ -70,6 +70,7 @@ from app.ml.ocr import (
 )
 from app.ml.grader import grade_detected, CORRECT, REVIEW, WRONG
 from app.ml.ocr_identification import MAX_ANSWER_LEN
+from app.ml.ocr_item_numbers import CONTESTED_SEP
 
 
 def _init_tesseract() -> None:
@@ -283,6 +284,20 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
             f"{grading.needs_review} written answer(s) need your review "
             f"(item {shown}). The score is {grading.correct}-{grading.max_possible} "
             f"of {grading.total_items} until they are resolved.")
+    # NEW 2026-11-19 (Sir Alex: "multiple answers -> revise (handling)").
+    #
+    # Read back off the graded questions rather than carried on GradingResult:
+    # a contested reading is exactly a student_answer containing the
+    # separator, nothing else can produce one, and a new field would be a
+    # second thing to keep in step.
+    contested = [q.question_number for q in grading.questions
+                 if CONTESTED_SEP in (q.student_answer or "")]
+    if contested:
+        shown = ", ".join(str(q) for q in contested[:10]) + \
+                ("…" if len(contested) > 10 else "")
+        warnings.append(
+            f"{len(contested)} item(s) had more than one answer marked and "
+            f"were scored as wrong (item {shown}).")
 
     return {
         "success":       True,
