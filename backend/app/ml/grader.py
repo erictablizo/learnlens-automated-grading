@@ -160,15 +160,6 @@ def grade_detected(
         # DECIDED 2026-11-19: wrong rather than review, so the paper still
         # finishes checking on its own. ocr_service names the items in its
         # warning, so a phantom second circle is visible rather than silent.
-        key = _norm(raw_key)
-        student = _norm(letter)
-        if student:
-            answered += 1
-        # A contested reading - "A|B", two options marked on one item - cannot
-        # equal any key, so it scores WRONG here with no branch of its own.
-        # DECIDED 2026-11-19: wrong rather than review, so the paper still
-        # finishes checking on its own. ocr_service names the items in its
-        # warning, so a phantom second circle is visible rather than silent.
         ok = bool(student) and student == key
         correct += ok
         if _is_true_false(raw_key):
@@ -181,7 +172,6 @@ def grade_detected(
             is_correct=ok, ocr_confidence=conf if student else 0.0, page_number=page_no,
             verdict=CORRECT if ok else WRONG, similarity=1.0 if ok else 0.0,
         ))
-
     total = len(answer_key_map)
     return GradingResult(
         questions=questions, total_items=total, answered=answered, correct=correct,
