@@ -42,12 +42,11 @@ Rescoring reads the stored reading instead of the photograph, so:
     as a bare "T" is stored as "TRUE". A correction keyed on "T" will not
     find it. Key true/false corrections on the word.
 
-  * **Readings are stored truncated by grade_paper.** The column is
-    VARCHAR(100) since 2026-11-02, but the two persist lines still slice
-    `[:10]` - they were never widened with the column, so 'THESIS STATEMENT'
-    is stored today as 'THESIS STA'. The ocr_service edit that ships with this
-    file widens both slices to `[:100]`. Until it is applied, a correction
-    longer than ten characters cannot round-trip.
+  * **A reading is stored at most MAX_ANSWER_LEN characters long.** That is
+    100 (app/ml/ocr_identification.py), matching the VARCHAR(100) the column
+    has had since 2026-11-02, and grade_paper slices to it - checked against
+    the live tree on 2026-11-19. A correction longer than 100 characters
+    cannot round-trip, which is why the schema refuses one.
 
   * **Only papers already checked are affected.** A paper with no
     `paper_scores` rows has never been read, so there is nothing to correct;

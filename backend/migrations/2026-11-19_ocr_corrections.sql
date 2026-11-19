@@ -110,15 +110,12 @@ COMMIT;
 -- could be stored. The correction table matches that width exactly: a
 -- correction must be writable into the column it will be written into.
 --
--- NOTE, AND IT IS A BUG THAT PREDATES THIS FILE: `ocr_service.grade_paper`
--- still persists `qr.student_answer[:10]` and `qr.correct_answer[:10]`. Those
--- two slices were written against the OLD width and were never widened with
--- the column, so 'THESIS STATEMENT' is being stored today as 'THESIS STA'.
--- The ocr_service edit that comes with this migration widens both slices to
--- [:100]. Without that edit, a correction longer than ten characters would be
--- truncated on its way in and the teacher would see a different value from
--- the one the administrator typed. Alex's own example, 'MACHINE', is seven
--- characters and is unaffected either way.
+-- CHECKED 2026-11-19 against the live tree: ocr_service.grade_paper slices
+-- [:MAX_ANSWER_LEN], and MAX_ANSWER_LEN is 100 (app/ml/ocr_identification.py).
+-- So a correction up to 100 characters round-trips intact. An earlier draft of
+-- this file claimed grade_paper still sliced [:10]; that is true of the
+-- project copy of ocr_service.py and false of what is deployed. The claim was
+-- withdrawn - see SPECIMEN-CORRECTIONS-2026-11-19.md.
 --
 -- WHAT THIS MIGRATION DOES NOT DO, ON PURPOSE
 --
