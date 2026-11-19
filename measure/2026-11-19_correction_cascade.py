@@ -25,7 +25,6 @@ import os
 import sys
 import time
 import types
-from dataclasses import dataclass
 
 OK = FAIL = 0
 
@@ -102,19 +101,38 @@ class OCRCorrection(Base):
     means         = Column(String(100), nullable=False)
 
 
-# ── stub the leaves, then load the real modules by path ─────────────────────
-def mkpkg(name):
+# ── make app.* resolve to the REAL tree, override only the database layer ──
+#
+# REWRITTEN 2026-11-19 after the first run on Grace's machine fell back to
+# stand-ins for BOTH ocr_item_numbers and ocr_identification. The old harness
+# created empty package stubs with `__path__ = []`, so every
+# `from app.ml.ocr_shared import ...` inside a real module failed with
+# "unknown location", and the bench quietly measured reconstructions of two
+# files instead of the files themselves.
+#
+# Now each package's __path__ points at the real directory, so a real module's
+# own imports resolve normally against the tree under test. The ONLY thing
+# substituted is `app.models.models`, because the real one declares PostgreSQL
+# tables and this bench runs on SQLite. Nothing else is faked, and when
+# something genuinely cannot load the bench says so loudly rather than
+# pretending.
+#
+# Package __init__.py files are deliberately NOT executed: a bare module with
+# __path__ set gives submodule resolution without app/__init__.py's side
+# effects, which is what lets this run with no database and no FastAPI app.
+def mkpkg(name, path):
     m = types.ModuleType(name)
-    m.__path__ = []
+    m.__path__ = [path]
     sys.modules[name] = m
     return m
 
 
-mkpkg("app")
-mkpkg("app.ml")
-mkpkg("app.models")
-mkpkg("app.services")
+mkpkg("app", APP)
+mkpkg("app.ml", os.path.join(APP, "ml"))
+mkpkg("app.models", os.path.join(APP, "models"))
+mkpkg("app.services", os.path.join(APP, "services"))
 
+# The one substitution, and it is the database layer only.
 models = types.ModuleType("app.models.models")
 models.PaperScore, models.TestPaper, models.OCRCorrection = (
     PaperScore, TestPaper, OCRCorrection)
@@ -129,103 +147,31 @@ def load_real(modname, path):
     return mod
 
 
-# ocr_item_numbers, for CONTESTED_SEP. Real file if it imports cleanly.
-try:
-    load_real("app.ml.ocr_item_numbers", os.path.join(APP, "ml", "ocr_item_numbers.py"))
-    print("  CONTESTED_SEP from: the real app/ml/ocr_item_numbers.py")
-except Exception as e:                                           # noqa: BLE001
-    stub = types.ModuleType("app.ml.ocr_item_numbers")
-    stub.CONTESTED_SEP = "|"
-    sys.modules["app.ml.ocr_item_numbers"] = stub
-    print(f"  !! ocr_item_numbers could not be imported ({type(e).__name__}: {e});"
-          f" CONTESTED_SEP stubbed as '|'")
-
-# grader, for _norm and BLANK. It imports app.ml.ocr_shared, which is a
-# dataclass module with no OCR dependency - stub it rather than the thing
-# under test.
-shared = types.ModuleType("app.ml.ocr_shared")
+def need(modname, label):
+    """Import a real module or stop. These are the things under test."""
+    try:
+        mod = importlib.import_module(modname)
+    except Exception as e:                                       # noqa: BLE001
+        print(f"\n  !! {label} could not be imported from your tree")
+        print(f"  !! {type(e).__name__}: {e}")
+        print(f"  !! This bench measures YOUR files or it measures nothing.")
+        print(f"  !! Run it from inside backend/ with the venv active.")
+        sys.exit(2)
+    print(f"  {label:<20}: {getattr(mod, '__file__', '?')}")
+    return mod
 
 
-@dataclass
-class OCRPageResult:
-    answers: list = None
-    error: str = ""
-    warning: str = ""
-
-
-shared.OCRPageResult = OCRPageResult
-sys.modules["app.ml.ocr_shared"] = shared
-try:
-    grader = load_real("app.ml.grader", os.path.join(APP, "ml", "grader.py"))
-    print("  _norm / BLANK from: the real app/ml/grader.py")
-except Exception as e:                                           # noqa: BLE001
-    print(f"  !! grader could not be imported ({type(e).__name__}: {e})")
-    sys.exit(2)
-
-# ocr_identification, for grade_identification / REVIEW_FLOOR. It imports
-# numpy at module level and cv2/pytesseract only inside functions, so it loads
-# on a machine with no OCR stack. If it cannot, the bench says so LOUDLY and
-# substitutes a stand-in - a silent substitution here would mean the whole
-# three-state claim was measured against a copy of itself.
-IDENT_IS_REAL = True
-try:
-    load_real("app.ml.ocr_identification",
-              os.path.join(APP, "ml", "ocr_identification.py"))
-    print("  grade_identification from: the real app/ml/ocr_identification.py")
-except Exception as e:                                           # noqa: BLE001
-    IDENT_IS_REAL = False
-    print(f"  !! ocr_identification could not be imported "
-          f"({type(e).__name__}: {e})")
-    print("  !! SUBSTITUTING A STAND-IN. The identification checks below are "
-          "measured against")
-    print("  !! a reconstruction, not your file. Re-run where it imports.")
-    stub = types.ModuleType("app.ml.ocr_identification")
-
-    def _edit_distance(a, b):
-        prev = list(range(len(b) + 1))
-        for i, ca in enumerate(a, 1):
-            cur = [i]
-            for j, cb in enumerate(b, 1):
-                cur.append(min(prev[j] + 1, cur[j - 1] + 1,
-                               prev[j - 1] + (ca != cb)))
-            prev = cur
-        return prev[-1]
-
-    def normalize_answer(v):
-        return (v or "").strip().upper()
-
-    def similarity(student, key):
-        s_, k_ = normalize_answer(student), normalize_answer(key)
-        if not s_ and not k_:
-            return 1.0
-        if not s_ or not k_:
-            return 0.0
-        return 1.0 - _edit_distance(s_, k_) / max(len(s_), len(k_))
-
-    stub.CORRECT, stub.REVIEW, stub.WRONG = "correct", "review", "wrong"
-    stub.REVIEW_FLOOR = 0.40
-    stub.MAX_ANSWER_LEN = 100
-    stub.similarity = similarity
-    stub.normalize_answer = normalize_answer
-
-    def grade_identification(student, key):
-        sc = similarity(student, key)
-        if sc >= 1.0:
-            return stub.CORRECT
-        if sc >= stub.REVIEW_FLOOR:
-            return stub.REVIEW
-        return stub.WRONG
-
-    stub.grade_identification = grade_identification
-    sys.modules["app.ml.ocr_identification"] = stub
-
-IDENT = sys.modules["app.ml.ocr_identification"]
+print("\nloaded from your tree:")
+OIN = need("app.ml.ocr_item_numbers", "CONTESTED_SEP")
+grader = need("app.ml.grader", "_norm / BLANK")
+IDENT = need("app.ml.ocr_identification", "grade_identification")
 
 CS = load_real("app.services.correction_service",
                os.path.join(APP, "services", "correction_service.py"))
-print(f"  under test        : {CS.__file__}")
-print(f"  verdict column    : {'seen' if CS._HAS_VERDICT else 'ABSENT - review rows '
-                                                             'cannot be protected'}")
+print(f"  {'correction_service':<20}: {CS.__file__}")
+_verdict_note = ("seen" if CS._HAS_VERDICT
+                 else "ABSENT - review rows cannot be protected")
+print(f"  {'verdict column':<20}: {_verdict_note}")
 
 BLANK = grader.BLANK
 SEP = CS.CONTESTED_SEP
@@ -495,8 +441,8 @@ async def main():
     print("\n" + "=" * 74)
     print("6.  IDENTIFICATION — three states, not two.  CHANGED 2026-11-19")
     print("=" * 74)
-    print(f"  grade_identification is {'the REAL function' if IDENT_IS_REAL else 'A STAND-IN'};"
-          f" REVIEW_FLOOR = {IDENT.REVIEW_FLOOR}")
+    print(f"  grade_identification: the real function; "
+          f"REVIEW_FLOOR = {IDENT.REVIEW_FLOOR}")
 
     # The control FIRST, because it is the thing that could silently break:
     # switching to grade_identification must not change ANY letter item.
