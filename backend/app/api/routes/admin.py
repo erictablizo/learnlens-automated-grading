@@ -48,7 +48,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import AnswerKey, Exam, Student, TestPaper, User
+from app.models.models import AnswerKey, Exam, Student, TestPaper, User, ClassList, ClassListStudent
 from app.schemas.admin import AdminExam, AdminOverview, AdminTeacher
 from app.services.auth_service import get_current_user
 
@@ -120,8 +120,19 @@ async def teachers(
     """
     n_exams = (select(func.count()).select_from(Exam)
                .where(Exam.created_by == User.user_id).scalar_subquery())
-    n_students = (select(func.count()).select_from(Student)
-                  .where(Student.created_by == User.user_id).scalar_subquery())
+    # CHANGED 2026-11-19. This counted students whose `created_by` is this
+    # account - which since the 2026-11-17 migration means "typed in by", and
+    # the administrator typed in all of them. Every teacher therefore read 0
+    # students beside a non-zero paper count, which reads as a fault rather
+    # than as a change of meaning.
+    #
+    # The enrolment number for a teacher is the distinct students across the
+    # class lists they own. An administrator who teaches nothing reads 0 here,
+    # which is correct: the installation-wide total is the tile above.
+    n_students = (select(func.count(func.distinct(ClassListStudent.student_id)))
+                  .select_from(ClassListStudent)
+                  .join(ClassList, ClassList.class_list_id == ClassListStudent.class_list_id)
+                  .where(ClassList.created_by == User.user_id).scalar_subquery())
     n_papers = (select(func.count()).select_from(TestPaper)
                 .join(Exam, Exam.exam_id == TestPaper.exam_id)
                 .where(Exam.created_by == User.user_id).scalar_subquery())
