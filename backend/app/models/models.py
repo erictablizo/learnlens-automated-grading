@@ -383,6 +383,27 @@ class PaperScore(Base):
     paper_page = relationship("PaperPage", back_populates="paper_scores")
     answer_key = relationship("AnswerKey", back_populates="paper_scores")
 
+# ===========================================================================
+# PASTE THIS CLASS INTO backend/app/models/models.py
+#
+# WHERE: at the END of the file, after the last model class. It has no
+# relationship() to anything, so its position cannot affect any other mapper.
+#
+# IMPORTS. It needs Index, text, CheckConstraint, ForeignKey, Column, Integer,
+# String, func and UTCDateTime. All but `text` are certainly already there
+# (Index was added on 2026-11-02 for ExamPagePart and PendingRegistration).
+# Check, and add `text` to the sqlalchemy import line if it is missing:
+#
+#     grep -n "^from sqlalchemy import" app/models/models.py
+#     grep -c "text" app/models/models.py
+#
+# The expression index uses btrim(), which is PostgreSQL's name for TRIM. A
+# create_all() against SQLite would not accept it - every bench that builds
+# this schema builds it on PostgreSQL, as measure/2026-11-12_schema_diff.py
+# already does.
+# ===========================================================================
+
+
 class OCRCorrection(Base):
     """What the reader saw, and what it means.  NEW 2026-11-19.
 
@@ -427,3 +448,56 @@ class OCRCorrection(Base):
     created_at    = Column(UTCDateTime(), server_default=func.now(), nullable=False)
     updated_at    = Column(UTCDateTime(), server_default=func.now(),
                            onupdate=func.now(), nullable=False)
+
+
+# ===========================================================================
+# AND THIS ONE TOO — ocr_correction_samples, NEW 2026-11-19.
+# Same placement rule: end of the file, no relationship() to anything.
+# ===========================================================================
+
+
+class OCRCorrectionSample(Base):
+    """A labelled pair produced by a teacher correcting a scanned answer.
+
+        Sir Alex Passion, 19 November 2026, points 5 and 6: training set,
+        datasets, sample specimen.
+
+    The reader saw `seen`; a human says the page said `means`. Collected as a
+    by-product of ordinary marking - `paper_answer_service.override_answer`
+    already knows both values, and until this existed it threw the first one
+    away.
+
+    EVERY FOREIGN KEY IS ON DELETE SET NULL, and that is the design. A sample
+    is a fact about the RECOGNISER, not about a student. Deleting the paper,
+    the exam or the teacher's account must not delete the evidence of what the
+    reader got wrong - and nothing here identifies a student in the first
+    place.
+
+    `confidence` is what the reader reported for the reading it got WRONG.
+    It is the column that answers the question behind point 5: was it
+    confident when it was wrong?
+    """
+    __tablename__ = "ocr_correction_samples"
+    __table_args__ = (
+        CheckConstraint(
+            "btrim(seen) <> '' AND btrim(means) <> '' "
+            "AND btrim(seen) <> U&'\\2014' AND btrim(means) <> U&'\\2014'",
+            name="ck_ocr_correction_samples_nonblank"),
+        CheckConstraint("position('|' in seen) = 0 AND position('|' in means) = 0",
+                        name="ck_ocr_correction_samples_not_contested"),
+        CheckConstraint("upper(btrim(seen)) <> upper(btrim(means))",
+                        name="ck_ocr_correction_samples_moved"),
+        Index("ix_ocr_correction_samples_pair",
+              text("upper(btrim(seen))"), text("upper(btrim(means))")),
+    )
+
+    sample_id       = Column(Integer, primary_key=True, autoincrement=True)
+    score_id        = Column(Integer, ForeignKey("paper_scores.score_id",
+                                                 ondelete="SET NULL"))
+    exam_id         = Column(Integer, ForeignKey("exams.exam_id", ondelete="SET NULL"))
+    question_number = Column(SmallInteger)
+    seen            = Column(String(100), nullable=False)
+    means           = Column(String(100), nullable=False)
+    confidence      = Column(Numeric(5, 2))
+    corrected_by    = Column(Integer, ForeignKey("users.user_id", ondelete="SET NULL"))
+    created_at      = Column(UTCDateTime(), server_default=func.now(), nullable=False)
