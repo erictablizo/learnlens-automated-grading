@@ -18,10 +18,18 @@
  *    per-student loop gives progress and keeps one failure from losing the
  *    other 34.
  *
- * 2. IT DOES NOT CHECK THE PAPERS. Measured: 40.1 s per paper page, so 35
- *    students is ~23 minutes. Checking stays its own step with its own
- *    progress; bundling it here would produce a dialog that looks frozen for
- *    twenty minutes with no safe point to stop.
+ * 2. IT CAN CHECK THE PAPERS, and says what that costs. CHANGED 2026-11-19
+ *    (Sir Alex: "Check All Papers (per group) during upload -> checking (at
+ *    the same time)", and his point 2, "Progress Bar").
+ *
+ *    The 2026-11-12 decision NOT to check here was made on a measurement -
+ *    40.1 s per paper page, so 35 students is ~23 minutes - and that
+ *    measurement has not changed. What changed is the objection: the dialog
+ *    would "look frozen for twenty minutes with no safe point to stop". So it
+ *    now has a progress bar, a per-student stage, and a Stop that skips the
+ *    pending check rather than waiting it out. The box is ticked by default
+ *    because that is what was asked for, and the estimate is printed beside
+ *    it so twenty minutes is a choice rather than a surprise.
  *
  * 3. EVERYTHING IS DECIDED BEFORE ANYTHING IS SENT. `planUpload` reads the
  *    match AND the exam's existing papers, so "already has a paper" is a line
@@ -69,6 +77,25 @@ interface Props {
  * rest, so a student taking two of this teacher's subjects cannot produce two
  * rows and two papers from one photo.
  */
+
+/** What came back from checking one paper, or why it could not be checked. */
+interface CheckInfo {
+  correct?:     number;
+  total?:       number;
+  isFinal?:     boolean;
+  needsReview?: number;
+  error?:       string;
+}
+
+/** Measured 2026-10-23, THROUGHPUT-2026-10-23. The number the 2026-11-12
+ *  decision was made on, and the one printed beside the checkbox. */
+const SECONDS_PER_PAGE = 40.1;
+
+/** Never 0 — "about 0 minutes" beside a checkbox reads as "instant". */
+const checkMinutes = (queue: UploadPlanEntry[]): number =>
+  Math.max(1, Math.round(
+    queue.reduce((n, e) => n + e.files.length, 0) * SECONDS_PER_PAGE / 60));
+
 async function classListRoster(token: string): Promise<RosterEntry[]> {
   const lists = await classListService.list(token);
   const details = await Promise.all(
@@ -99,6 +126,15 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
   const [current, setCurrent] = useState<string>("");
   const [outcomes, setOutcomes] = useState<UploadOutcome[]>([]);
   const [error, setError] = useState<string | null>(null);
+    // NEW 2026-11-19. Ticked by default; the cost is printed beside it.
+  const [checkAfter, setCheckAfter] = useState(true);
+  /** Which half of one student's work is running, for the line under the bar. */
+  const [stage, setStage] = useState<"upload" | "check">("upload");
+  /** Check results by student_id. Deliberately NOT folded into UploadOutcome:
+   *  a paper that uploaded and then failed to CHECK is uploaded, and
+   *  outcomeSummary must go on counting it a success. Measured —
+   *  measure/2026-11-19_batch_check.mjs, part 3. */
+  const [checks, setChecks] = useState<Record<number, CheckInfo>>({});
 
   // Set when the teacher presses Stop. Read between students, so a stop never
   // interrupts a paper half-way through its own pages.
@@ -126,10 +162,11 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
   );
   const plan = useMemo(() => planUpload(match, taken), [match, taken]);
   const queue = useMemo(() => toUpload(plan), [plan]);
-
+  
   const pick = (list: FileList | null) => {
     setError(null);
     setOutcomes([]);
+    setChecks({});
     setStep("pick");
     setFiles(list ? Array.from(list) : []);
   };
@@ -140,11 +177,14 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
     stopped.current = false;
     setStep("uploading");
     setDoneCount(0);
+    setChecks({});
     const results: UploadOutcome[] = [];
 
     for (const entry of queue) {
       if (stopped.current) break;
+      const sid = entry.student.student_id;
       setCurrent(`${entry.student.last_name}, ${entry.student.first_name}`);
+      setStage("upload");
 
       let paperId: number | null = null;
       let pagesUploaded = 0;
@@ -177,6 +217,37 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
         }
       }
 
+      // NEW 2026-11-19. Here, between the pages and the result, so the
+      // ordering is forced: a check can only run after that paper's last page
+      // is up, and always before the next student is created. Measured —
+      // measure/2026-11-19_batch_check.mjs, part 1.
+      //
+      // THREE GUARDS, each for a different wrong outcome:
+      //   pageError === undefined  grading a paper with a missing page scores
+      //                            the student against blanks.
+      //   !stopped.current         the teacher pressed Stop while these pages
+      //                            were going up. The pages finish - never a
+      //                            half paper - but the ~40s check is skipped,
+      //                            so Stop takes effect now rather than in a
+      //                            minute.
+      //   checkAfter               the box is unticked: byte-identical to the
+      //                            2026-11-12 loop.
+      if (checkAfter && pageError === undefined && !stopped.current) {
+        setStage("check");
+        try {
+          const g = await paperService.grade(examId, paperId, token);
+          setChecks(prev => ({ ...prev, [sid]: {
+            correct: g.correct, total: g.total_items,
+            isFinal: g.is_final, needsReview: g.needs_review } }));
+        } catch (e: unknown) {
+          // A CHECK failure is NOT an upload failure. The paper is on the
+          // server; calling the upload failed would send the teacher to
+          // re-upload it, and the duplicate guard would answer 409.
+          setChecks(prev => ({ ...prev, [sid]: {
+            error: e instanceof Error ? e.message : "Checking failed." } }));
+        }
+      }
+
       results.push({
         student: entry.student,
         ok: pageError === undefined,
@@ -189,10 +260,11 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
     }
 
     setCurrent("");
+    setStage("upload");
     setStep("done");
     const summary = outcomeSummary(results);
     onFinished(summary, allSucceeded(results));
-  }, [queue, examId, onFinished]);
+  }, [queue, examId, onFinished, checkAfter]);
 
   const busy = step === "uploading";
 
@@ -238,6 +310,28 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
                   {" "}first — add each student by their number.
                   </div>
                 )}
+
+          {/* NEW 2026-11-19 (Sir Alex: "Check All Papers (per group) during
+              upload"). Only once photos are chosen, so the estimate below has
+              a real number of papers to quote. */}
+          {files.length > 0 && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem",
+                            fontSize: "0.82rem", color: "var(--navy)",
+                            margin: "0 0 1rem", cursor: "pointer" }}>
+              <input type="checkbox" checked={checkAfter} style={{ marginTop: "0.2rem" }}
+                     onChange={e => setCheckAfter(e.target.checked)} />
+              <span>
+                <strong>Check each paper as it is uploaded.</strong>{" "}
+                <span style={{ color: "var(--text-muted)" }}>
+                  Checking runs the scanner over every page and takes about 40
+                  seconds a page — roughly {checkMinutes(queue)} minute(s) for
+                  these {queue.length} paper(s). You can stop part-way; anything
+                  already uploaded stays, and unchecked papers can be checked
+                  one at a time afterwards.
+                </span>
+              </span>
+            </label>
+          )}
                 </>
               )}
 
@@ -246,11 +340,36 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
           <p className="section-title" style={{ marginBottom: "0.3rem" }}>
             {step === "uploading" ? "Uploading" : "What will happen"}
           </p>
-          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            {step === "uploading"
-              ? `${doneCount} of ${queue.length} done${current ? ` — ${current}` : ""}`
-              : planSummary(plan, match.unmatched.length)}
-          </p>
+          {step === "uploading" ? (
+            <>
+              {/* NEW 2026-11-19 — his point 2. A bar rather than a bare count,
+                  because the slow half is now the checking and a number that
+                  does not move for forty seconds reads as a hang. */}
+              <div role="progressbar" aria-valuemin={0} aria-valuemax={queue.length}
+                   aria-valuenow={doneCount} aria-label="Papers finished"
+                   style={{ height: 8, borderRadius: 4, background: "var(--border)",
+                            overflow: "hidden", margin: "0 0 0.4rem" }}>
+                <div style={{
+                  height: "100%",
+                  width: `${queue.length ? (doneCount / queue.length) * 100 : 0}%`,
+                  background: "var(--orange)", transition: "width 0.3s",
+                }} />
+              </div>
+              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                {doneCount} of {queue.length} done
+                {current && (
+                  <> — {stage === "check" ? "checking" : "uploading"} <strong>{current}</strong></>
+                )}
+                {stage === "check" && (
+                  <span style={{ color: "var(--orange)" }}> (about 40s a page)</span>
+                )}
+              </p>
+            </>
+          ) : (
+            <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+              {planSummary(plan, match.unmatched.length)}
+            </p>
+          )}
 
           <div className="table-wrapper" style={{ maxHeight: 240, overflowY: "auto" }}>
             <table aria-label="Papers to upload">
@@ -271,7 +390,8 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
               <tbody>
                 {plan.map(entry => (
                   <PlanRow key={entry.student.student_id} entry={entry}
-                           outcome={outcomes.find(o => o.student.student_id === entry.student.student_id)} />
+                           outcome={outcomes.find(o => o.student.student_id === entry.student.student_id)}
+                           check={checks[entry.student.student_id]} />
                 ))}
                 {match.unmatched.map(u => (
                   <tr key={u.file.name} style={{ background: "var(--error-bg)" }}>
@@ -307,8 +427,13 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
             </ul>
           )}
           <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-            The papers are in but NOT checked yet. Checking runs the scanner over
-            every page and takes about a minute each, so it is a separate step.
+            {checkAfter
+              ? "Papers marked Checked have been scored. Any that could not be " +
+                "checked are uploaded and can be checked one at a time from the " +
+                "exam page — nothing needs re-uploading."
+              : "The papers are in but NOT checked yet. Checking runs the scanner " +
+                "over every page and takes about 40 seconds a page, so it is a " +
+                "separate step."}
           </p>
         </>
       )}
@@ -316,7 +441,7 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
       <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
         {step === "uploading" ? (
           <Button variant="secondary" onClick={() => { stopped.current = true; }}>
-            Stop after this one
+            Stop after this paper
           </Button>
         ) : (
           <Button variant="secondary" onClick={onClose}>
@@ -336,7 +461,9 @@ export default function BatchUploadModal({ examId, onClose, onFinished }: Props)
   );
 }
 
-function PlanRow({ entry, outcome }: { entry: UploadPlanEntry; outcome?: UploadOutcome }) {
+function PlanRow({ entry, outcome, check }: {
+  entry: UploadPlanEntry; outcome?: UploadOutcome; check?: CheckInfo;
+}) {
   const skipped = entry.action === "skip";
   let status: string;
   let colour = "var(--text-muted)";
@@ -345,6 +472,15 @@ function PlanRow({ entry, outcome }: { entry: UploadPlanEntry; outcome?: UploadO
     else if (outcome.pagesUploaded < outcome.pagesTotal) {
       status = `Only ${outcome.pagesUploaded} of ${outcome.pagesTotal} page(s)`;
       colour = "var(--error)";
+    } else if (check?.error) {
+      // Uploaded, not checked. AMBER, not red: nothing needs re-uploading.
+      status = `Uploaded — not checked: ${check.error}`;
+      colour = "var(--warning, #b7791f)";
+    } else if (check && check.correct !== undefined) {
+      status = check.isFinal
+        ? `Checked — ${check.correct} / ${check.total}`
+        : `Checked — ${check.correct} / ${check.total}, ${check.needsReview} for review`;
+      colour = "var(--success)";
     } else { status = "Uploaded"; colour = "var(--success)"; }
   } else if (skipped) {
     status = entry.reason ?? "Skipped";
