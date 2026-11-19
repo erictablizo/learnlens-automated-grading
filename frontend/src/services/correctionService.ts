@@ -22,10 +22,18 @@ export const correctionService = {
   list: (token: string) =>
     api.get<OCRCorrection[]>("/admin/corrections", token),
 
-  /** How many recorded items and papers a correction of `seen` would touch. */
-  affected: (seen: string, token: string) =>
+  /**
+   * What a correction of `seen` to `means` would do, before it does it.
+   *
+   * `means` is optional on the server, but the screen always sends it once
+   * both boxes have something in them - the outcome counts are the whole
+   * point, and the row count on its own has already been shown to be
+   * reassuring in exactly the case that would have done damage.
+   */
+  affected: (seen: string, means: string, token: string) =>
     api.get<AffectedCount>(
-      `/admin/corrections/affected?seen=${encodeURIComponent(seen)}`, token),
+      `/admin/corrections/affected?seen=${encodeURIComponent(seen)}`
+      + `&means=${encodeURIComponent(means)}`, token),
 
   /** 409 when another row already covers that reading. */
   create: (body: OCRCorrectionPayload, token: string) =>

@@ -85,6 +85,7 @@ export default function SpecimenCorrections() {
 
   const [hits, setHits]       = useState<AffectedCount | null>(null);
   const [counting, setCounting] = useState(false);
+  const [lookupFailed, setLookupFailed] = useState(false);
   const [result, setResult]   = useState<RescoreSummary | null>(null);
   const [notice, setNotice]   = useState("");
 
@@ -108,22 +109,26 @@ export default function SpecimenCorrections() {
   const seq = useRef(0);
   useEffect(() => {
     const value = seen.trim();
+    const to = means.trim();
     setResult(null);
     if (!value) { setHits(null); setCounting(false); return; }
     const mine = ++seq.current;
     setCounting(true);
     const t = setTimeout(async () => {
       try {
-        const got = await correctionService.affected(value, getToken() ?? "");
-        if (mine === seq.current) setHits(got);
+        const got = await correctionService.affected(value, to, getToken() ?? "");
+        if (mine === seq.current) { setHits(got); setLookupFailed(false); }
       } catch {
-        if (mine === seq.current) setHits(null);
+        // A failed lookup used to show NOTHING, which reads exactly like
+        // "nothing would be affected" - the most dangerous thing it could
+        // say. It now says it could not check.
+        if (mine === seq.current) { setHits(null); setLookupFailed(true); }
       } finally {
         if (mine === seq.current) setCounting(false);
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [seen]);
+  }, [seen, means]);
 
   async function save() {
     const s = seen.trim(), m = means.trim();
@@ -165,12 +170,28 @@ export default function SpecimenCorrections() {
     }
   }
 
+  /* The sentence beside Save. It must never be able to read as "nothing
+     would happen" when the truth is "I could not find out". */
+  const bits: string[] = [];
+  if (hits && hits.detailed) {
+    if (hits.would_be_correct) bits.push(`${hits.would_be_correct} would become correct`);
+    if (hits.would_be_wrong) bits.push(`${hits.would_be_wrong} would become WRONG`);
+    if (hits.would_need_review) bits.push(`${hits.would_need_review} would go to the teacher to decide`);
+    if (hits.skipped_review) bits.push(`${hits.skipped_review} already under review would be left alone`);
+  }
+
+  const costsMarks = !!hits && hits.detailed && hits.would_be_wrong > 0;
+
   const willTouch =
-    counting ? "counting…"
+    lookupFailed ? "Could not check how many papers this would affect. "
+                 + "Save is still possible, but you would be doing it blind."
+    : counting ? "checking…"
     : hits === null ? ""
     : hits.rows === 0 ? "No paper already checked contains that reading."
-    : `Saving will re-check ${hits.rows} recorded item${hits.rows === 1 ? "" : "s"} ` +
-      `on ${hits.papers} paper${hits.papers === 1 ? "" : "s"}, including other teachers'.`;
+    : `Saving will re-check ${hits.rows} recorded item${hits.rows === 1 ? "" : "s"} `
+      + `on ${hits.papers} paper${hits.papers === 1 ? "" : "s"}, including other teachers'.`
+      + (bits.length ? ` ${bits.join("; ")}.` : "")
+      + (hits.detailed ? "" : " Too many to work out the outcome item by item.");
 
   return (
     <section style={card}>
@@ -240,9 +261,19 @@ export default function SpecimenCorrections() {
         </button>
       </div>
 
+      {/* Red when it would cost marks. That case is not a warning, it is a
+          reason to stop: a correction that marks correct answers wrong looks
+          exactly like one that does not until this line says so. */}
       {willTouch && (
-        <p style={{ fontSize: "0.8rem", marginTop: "0.6rem",
-                    color: hits && hits.rows > 0 ? "var(--warning, #b54708)" : "var(--text-muted)" }}>
+        <p style={{ fontSize: "0.8rem", marginTop: "0.6rem", padding: costsMarks ? "8px 10px" : 0,
+                    borderRadius: costsMarks ? 6 : 0,
+                    background: costsMarks ? "var(--danger-bg, #fef3f2)" : "transparent",
+                    border: costsMarks ? "1px solid var(--danger-border, #fecdca)" : "none",
+                    fontWeight: costsMarks ? 600 : 400,
+                    color: costsMarks ? "var(--danger, #b42318)"
+                         : lookupFailed ? "var(--danger, #b42318)"
+                         : hits && hits.rows > 0 ? "var(--warning, #b54708)"
+                         : "var(--text-muted)" }}>
           {willTouch}
         </p>
       )}

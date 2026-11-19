@@ -186,6 +186,22 @@ class RescoreReport:
         return "; ".join(bits) + "."
 
 
+# How many rows a preview will judge one at a time before it gives up and
+# reports counts only. The full apply of 5,250 rows measured 177 ms, and a
+# read-only tally is cheaper - but this runs on a 400 ms debounce while an
+# administrator types, so it needs a ceiling rather than a hope.
+PREVIEW_CAP = 5000
+
+
+def judge(means: str, correct_answer: str) -> str:
+    """The verdict a row would get. ONE definition, used by preview and apply.
+
+    If these two ever disagree, the number beside the Save button stops
+    describing what Save does - which is worse than having no number at all.
+    """
+    return grade_identification(means, correct_answer)
+
+
 def _correctable(row: PaperScore) -> bool:
     """The same four refusals as the pass, applied to a stored reading."""
     seen = norm_seen(row.student_answer)
@@ -212,6 +228,73 @@ async def count_affected(db: AsyncSession, seen: str) -> tuple[int, int]:
         .where(func.upper(func.trim(PaperScore.student_answer)) == key)
     )).one()
     return (int(row[0] or 0), int(row[1] or 0))
+
+
+@dataclass
+class AffectedPreview:
+    """What saving WOULD do. Read-only; writes nothing.
+
+    ADDED 2026-11-19, and the reason is a near miss worth recording. The
+    screen used to print "14 items on 6 papers" - true, and no help at all in
+    the case that mattered. Production holds 371 items reading `T` across 21
+    papers; a correction of `T` to `TRUE` looks obviously right and would have
+    marked hundreds of correct answers wrong, because those rows store their
+    key folded as `T` too. The old count would have said "371 items on 21
+    papers" and nothing else.
+
+    It now says how many would become correct, wrong, or go to review - the
+    same judgement the apply uses, run without writing.
+
+    These count TRANSITIONS, not final states, and that distinction was a
+    measured failure before it was a design. The first version counted every
+    row that would END wrong - so a sound `-` -> `E` correction reported "1
+    would become WRONG" because one dash sat on an item whose key is C and
+    was already wrong. Crying wolf on the correction you actually want is how
+    a warning stops being read. `would_be_wrong` now means what it says: a
+    mark that is correct today and would not be.
+
+    They are therefore identical by construction to RescoreReport's
+    marks_gained / marks_lost / marks_to_review, which the bench asserts.
+    """
+    rows:              int = 0
+    papers:            int = 0
+    skipped_review:    int = 0
+    would_be_correct:  int = 0      # == RescoreReport.marks_gained
+    would_be_wrong:    int = 0      # == RescoreReport.marks_lost
+    would_need_review: int = 0      # == RescoreReport.marks_to_review
+    detailed:          bool = True      # False when the row count passed the cap
+
+
+async def preview_for(db: AsyncSession, seen: str, means: str) -> AffectedPreview:
+    """Count the rows, and - unless there are too many - judge each one."""
+    pv = AffectedPreview()
+    pv.rows, pv.papers = await count_affected(db, seen)
+    key = norm_seen(seen)
+    if not pv.rows or not (means or "").strip() or key == norm_seen(means):
+        return pv
+    if pv.rows > PREVIEW_CAP:
+        pv.detailed = False
+        return pv
+
+    rows = list((await db.execute(
+        select(PaperScore)
+        .where(func.upper(func.trim(PaperScore.student_answer)) == key)
+    )).scalars().all())
+    for r in rows:
+        if not _correctable(r):
+            if _HAS_VERDICT and (getattr(r, "verdict", "") or "").lower() == REVIEW:
+                pv.skipped_review += 1
+            continue
+        was = bool(r.is_correct)
+        v = judge(means, r.correct_answer)
+        now = v == IDENT_CORRECT
+        if now and not was:
+            pv.would_be_correct += 1
+        elif was and not now:
+            pv.would_be_wrong += 1
+        if v == IDENT_REVIEW:
+            pv.would_need_review += 1
+    return pv
 
 
 async def rescore_for(db: AsyncSession, seen: str, means: str) -> RescoreReport:
@@ -241,7 +324,7 @@ async def rescore_for(db: AsyncSession, seen: str, means: str) -> RescoreReport:
             continue
         was = bool(r.is_correct)
         # The application's own three-state judgement, not a copy of it.
-        verdict = grade_identification(means, r.correct_answer)
+        verdict = judge(means, r.correct_answer)
         now = verdict == IDENT_CORRECT
         r.student_answer = means[:100]
         r.is_correct = now

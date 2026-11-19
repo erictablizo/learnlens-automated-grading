@@ -89,17 +89,28 @@ async def list_corrections(
 @router.get("/affected", response_model=AffectedCount)
 async def affected(
     seen: str = Query(..., description="The reading, exactly as the reader produced it."),
+    means: str = Query("", description="What it would be read as. Enables the outcome counts."),
     admin: User = Depends(_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """How many recorded items and papers a correction of `seen` would touch.
+    """What a correction of `seen` to `means` would do, before it does it.
 
-    Read-only. Called as the administrator types, so the number beside the
-    Save button is the real blast radius and not an estimate.
+    Read-only, and it judges each row with the SAME function the apply uses,
+    so the numbers on the screen describe what Save actually does.
+
+    Without `means` it answers the row and paper counts only. With it, it also
+    says how many items would become correct, how many wrong, and how many
+    would go to the teacher - which is the part that matters. A correction can
+    look obviously right and still cost marks; `would_be_wrong` is how an
+    administrator finds that out before pressing the button rather than after.
     """
     del admin
-    rows, papers = await correction_service.count_affected(db, seen)
-    return AffectedCount(rows=rows, papers=papers)
+    pv = await correction_service.preview_for(db, seen, means)
+    return AffectedCount(
+        rows=pv.rows, papers=pv.papers, skipped_review=pv.skipped_review,
+        would_be_correct=pv.would_be_correct, would_be_wrong=pv.would_be_wrong,
+        would_need_review=pv.would_need_review, detailed=pv.detailed,
+    )
 
 
 @router.post("", response_model=OCRCorrectionSaved, status_code=201)

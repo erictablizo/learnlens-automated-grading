@@ -97,9 +97,19 @@ class RescoreSummary(BaseModel):
 
 
 class AffectedCount(BaseModel):
-    """The blast radius, measured BEFORE the administrator saves."""
-    rows:   int = 0
-    papers: int = 0
+    """The blast radius AND the outcome, measured BEFORE the administrator saves.
+
+    `rows` and `papers` alone were not enough: see AffectedPreview's docstring
+    in correction_service for the T -> TRUE case that would have passed a
+    count-only check and marked hundreds of correct answers wrong.
+    """
+    rows:              int = 0
+    papers:            int = 0
+    skipped_review:    int = 0
+    would_be_correct:  int = 0
+    would_be_wrong:    int = 0
+    would_need_review: int = 0
+    detailed:          bool = True
 
 
 class OCRCorrectionSaved(BaseModel):

@@ -201,6 +201,13 @@ ROWS = [
     (5, 1, "MACHIN", "MACHINE", False, "wrong"),
     (5, 2, "QQQ",    "MACHINE", False, "wrong"),
     (5, 3, "ZZZ",    "ESSAY",   False, "wrong"),
+    # paper 6: TRUE/FALSE stored FOLDED, as every paper checked before the
+    # 2026-11-19 display fix is. Production holds 371 such items across 21
+    # papers. Both sides are folded, so they are CORRECT as they stand.
+    (6, 1, "T", "T", True,  "correct"),
+    (6, 2, "T", "T", True,  "correct"),
+    (6, 3, "F", "F", True,  "correct"),
+    (6, 4, "T", "F", False, "wrong"),
 ]
 
 
@@ -210,7 +217,7 @@ async def fresh():
         await c.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
     db = Session()
-    for pid in (1, 2, 3, 4, 5):
+    for pid in (1, 2, 3, 4, 5, 6):
         db.add(TestPaper(paper_id=pid, exam_id=1, student_name=f"s{pid}",
                          total_score=0, checked=True))
     await db.flush()
@@ -218,7 +225,7 @@ async def fresh():
         db.add(PaperScore(paper_id=paper, question_number=q, student_answer=stud,
                           correct_answer=key, is_correct=ok, verdict=verdict))
     await db.flush()
-    for pid in (1, 2, 3, 4, 5):
+    for pid in (1, 2, 3, 4, 5, 6):
         n = sum(1 for r in ROWS if r[0] == pid and r[4])
         p = await db.get(TestPaper, pid)
         p.total_score = n
@@ -306,7 +313,7 @@ async def main():
           after_t[5] == before_t[5], f"{after_t[5]}")
     check("every total equals that paper's count of is_correct",
           all(after_t[p] == sum(1 for (pp, _), (_, ok, _) in after_s.items()
-                                if pp == p and ok) for p in (1, 2, 3, 4, 5)),
+                                if pp == p and ok) for p in (1, 2, 3, 4, 5, 6)),
           str(after_t))
     await db.close()
     await eng.dispose()
@@ -374,11 +381,26 @@ async def main():
     check("every non-review item agrees with a fresh grading", disagree == 0,
           f"{agree} agree, {disagree} disagree")
 
-    # And the documented limitation, asserted rather than assumed.
-    r, _ = await CS.count_affected(db, "T")
-    check("DOCUMENTED LIMIT: a correction keyed 'T' finds no true/false row, "
-          "because readings are stored expanded", r == 0, f"{r} rows",
-          "key true/false corrections on the word TRUE or FALSE, not the letter")
+    # The true/false storage split, asserted rather than assumed.
+    #
+    # REWRITTEN 2026-11-19. This used to assert that a correction keyed 'T'
+    # finds NOTHING, because grade_paper stores true/false readings expanded.
+    # That is true only of rows written since this morning's display fix.
+    # Production holds 371 items still reading 'T' from before it, so the
+    # check was asserting a tidier world than the one that exists - and the
+    # tidier world was the one in which 'T' -> 'TRUE' looks like a safe
+    # correction. Now it asserts the split itself.
+    t_rows, t_papers = await CS.count_affected(db, "T")
+    check("a 'T' correction reaches ONLY the historical folded rows",
+          (t_rows, t_papers) == (3, 1), f"{t_rows} items on {t_papers} paper(s)",
+          "paper 6 is stored folded (pre-fix); paper 4 is stored expanded")
+    true_rows, _ = await CS.count_affected(db, "TRUE")
+    check("and the expanded rows are reachable only by the word",
+          true_rows == 2, f"{true_rows} items",
+          "which is why a true/false correction must be keyed on TRUE, not T")
+    check("the two sets do not overlap", t_rows + true_rows ==
+          sum(1 for p, _q, a, _k, _o, _v in ROWS if a in ("T", "TRUE")),
+          f"{t_rows} + {true_rows}")
     await db.close(); await eng.dispose()
 
     print("\n" + "=" * 74)
@@ -514,6 +536,130 @@ async def main():
     check("CONTROL nothing reported to review", rep.marks_to_review == 0,
           f"{rep.marks_to_review}")
     await db.close(); await eng.dispose()
+
+    print("\n" + "=" * 74)
+    print("7.  THE PREVIEW.  'T' means 'TRUE' is the correction that must be")
+    print("    refused, and the screen has to say so BEFORE anyone saves.")
+    print("=" * 74)
+    eng, db = await fresh()
+
+    pv = await CS.preview_for(db, "T", "TRUE")
+    # THREE, not four. Paper 6's fourth true/false row reads 'F', not 'T'.
+    # My first version of this check said four and failed; the assertion was
+    # wrong, the code was right.
+    check("the old count-only answer would have looked harmless",
+          (pv.rows, pv.papers) == (3, 1), f"{pv.rows} items on {pv.papers} paper(s)",
+          "production: 371 items on 21 papers, and nothing to say they are at risk")
+    check("would_be_wrong is NOT zero - this is the whole point",
+          pv.would_be_wrong == 2, f"{pv.would_be_wrong} would become wrong",
+          "2 rows are CORRECT today because both sides read 'T'; the third "
+          "was already wrong, so it is not a mark lost")
+    check("would_be_correct is zero", pv.would_be_correct == 0,
+          f"{pv.would_be_correct}")
+    check("the preview is detailed, not capped", pv.detailed is True, str(pv.detailed))
+
+    # The invariant the screen depends on: preview and apply must agree, or
+    # the number beside Save stops describing what Save does.
+    rep = await CS.rescore_for(db, "T", "TRUE")
+    await db.commit()
+    check("PREVIEW == APPLY on would-be-wrong",
+          rep.marks_lost == pv.would_be_wrong,
+          f"preview {pv.would_be_wrong}, apply {rep.marks_lost}")
+    check("PREVIEW == APPLY on would-be-correct",
+          rep.marks_gained == pv.would_be_correct,
+          f"preview {pv.would_be_correct}, apply {rep.marks_gained}")
+    check("PREVIEW == APPLY on would-need-review",
+          rep.marks_to_review == pv.would_need_review,
+          f"preview {pv.would_need_review}, apply {rep.marks_to_review}")
+    s7 = await scores(db)
+    check("and the damage is real, which is why it must be shown first",
+          s7[(6, 1)] == ("TRUE", False, "wrong"), str(s7[(6, 1)]),
+          "a correct answer, marked wrong by an obviously-sensible correction")
+    await db.close(); await eng.dispose()
+
+    # A GOOD correction must still read as good, or the warning means nothing.
+    eng, db = await fresh()
+    pv = await CS.preview_for(db, "-", "E")
+    check("CONTROL a sound correction shows NO marks lost",
+          pv.would_be_wrong == 0, f"{pv.would_be_wrong} wrong",
+          "the dash on the item keyed C was already wrong and stays wrong - "
+          "counting it would cry wolf on the correction you want to make")
+    check("CONTROL and it shows the marks it would gain",
+          pv.would_be_correct == 2, f"{pv.would_be_correct} correct")
+    check("CONTROL review rows are reported as left alone",
+          pv.skipped_review == 1, f"{pv.skipped_review}")
+    rep = await CS.rescore_for(db, "-", "E")
+    check("CONTROL preview == apply here too",
+          (pv.would_be_correct, pv.would_be_wrong) == (rep.marks_gained, rep.marks_lost),
+          f"{pv.would_be_correct}/{pv.would_be_wrong} vs {rep.marks_gained}/{rep.marks_lost}")
+    check("CONTROL the preview WROTE NOTHING",
+          (await scores(db))[(1, 2)][0] in ("-", "E"), "read-only")
+    await db.close(); await eng.dispose()
+
+    # And it must say nothing rather than something wrong when it cannot judge.
+    eng, db = await fresh()
+    pv = await CS.preview_for(db, "Z", "E")
+    check("CONTROL a reading nobody has previews as zero",
+          (pv.rows, pv.would_be_wrong, pv.would_be_correct) == (0, 0, 0), str(pv.rows))
+    pv = await CS.preview_for(db, "-", "")
+    check("CONTROL no meaning typed yet: counts only, no outcome claimed",
+          pv.rows == 4 and pv.would_be_correct == 0 and pv.would_be_wrong == 0,
+          f"{pv.rows} rows, no verdicts")
+    await db.close(); await eng.dispose()
+
+    print("\n" + "=" * 74)
+    print("8.  THE BOUNDARY. Where judge() and the live grader disagree,")
+    print("    and why that set must be empty after the expansion migration.")
+    print("=" * 74)
+    # grade_detected judges a NON-identification item with `_norm` equality and
+    # an identification item with grade_identification. rescore_for cannot see
+    # the item type - paper_scores does not record it - so judge() uses
+    # grade_identification for everything. This maps every place the two
+    # differ, instead of assuming there are none.
+    PAIRS = [
+        # (means, stored key)
+        ("E", "E"), ("E", "C"), ("A", "A"), ("A", "B"), ("F", "F"), ("F", "C"),
+        ("TRUE", "TRUE"), ("TRUE", "FALSE"), ("FALSE", "FALSE"),
+        ("TRUE", "T"), ("FALSE", "F"),                     # folded key
+        ("T", "TRUE"), ("F", "FALSE"),                     # folded reading
+        ("MACHINE", "MACHINE"), ("MACHIN", "MACHINE"), ("XQV", "ESSAY"),
+    ]
+    disagree = []
+    for means, key in PAIRS:
+        mine = CS.judge(means, key) == IDENT.CORRECT
+        live = bool(grader._norm(means)) and grader._norm(means) == grader._norm(key)
+        if mine != live:
+            disagree.append((means, key, mine, live))
+    for means, key, mine, live in disagree:
+        print(f"      {means!r:>10} vs key {key!r:<10} "
+              f"cascade={'correct' if mine else 'not correct':<11} "
+              f"grader={'correct' if live else 'not correct'}")
+
+    folded = {(m, k) for m, k, _x, _y in disagree}
+    check("the ONLY place a MARK differs is folded true/false",
+          folded == {("TRUE", "T"), ("FALSE", "F"), ("T", "TRUE"), ("F", "FALSE")},
+          f"{len(disagree)} pair(s): {sorted(folded)}",
+          "everywhere else the cascade awards exactly what the grader awards")
+
+    # The identification pair deliberately does NOT appear above, and that is
+    # the point rather than an omission: on the mark itself the two agree
+    # (neither awards it). They differ on the VERDICT - the grader's
+    # non-identification path would say 'wrong', the cascade says 'review' -
+    # which is the whole improvement, and it cannot cost a student a mark.
+    mark_same = (CS.judge("MACHIN", "MACHINE") == IDENT.CORRECT) == (
+        grader._norm("MACHIN") == grader._norm("MACHINE"))
+    check("identification: same MARK, better VERDICT",
+          mark_same and CS.judge("MACHIN", "MACHINE") == IDENT.REVIEW,
+          f"mark agrees, verdict = {CS.judge('MACHIN', 'MACHINE')}",
+          "review instead of silent wrong - visible to the teacher, same score")
+    check("every folded disagreement involves one side reading T or F alone",
+          all(m.upper() in ("T", "F") or k.upper() in ("T", "F") for m, k in folded),
+          f"{sorted(folded)}")
+    check("NO disagreement survives once both sides are expanded",
+          not [1 for m, k in folded
+               if m.upper() not in ("T", "F") and k.upper() not in ("T", "F")],
+          "which is what migrations/2026-11-19_expand_true_false.sql guarantees",
+          "run that migration BEFORE using the specimen table on true/false items")
 
     print("\n" + "=" * 74)
     print(f"{OK} passed, {FAIL} failed")
