@@ -1,35 +1,29 @@
 """
-measure/2026-11-19_expand_true_false_keys.py
-=============================================
-Sir Alex 2026-11-19, page 1 item 3 — the ROOT of "TRUE instead of T".
+measure/2026-11-19_expand_true_false.py
+=======================================
+Sir Alex 2026-11-19, page 1 item 3 — "TRUE instead of T", for the papers that
+were already checked.
 
-Production stores the ANSWER KEYS folded: 20 keys read 'T', 10 read 'F'.
-`_is_true_false()` tests the key against ("TRUE","FALSE"), so those items are
-not treated as true/false at all and the display fix never runs on them.
+IT RUNS THE REAL MIGRATION FILE. Not a transcription of it, not an ORM
+equivalent: this reads `migrations/2026-11-19_expand_true_false.sql` off disk
+and feeds it to psql against a scratch PostgreSQL database. The 28 Sep
+post-mortem's rule applies to SQL as much as to Python - a test that
+re-implements a statement cannot catch a bug in that statement.
 
-This runs BOTH real migration files, in order, against a real PostgreSQL:
+    python measure/2026-11-19_expand_true_false.py
 
-    migrations/2026-11-19_expand_true_false_keys.sql    (the keys)
-    migrations/2026-11-19_expand_true_false.sql         (the recorded answers)
-
-Neither is transcribed. The fixture reproduces the exact page shapes measured
-on production on 2026-11-19, including the matching-type page that must not
-move and the short page the rule declines to judge.
-
-    python measure/2026-11-19_expand_true_false_keys.py
+Needs `psql` on PATH and a PostgreSQL you can create a database on. It builds
+`learnlens_tf_bench`, drops it at the end, and never touches anything else.
+Point it elsewhere with PGHOST / PGPORT / PGUSER as usual.
 """
 import os
 import subprocess
 import sys
 
 OK = FAIL = 0
-DB = "learnlens_tfkeys_bench"
+DB = "learnlens_tf_bench"
 HERE = os.path.dirname(os.path.abspath(__file__))
-MIG_KEYS = os.path.normpath(os.path.join(
-    HERE, "..", "migrations", "2026-11-19_expand_true_false_keys.sql"))
-MIG_SCORES = os.path.normpath(os.path.join(
-    HERE, "..", "migrations", "2026-11-19_expand_true_false.sql"))
-SEP = "§"
+SQL_FILE = os.path.join(HERE, "..", "migrations", "2026-11-19_expand_true_false.sql")
 
 
 def check(label, cond, got="", note=""):
@@ -46,8 +40,12 @@ def check(label, cond, got="", note=""):
 
 def psql(sql=None, db=DB, file=None, quiet=True):
     cmd = ["psql", "-v", "ON_ERROR_STOP=1", "-d", db]
-    cmd += ["-tAq"] if quiet else []
-    cmd += ["-f", file] if file else ["-c", sql]
+    if quiet:
+        cmd += ["-tAq"]
+    if file:
+        cmd += ["-f", file]
+    else:
+        cmd += ["-c", sql]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"\n  !! psql failed: {(r.stderr or r.stdout).strip()}")
@@ -55,167 +53,171 @@ def psql(sql=None, db=DB, file=None, quiet=True):
     return r.stdout.strip()
 
 
-def keys():
-    out = psql(f"SELECT concat_ws('{SEP}', answer_key_id, correct_answer) "
-               f"FROM answer_keys ORDER BY answer_key_id")
-    return {int(l.split(SEP)[0]): l.split(SEP)[1] for l in out.splitlines()}
+# NOT '|'. A contested reading IS 'T|F', and psql's default column separator
+# would split it in half - the fixture would silently stop testing the thing
+# it was added to test. Record of a real failure, kept as a comment so the
+# separator does not drift back.
+SEP = "\u00a7"
 
 
-def scores():
+def rows():
+    """Every paper_score as a comparable tuple."""
     out = psql(f"SELECT concat_ws('{SEP}', score_id, student_answer, "
-               f"correct_answer, is_correct) FROM paper_scores ORDER BY score_id")
+               f"correct_answer, is_correct, verdict) "
+               f"FROM paper_scores ORDER BY score_id")
     got = {}
-    for l in out.splitlines():
-        sid, sa, ca, ic = l.split(SEP)
-        got[int(sid)] = (sa, ca, ic == "t")
+    for line in out.splitlines():
+        sid, sa, ca, ic, vd = line.split(SEP)
+        got[int(sid)] = (sa, ca, ic == "t", vd)
     return got
 
 
-for f in (MIG_KEYS, MIG_SCORES):
-    if not os.path.exists(f):
-        print(f"  !! migration not found: {f}")
-        sys.exit(2)
-print(f"migrations under test:\n  {MIG_KEYS}\n  {MIG_SCORES}")
+if not os.path.exists(SQL_FILE):
+    print(f"  !! migration not found: {SQL_FILE}")
+    sys.exit(2)
+print(f"migration under test: {os.path.normpath(SQL_FILE)}")
 
-psql(f"DROP DATABASE IF EXISTS {DB}", db="postgres")
-psql(f"CREATE DATABASE {DB}", db="postgres")
+psql(f'DROP DATABASE IF EXISTS {DB}', db="postgres")
+psql(f'CREATE DATABASE {DB}', db="postgres")
+
+# Minimal schema: the two tables and the columns the migration names. Nothing
+# else is relevant to an UPDATE ... FROM, and a cut-down schema cannot change
+# what the statement does to these columns.
 psql("""
-CREATE TABLE public.exam_pages (
-    page_id integer PRIMARY KEY, page_number smallint NOT NULL);
 CREATE TABLE public.answer_keys (
-    answer_key_id   integer PRIMARY KEY,
-    page_id         integer NOT NULL REFERENCES public.exam_pages(page_id),
-    question_number smallint NOT NULL,
-    correct_answer  varchar(100) NOT NULL);
+    answer_key_id  integer PRIMARY KEY,
+    correct_answer varchar(100) NOT NULL
+);
 CREATE TABLE public.paper_scores (
     score_id       integer PRIMARY KEY,
     answer_key_id  integer NOT NULL REFERENCES public.answer_keys(answer_key_id),
     student_answer varchar(100) NOT NULL,
     correct_answer varchar(100) NOT NULL,
     is_correct     boolean NOT NULL,
-    verdict        varchar(10) NOT NULL DEFAULT 'wrong');
+    verdict        varchar(10) NOT NULL DEFAULT 'wrong'
+);
 """)
 
-# The production shapes, reproduced. page_id : (label, keys)
-PAGES = {
-    1: ("exam 5 p1 — 30 items, all T/F  THE ONE THAT QUALIFIES",
-        ["T", "F"] * 15),
-    2: ("exam 4 p1 — multiple choice", ["A", "B", "C", "D"] * 3 + ["A", "B", "C"]),
-    3: ("exam 8 p2 — mixed, already words",
-        ["A", "B", "C", "D", "E", "TRUE", "FALSE", "TRUE", "A", "B"]),
-    4: ("MATCHING page — A-F including T and F, must NOT qualify",
-        ["A", "B", "C", "D", "E", "F", "T", "A", "B", "C"]),
-    5: ("short page — only T/F but 3 items, rule declines to judge",
-        ["T", "F", "T"]),
-}
-akid = 0
-rows_pages, rows_keys = [], []
-KEY_PAGE = {}
-for pid, (label, ks) in PAGES.items():
-    rows_pages.append(f"({pid},1)")
-    for q, k in enumerate(ks, 1):
-        akid += 1
-        rows_keys.append(f"({akid},{pid},{q},'{k}')")
-        KEY_PAGE[akid] = pid
-psql("INSERT INTO public.exam_pages VALUES " + ",".join(rows_pages))
-psql("INSERT INTO public.answer_keys VALUES " + ",".join(rows_keys))
+#  key_id : what the ANSWER KEY says - this is what decides everything
+KEYS = [
+    (1, "TRUE"),      # a true/false item
+    (2, "FALSE"),     # a true/false item
+    (3, "F"),         # MATCHING TYPE whose correct answer is the letter F
+    (4, "T"),         # an item whose key was stored folded - must be left alone
+    (5, "C"),         # multiple choice
+    (6, "MACHINE"),   # identification
+]
+#  id, key_id, student, correct, is_correct, verdict,   expected after
+SCORES = [
+    (10, 1, "T",      "T",     True,  "correct", ("TRUE",  "TRUE",  True,  "correct")),
+    (11, 1, "F",      "T",     False, "wrong",   ("FALSE", "TRUE",  False, "wrong")),
+    (12, 2, "F",      "F",     True,  "correct", ("FALSE", "FALSE", True,  "correct")),
+    (13, 1, " t ",    "T",     True,  "correct", ("TRUE",  "TRUE",  True,  "correct")),
+    (14, 1, "—", "T",     False, "wrong",   ("—", "TRUE", False, "wrong")),
+    (15, 1, "T|F",    "T",     False, "wrong",   ("T|F",   "TRUE",  False, "wrong")),
+    (16, 1, "TRUE",   "TRUE",  True,  "correct", ("TRUE",  "TRUE",  True,  "correct")),
+    # ---- the controls. None of these may move. ----
+    (20, 3, "F",      "F",     True,  "correct", ("F",     "F",     True,  "correct")),
+    (21, 3, "T",      "F",     False, "wrong",   ("T",     "F",     False, "wrong")),
+    (22, 4, "T",      "T",     True,  "correct", ("T",     "T",     True,  "correct")),
+    (23, 5, "C",      "C",     True,  "correct", ("C",     "C",     True,  "correct")),
+    (24, 5, "F",      "C",     False, "wrong",   ("F",     "C",     False, "wrong")),
+    (25, 6, "MACHIN", "MACHINE", False, "review", ("MACHIN", "MACHINE", False, "review")),
+]
 
-# One paper per page, answering exactly the key (so every row is correct),
-# plus one deliberate miss on the true/false page.
-sc = []
-sid = 0
-for aid, pid in KEY_PAGE.items():
-    k = psql(f"SELECT correct_answer FROM answer_keys WHERE answer_key_id={aid}")
-    sid += 1
-    student = k
-    correct = True
-    if pid == 1 and aid == 2:        # one wrong answer on the T/F page
-        student = "T" if k == "F" else "F"
-        correct = False
-    sc.append(f"({sid},{aid},'{student}','{k}',{str(correct).lower()},"
-              f"'{'correct' if correct else 'wrong'}')")
-psql("INSERT INTO public.paper_scores VALUES " + ",".join(sc))
+psql("INSERT INTO public.answer_keys VALUES " + ",".join(
+    f"({i},'{a}')" for i, a in KEYS))
+psql("INSERT INTO public.paper_scores VALUES " + ",".join(
+    f"({sid},{kid},'{sa}','{ca}',{str(ic).lower()},'{vd}')"
+    for sid, kid, sa, ca, ic, vd, _ in SCORES))
 
-k_before, s_before = keys(), scores()
+before = rows()
 
 print("\n" + "=" * 74)
-print("1.  migration A — the ANSWER KEYS")
+print("1.  the real migration, run against a real PostgreSQL")
 print("=" * 74)
-print("   " + psql(file=MIG_KEYS, quiet=False).replace("\n", "\n   "))
-k_mid, s_mid = keys(), scores()
-
-qualifying = [a for a, p in KEY_PAGE.items() if p == 1]
-check("exam 5 p1: every key expanded to TRUE/FALSE",
-      all(k_mid[a] in ("TRUE", "FALSE") for a in qualifying), "30 keys")
-check("and the T/F sense is preserved, never swapped",
-      all((k_before[a] == "T") == (k_mid[a] == "TRUE") for a in qualifying), "30 keys")
-for pid, label in ((2, "multiple choice"), (3, "mixed, already words"),
-                   (4, "MATCHING with T and F among A-F"),
-                   (5, "short all-T/F page")):
-    ids = [a for a, p in KEY_PAGE.items() if p == pid]
-    check(f"CONTROL {label} page UNTOUCHED",
-          all(k_before[a] == k_mid[a] for a in ids), f"{len(ids)} keys",
-          "a page with A-E on it is not a true/false page; "
-          "a page under five items is not judged")
-check("migration A does not touch paper_scores at all",
-      s_mid == s_before, f"{len(s_mid)} rows")
+out = psql(file=os.path.normpath(SQL_FILE), quiet=False)
+print("   " + out.replace("\n", "\n   "))
+after = rows()
 
 print("\n" + "=" * 74)
-print("2.  migration B — the RECORDED ANSWERS, now that the keys are words")
+print("2.  true/false items — expanded")
 print("=" * 74)
-print("   " + psql(file=MIG_SCORES, quiet=False).replace("\n", "\n   "))
-s_after = scores()
-
-tf_scores = [s for s, a in ((i + 1, i + 1) for i in range(len(KEY_PAGE)))
-             if KEY_PAGE[a] == 1]
-check("every recorded answer on the T/F page is now a word",
-      all(s_after[s][0] in ("TRUE", "FALSE") and s_after[s][1] in ("TRUE", "FALSE")
-          for s in tf_scores), f"{len(tf_scores)} rows")
-for pid, label in ((2, "multiple choice"), (4, "MATCHING"), (5, "short page")):
-    ids = [i + 1 for i in range(len(KEY_PAGE)) if KEY_PAGE[i + 1] == pid]
-    check(f"CONTROL {label} recorded answers UNTOUCHED",
-          all(s_before[s] == s_after[s] for s in ids), f"{len(ids)} rows")
+for sid, kid, sa, ca, ic, vd, exp in SCORES:
+    if kid not in (1, 2):
+        continue
+    label = {10: "T/T correct -> TRUE/TRUE, still correct",
+             11: "F against key T -> FALSE/TRUE, still wrong",
+             12: "F/F correct (key FALSE) -> FALSE/FALSE, still correct",
+             13: "' t ' lower case and padded -> TRUE",
+             14: "BLANK em dash untouched, its key still expands",
+             15: "CONTESTED 'T|F' untouched (documented)",
+             16: "already expanded -> unchanged"}[sid]
+    check(label, after[sid] == exp, str(after[sid]), f"expected {exp}")
 
 print("\n" + "=" * 74)
-print("3.  NO MARK MOVED — the property both migrations exist to preserve")
+print("3.  THE CONTROLS — matching type, folded keys, multiple choice")
 print("=" * 74)
-check("is_correct identical on every row, after BOTH migrations",
-      all(s_before[s][2] == s_after[s][2] for s in s_before), f"{len(s_before)} rows",
-      "a migration that could change a mark would be a different and far "
-      "more dangerous thing")
-check("the deliberate wrong answer is still wrong",
-      s_after[2][2] is False, str(s_after[2]))
-check("the deliberate wrong answer is still READABLE as a word",
-      s_after[2][0] in ("TRUE", "FALSE") and s_after[2][1] in ("TRUE", "FALSE"),
-      str(s_after[2]))
-check("row counts unchanged",
-      psql("SELECT count(*) FROM paper_scores") == str(len(s_before)) and
-      psql("SELECT count(*) FROM answer_keys") == str(len(k_before)),
-      f"{len(s_before)} scores, {len(k_before)} keys")
+for sid, kid, sa, ca, ic, vd, exp in SCORES:
+    if kid in (1, 2):
+        continue
+    label = {20: "MATCHING 'F' with key 'F' is UNTOUCHED",
+             21: "MATCHING 'T' with key 'F' is UNTOUCHED",
+             22: "an item whose KEY is 'T' is left alone (mirrors _is_true_false)",
+             23: "multiple choice 'C' untouched",
+             24: "multiple choice 'F' untouched — the dangerous one",
+             25: "identification untouched, verdict 'review' preserved"}[sid]
+    check(label, after[sid] == exp, str(after[sid]), f"expected {exp}")
 
 print("\n" + "=" * 74)
-print("4.  IDEMPOTENCE — both, again, in order")
+print("4.  WHAT MUST NOT HAVE MOVED, across every row")
 print("=" * 74)
-psql(file=MIG_KEYS, quiet=False)
-psql(file=MIG_SCORES, quiet=False)
-check("second pass changes no key", keys() == k_mid, f"{len(k_before)} keys")
-check("second pass changes no score", scores() == s_after, f"{len(s_before)} rows")
+check("is_correct identical on every row",
+      all(before[s][2] == after[s][2] for s in before), f"{len(before)} rows",
+      "this migration must never be able to change a mark")
+check("verdict identical on every row",
+      all(before[s][3] == after[s][3] for s in before), f"{len(before)} rows")
+check("row count unchanged",
+      psql("SELECT count(*) FROM paper_scores") == str(len(SCORES)), "13 rows")
+check("answer_keys untouched",
+      psql("SELECT string_agg(correct_answer, ',' ORDER BY answer_key_id) "
+           "FROM answer_keys") == "TRUE,FALSE,F,T,C,MACHINE", "6 keys")
 
 print("\n" + "=" * 74)
-print("5.  _is_true_false() would now fire, which is the whole point")
+print("5.  IDEMPOTENCE — run it a second time")
 print("=" * 74)
-still = psql("SELECT count(*) FROM answer_keys ak WHERE upper(btrim(ak.correct_answer)) "
-             "IN ('T','F') AND ak.page_id = 1")
-check("no folded key survives on the true/false page", still == "0", f"{still}")
-left = psql("SELECT concat_ws(',', page_id, upper(btrim(correct_answer))) "
-            "FROM answer_keys WHERE upper(btrim(correct_answer)) IN ('T','F') "
-            "GROUP BY 1 ORDER BY 1")
-check("CONTROL T and F survive where they are letters",
-      sorted(left.splitlines()) == ["4,F", "4,T", "5,F", "5,T"],
-      left.replace("\n", " | "),
-      "page 4 is matching type, page 5 is the short page left for a human")
+out2 = psql(file=os.path.normpath(SQL_FILE), quiet=False)
+again = rows()
+check("second run changes nothing", again == after, f"{len(again)} rows")
+check("second run reports 0 rows to expand",
+      " 0\n" in out2 or out2.strip().splitlines()[1].strip() == "0",
+      out2.replace("\n", " | "))
 
-psql(f"DROP DATABASE IF EXISTS {DB}", db="postgres")
+print("\n" + "=" * 74)
+print("6.  THE PRODUCTION SHAPE, reproduced")
+print("=" * 74)
+dist = psql("SELECT upper(btrim(student_answer)), count(*) FROM paper_scores "
+            "GROUP BY 1 ORDER BY 2 DESC, 1")
+print("   " + dist.replace("\n", "\n   "))
+check("no T or F survives on a true/false item",
+      psql("SELECT count(*) FROM paper_scores ps JOIN answer_keys ak "
+           "ON ak.answer_key_id = ps.answer_key_id "
+           "WHERE upper(btrim(ak.correct_answer)) IN ('TRUE','FALSE') "
+           "AND upper(btrim(ps.student_answer)) IN ('T','F')") == "0", "0 rows")
+# FOUR, not three. The first version of this check said three and failed:
+# I had forgotten score 24, the multiple-choice 'F' against a key of 'C' -
+# which is the row most at risk from a careless predicate and the whole
+# reason it is in the fixture. The assertion was wrong; the migration was
+# right. Left documented rather than quietly corrected.
+survivors = psql("SELECT concat_ws(',', score_id, student_answer, correct_answer) "
+                 "FROM paper_scores WHERE student_answer IN ('T','F') "
+                 "ORDER BY score_id").splitlines()
+check("CONTROL T and F still exist where they belong",
+      len(survivors) == 4, " | ".join(survivors),
+      "matching F, matching T, folded-key T, and multiple-choice F")
+
+psql(f'DROP DATABASE IF EXISTS {DB}', db="postgres")
+
 print("\n" + "=" * 74)
 print(f"{OK} passed, {FAIL} failed")
 print("=" * 74)
