@@ -65,6 +65,8 @@ import Navbar from "@/components/ui/Navbar";
 // lists. Its own component because it is the ONLY part of this screen that
 // changes anything - see its header.
 import ReferenceLists from "@/components/admin/ReferenceLists";
+// NEW 2026-11-19 (Alex, points 4-7): the Technical Admin specimen table.
+import SpecimenCorrections from "@/components/admin/SpecimenCorrections";
 import { ApiError } from "@/lib/api";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { adminService } from "@/services/adminService";
@@ -443,6 +445,7 @@ export default function AdminPage() {
           administrator arrives looking at the state of the installation, and
           maintenance is the thing they do second. */}
       <ReferenceLists />
+      <SpecimenCorrections />
       </div>
     </Shell>
   );

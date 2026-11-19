@@ -382,3 +382,48 @@ class PaperScore(Base):
     paper      = relationship("TestPaper", back_populates="paper_scores")
     paper_page = relationship("PaperPage", back_populates="paper_scores")
     answer_key = relationship("AnswerKey", back_populates="paper_scores")
+
+class OCRCorrection(Base):
+    """What the reader saw, and what it means.  NEW 2026-11-19.
+
+        Sir Alex Passion, 19 November 2026, points 4-7.
+
+    One row per reading. The administrator maintains it; grade_paper consults
+    it between reading a page and judging it.
+
+    THE UNIQUE INDEX IS ON AN EXPRESSION, not on the column, and that is
+    deliberate. `correction_service.norm_seen()` strips and upper-cases before
+    looking a reading up, so uniqueness has to be enforced on the SAME form -
+    otherwise 'machin' and 'MACHIN' could both be stored, and which one won
+    would depend on row order.
+
+    It is declared here as well as in the migration because
+    MODELS-AND-MIGRATION-2026-11-02.md found three indexes that existed in the
+    database and were declared by no model at all. An index a model does not
+    know about is an index a fresh `create_all()` database does not get.
+    """
+    __tablename__ = "ocr_corrections"
+    __table_args__ = (
+        CheckConstraint("btrim(seen) <> '' AND btrim(means) <> ''",
+                        name="ck_ocr_corrections_nonblank"),
+        CheckConstraint("btrim(seen) <> U&'\\2014' AND btrim(means) <> U&'\\2014'",
+                        name="ck_ocr_corrections_not_blank_glyph"),
+        CheckConstraint("position('|' in seen) = 0 AND position('|' in means) = 0",
+                        name="ck_ocr_corrections_not_contested"),
+        CheckConstraint("upper(btrim(seen)) <> upper(btrim(means))",
+                        name="ck_ocr_corrections_not_noop"),
+        Index("ux_ocr_corrections_seen",
+              text("upper(btrim(seen))"), unique=True),
+    )
+
+    correction_id = Column(Integer, primary_key=True, autoincrement=True)
+    seen          = Column(String(100), nullable=False)
+    means         = Column(String(100), nullable=False)
+    note          = Column(String(200))
+    # ON DELETE SET NULL, never CASCADE: removing the administrator who typed a
+    # correction must not delete the correction and silently re-score every
+    # paper that depended on it.
+    created_by    = Column(Integer, ForeignKey("users.user_id", ondelete="SET NULL"))
+    created_at    = Column(UTCDateTime(), server_default=func.now(), nullable=False)
+    updated_at    = Column(UTCDateTime(), server_default=func.now(),
+                           onupdate=func.now(), nullable=False)

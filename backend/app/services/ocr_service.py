@@ -68,7 +68,8 @@ from app.ml.ocr import (
     ocr_page, ocr_page_parts, PagePart, setup_tesseract,
     infer_question_type, normalize_question_type,
 )
-from app.ml.grader import grade_detected, CORRECT, REVIEW, WRONG
+from app.ml.grader import grade_detected, collect_page_answers, CORRECT, REVIEW, WRONG
+from app.services.correction_service import active_map, apply_corrections
 from app.ml.ocr_identification import MAX_ANSWER_LEN
 from app.ml.ocr_item_numbers import CONTESTED_SEP
 
