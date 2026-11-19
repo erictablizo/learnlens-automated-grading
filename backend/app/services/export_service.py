@@ -101,22 +101,20 @@ def build_workbook(
     mark = passing_mark(total_items, passing_pct)
     wb = Workbook()
 
-    # ------------------------------------------------------------ Scores
-    # The Student No. column is DROPPED ENTIRELY when not one paper carries a
-    # number. Papers added before the student roster existed have
-    # test_papers.student_id = NULL, so on those exams every cell is blank -
-    # and 36 empty cells read as a fault in the export rather than as "these
-    # papers were never linked to a roster student". The column returns on its
-    # own as soon as one paper has a number, so nothing needs changing later.
-    has_numbers = any((p.get("student_number") or "").strip() for p in papers)
-
+    # CHANGED 2026-11-19 (Sir Alex): "Excel Document -> to include Student ID No."
+    #
+    # The column used to be dropped entirely when not one paper carried a
+    # number, because on 2026-11-12 most papers predated the student roster and
+    # 36 blank cells read as a fault in the export. That reasoning has expired:
+    # since the 2026-11-17 global-students work a paper is created BY NUMBER on
+    # both paths - Add Paper matches the roster before it will save, and the
+    # batch upload keys on the number in the file name - so a blank here now
+    # means a genuinely unlinked paper, which is worth seeing rather than
+    # hiding. An em dash says "this paper has no roster link" out loud.
     ws = wb.active
     ws.title = "Scores"
-    header = ["#"]
-    if has_numbers:
-        header.append("Student No.")
-    header += ["Last Name", "First Name", "Score", "Total Items",
-               "Percentage", "Status"]
+    header = ["#", "Student No.", "Last Name", "First Name", "Score",
+              "Total Items", "Percentage", "Status"]
     ws.append(header)
     _style_header(ws)
 
@@ -129,9 +127,7 @@ def build_workbook(
             status = "Under review"
         else:
             status = "Not checked"
-        row: list[Any] = [n]
-        if has_numbers:
-            row.append(p.get("student_number") or "")
+        row: list[Any] = [n, (p.get("student_number") or "").strip() or "—"]
         row += [
             p.get("last_name") or "",
             p.get("first_name") or "",
@@ -152,7 +148,7 @@ def build_workbook(
     ws.auto_filter.ref = (
         f"A1:{get_column_letter(len(header))}{max(ws.max_row, 1)}"
     )
-    _set_widths(ws, [5] + ([14] if has_numbers else []) + [20, 18, 8, 11, 12, 14])
+    _set_widths(ws, [5, 16, 20, 18, 8, 11, 12, 14])
 
     # ----------------------------------------------------- Item Analysis
     # Doc Rubrica, page 1: "Provide also info of number that students did not
