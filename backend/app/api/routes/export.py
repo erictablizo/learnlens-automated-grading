@@ -124,17 +124,33 @@ async def export_exam_xlsx(
     rows = await paper_service.get_papers(db, exam_id, uid)
     papers = [PaperListResponse.model_validate(r) for r in rows]
 
-    # student_id -> student_number, for this teacher's roster only. A plain
-    # id lookup, no rule in it; papers whose student was removed (the FK is
-    # ON DELETE SET NULL) simply get a blank cell.
-    numbers = {
-        sid: num for sid, num in (
-            await db.execute(
-                select(Student.student_id, Student.student_number)
-                .where(Student.created_by == uid)
-            )
-        ).all()
-    }
+    # student_id -> student_number, for the students ON THESE PAPERS.
+    #
+    # CHANGED 2026-11-19 (Sir Alex: "Excel Document -> to include Student ID
+    # No."). This read `WHERE Student.created_by == uid` and called it "this
+    # teacher's roster". That was true on 2026-11-12. Since
+    # migrations/2026-11-17_global_students.sql, `created_by` records WHO
+    # TYPED THE STUDENT IN - the administrator - and is not ownership;
+    # admin_students.py says so outright. So for a teacher this dict came back
+    # EMPTY, every student_number was "", has_numbers was False, and
+    # build_workbook dropped the column on every exam. That is the Student ID
+    # Alex could not find.
+    #
+    # Keyed on the papers instead, which is both correct and NARROWER than
+    # what it replaces: it reads only the students this exam's papers point
+    # at, never the whole table. A paper whose student was removed (the FK is
+    # ON DELETE SET NULL) has student_id None and simply gets a blank cell.
+    sids = {p.student_id for p in papers if p.student_id is not None}
+    numbers: dict[int, str] = {}
+    if sids:
+        numbers = {
+            sid: num for sid, num in (
+                await db.execute(
+                    select(Student.student_id, Student.student_number)
+                    .where(Student.student_id.in_(sids))
+                )
+            ).all()
+        }
 
     items = analytics.get("items") or []
 
