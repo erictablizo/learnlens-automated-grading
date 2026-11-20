@@ -117,6 +117,7 @@ class AnswerKey(Base):
     __table_args__ = (
         UniqueConstraint("exam_id", "question_number", name="answer_keys_exam_id_question_number_key"),
         CheckConstraint("question_number > 0", name="answer_keys_question_number_check"),
+        CheckConstraint("points BETWEEN 1 AND 10", name="ck_answer_keys_points_range"),
     )
 
     answer_key_id   = Column(Integer, primary_key=True, autoincrement=True)
@@ -124,6 +125,7 @@ class AnswerKey(Base):
     page_id         = Column(Integer, ForeignKey("exam_pages.page_id", ondelete="CASCADE"), nullable=False)
     question_number = Column(SmallInteger, nullable=False)
     correct_answer  = Column(String(100), nullable=False, server_default="")   # WAS String(10)
+    points          = Column(SmallInteger, nullable=False, server_default="1")   # NEW 2026-11-20
     ocr_confidence  = Column(Numeric(5, 2))
     generated_at    = Column(UTCDateTime(), server_default=func.now(), nullable=False)
 
@@ -365,7 +367,6 @@ class PaperScore(Base):
         UniqueConstraint("paper_id", "answer_key_id", name="paper_scores_paper_id_answer_key_id_key"),
         CheckConstraint("question_number > 0", name="paper_scores_question_number_check"),
         CheckConstraint("verdict IN ('correct', 'review', 'wrong')", name="paper_scores_verdict_check"),
-        CheckConstraint("points BETWEEN 1 AND 10", name="ck_answer_keys_points_range"),
     )
 
     score_id        = Column(Integer, primary_key=True, autoincrement=True)
@@ -375,7 +376,6 @@ class PaperScore(Base):
     question_number = Column(SmallInteger, nullable=False)
     student_answer  = Column(String(100), nullable=False)   # WAS String(10)
     correct_answer  = Column(String(100), nullable=False)
-    points          = Column(SmallInteger, nullable=False, server_default="1")   # NEW 2026-11-20
     is_correct      = Column(Boolean, nullable=False)
     verdict         = Column(String(10), nullable=False, server_default="wrong")   # NEW 2026-10-24
     ocr_confidence  = Column(Numeric(5, 2))
