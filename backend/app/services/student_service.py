@@ -473,10 +473,20 @@ async def exams_for_student(db: AsyncSession, owner_id: int, student_id: int):
         .where(AnswerKey.exam_id == Exam.exam_id)
         .correlate(Exam).scalar_subquery().label("total_items")
     )
+    # NEW 2026-11-20 — Alex, Recommendations page 12. What the paper is OUT OF.
+    # A third correlated subquery for the same reason as the two above: summing
+    # over a join would multiply against the review rows and come back wrong.
+    # coalesce covers an exam with no key yet; the fallback to the item count
+    # happens on the screen, so an un-priced exam reads exactly as before.
+    total_points = (
+        select(func.coalesce(func.sum(AnswerKey.points), 0))
+        .where(AnswerKey.exam_id == Exam.exam_id)
+        .correlate(Exam).scalar_subquery().label("total_points")
+    )
     rows = (await db.execute(
         select(TestPaper.paper_id, Exam.exam_id, Exam.exam_name, Exam.subject,
                Exam.schedule, TestPaper.total_score, TestPaper.checked,
-               total_items, under_review)
+               total_items, total_points, under_review)
         .join(Exam, Exam.exam_id == TestPaper.exam_id)
         .where(TestPaper.student_id == student_id, Exam.created_by == owner_id)
         .order_by(Exam.created_at.desc(), Exam.exam_id.desc())
@@ -487,6 +497,7 @@ async def exams_for_student(db: AsyncSession, owner_id: int, student_id: int):
             "exam_name": r.exam_name, "subject": r.subject,
             "schedule": r.schedule, "total_score": r.total_score,
             "checked": r.checked, "total_items": r.total_items,
+            "total_points": r.total_points,
             "under_review": r.under_review,
         }
         for r in rows

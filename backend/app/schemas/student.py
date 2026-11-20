@@ -308,6 +308,7 @@ class StudentExamScore(BaseModel):
     total_score:  Optional[int] = None
     checked:      bool
     total_items:  int
+    total_points: int = 0          # NEW 2026-11-20 — 0 means "fall back to items"
     under_review: int
 
 
