@@ -69,6 +69,7 @@ from app.ml.ocr import (
     infer_question_type, normalize_question_type,
 )
 from app.ml.grader import grade_detected, CORRECT, REVIEW, WRONG
+from app.ml.scoring import clamp_points                    # NEW 2026-11-20
 from app.services.correction_service import active_map, apply_corrections
 from app.ml.ocr_identification import MAX_ANSWER_LEN
 from app.ml.ocr_item_numbers import CONTESTED_SEP
@@ -139,6 +140,10 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
             page_type_by_no[page_no] = page_qt
     ak_by_q: dict[int, AnswerKey] = {ak.question_number: ak for ak, _, _, _ in rows}
     key_map: dict[int, str] = {q: (ak.correct_answer or "").upper() for q, ak in ak_by_q.items()}
+    # NEW 2026-11-20 — Alex, Recommendations page 12. What each item is worth.
+    # Read from the SAME rows the key came from, so an item's answer and its
+    # price can never come from different versions of the key.
+    points_map: dict[int, int] = {q: getattr(ak, "points", 1) for q, ak in ak_by_q.items()}
 
     # A key with holes cannot grade anything, and saying so beats marking a
     # whole class against blanks. generate_answer_key_parts leaves a blank slot
@@ -261,7 +266,8 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
             f"administrator's specimen list ({shown}{more})."
         )
 
-    grading = grade_detected(detected, key_map, identification_items=ident_items)
+    grading = grade_detected(detected, key_map, identification_items=ident_items,
+                             points_by_question=points_map)
     if not grading.success:
         return {"success": False, "reason": grading.reason}
 
@@ -287,7 +293,10 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
 
     paper = (await db.execute(select(TestPaper).where(TestPaper.paper_id == paper_id))).scalar_one_or_none()
     if paper:
-        paper.total_score = grading.correct
+        # `grading.correct` is the number of items answered correctly;
+        # `grading.total_score` is the MARK. They are equal at 1 point an item,
+        # which is every exam before today.
+        paper.total_score = grading.total_score
         # NOT marked checked while anything is under review. The score is a
         # FLOOR until a human resolves those items: the student has at least
         # `correct` and at most `correct + needs_review`. Marking it checked
@@ -299,7 +308,7 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
         shown = ", ".join(str(q) for q in grading.review_items[:10])
         warnings.append(
             f"{grading.needs_review} written answer(s) need your review "
-            f"(item {shown}). The score is {grading.correct}-{grading.max_possible} "
+            f"(item {shown}). The score is {grading.total_score}-{grading.max_possible} "
             f"of {grading.total_items} until they are resolved.")
     # NEW 2026-11-19 (Sir Alex: "multiple answers -> revise (handling)").
     #
@@ -321,7 +330,14 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
         "question_type": "; ".join(f"page {n}: {t}" for n, t in sorted(types_used.items())),
         "total_items":   grading.total_items,
         "answered":      grading.answered,
+        # `correct` and `total_items` keep their meaning - they are what the
+        # screens show as "13 of 15 items". The MARK is points_earned, and it
+        # is added rather than substituted so no caller changes behaviour
+        # until slice B updates the screens deliberately.
         "correct":       grading.correct,
+        "points_earned":   grading.total_score,
+        "points_possible": grading.points_possible,
+        "max_points":      grading.max_possible,
         "max_possible":  grading.max_possible,
         "needs_review":  grading.needs_review,
         "review_items":  grading.review_items,
@@ -359,14 +375,20 @@ async def resolve_review(db: AsyncSession, paper_id: int,
         .where(PaperScore.paper_id == paper_id, PaperScore.verdict == REVIEW)
         .order_by(PaperScore.question_number)
     )).scalars().all())
-    correct = len(list((await db.execute(
-        select(PaperScore.score_id)
+    # NEW 2026-11-20 — the item count AND the mark, from one query.
+    # `correct` keeps its meaning for the response below; `earned` is what
+    # goes into total_score. Equal at 1 point an item.
+    correct_rows = list((await db.execute(
+        select(PaperScore.question_number, AnswerKey.points)
+        .join(AnswerKey, AnswerKey.answer_key_id == PaperScore.answer_key_id)
         .where(PaperScore.paper_id == paper_id, PaperScore.verdict == CORRECT)
-    )).scalars().all()))
+    )).all())
+    correct = len(correct_rows)
+    earned = sum(clamp_points(p) for _q, p in correct_rows)
 
     paper = (await db.execute(select(TestPaper).where(TestPaper.paper_id == paper_id))).scalar_one_or_none()
     if paper:
-        paper.total_score = correct
+        paper.total_score = earned
         paper.checked = not remaining
     await db.commit()
 

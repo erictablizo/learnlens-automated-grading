@@ -41,10 +41,14 @@ export const examService = {
     token: string,
     questionType?: QuestionType,
     expectedItems?: number | null,
+    pointsPerItem?: number,                 // NEW 2026-11-20 — Alex page 12
   ) => {
     const q = new URLSearchParams({ page_id: String(pageId) });
     if (questionType) q.set("question_type", questionType);
     if (expectedItems && expectedItems > 0) q.set("expected_items", String(expectedItems));
+    // Omitted when it is 1: the server defaults to 1, so an un-priced page
+    // sends exactly the request it sends today.
+    if (pointsPerItem && pointsPerItem > 1) q.set("points_per_item", String(pointsPerItem));
     return api.post<GenerateAnswerKeyResult>(`/exams/${examId}/answer-key/generate?${q.toString()}`, {}, token);
   },
 };

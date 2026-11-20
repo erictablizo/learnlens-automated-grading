@@ -37,6 +37,7 @@ from app.models.models import AnswerKey, ExamPage, ExamPagePart, TestPaper, Pape
 # _owned_exam rather than copying the ownership test.
 from app.ml.grader import CORRECT, REVIEW, WRONG, BLANK, _norm
 from app.ml.ocr_identification import grade_identification, MAX_ANSWER_LEN
+from app.ml.scoring import clamp_points, DEFAULT_POINTS          # NEW 2026-11-20
 from app.ml.ocr import normalize_question_type
 from app.services.paper_service import _owned_exam
 
@@ -203,15 +204,27 @@ async def update_key_item(
         for r in all_rows:
             by_paper.setdefault(r.paper_id, []).append(r)
 
+        # NEW 2026-11-20 — what each item on this exam is worth. Taken from
+        # the key rows already loaded above, so no extra query: every row in
+        # `by_paper` belongs to this exam, because answer_key_id is a foreign
+        # key and the rows were selected through it.
+        points_by_key_id = {k.answer_key_id: k.points for k in key_rows}
+
         for paper in papers:
             rows = by_paper.get(paper.paper_id, [])
             correct = sum(1 for r in rows if r.verdict == CORRECT)
             review  = sum(1 for r in rows if r.verdict == REVIEW)
+            # The MARK, in points. `correct` above is still the item count and
+            # is still what gets reported as "items flipped".
+            earned = sum(
+                clamp_points(points_by_key_id.get(r.answer_key_id, DEFAULT_POINTS))
+                for r in rows if r.verdict == CORRECT
+            )
 
             old_score   = paper.total_score
             old_checked = bool(paper.checked)
 
-            paper.total_score = correct
+            paper.total_score = earned
             # Mirrors grade_paper: `paper.checked = grading.is_final`, and
             # is_final is needs_review == 0. A paper whose corrected key puts
             # an item back under review becomes unchecked again, which is

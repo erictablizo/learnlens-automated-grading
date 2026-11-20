@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 from app.ml.ocr_shared import OCRPageResult
 from app.ml.ocr_item_numbers import CONTESTED_SEP
+# NEW 2026-11-20 — Alex, Recommendations page 12. The weighted sum lives in
+# ONE module with no database and no app imports, because six places in this
+# codebase currently count correct answers and six copies of a sum is six
+# chances for one of them to disagree about a student's mark.
+from app.ml.scoring import summarise
 
 BLANK = "—"
 
@@ -39,15 +44,23 @@ class GradingResult:
     success:       bool  = True
     reason:        str   = ""
     needs_review:  int   = 0
+    # NEW 2026-11-20. `correct` still means WHAT IT ALWAYS MEANT - the number
+    # of items answered correctly - and is still what the screens show as
+    # "11 of 15". The MARK is now points_earned. With every item worth 1 the
+    # two are equal, which is every exam that existed before today.
+    points_earned:   int = 0
+    points_possible: int = 0
+    points_review:   int = 0
 
     @property
     def total_score(self) -> int:
-        return self.correct
+        """The mark. A sum of points, not a count of items."""
+        return self.points_earned
 
     @property
     def max_possible(self) -> int:
-        """The score if every item under review turns out to be right."""
-        return self.correct + self.needs_review
+        """The mark if every item under review turns out to be right."""
+        return self.points_earned + self.points_review
 
     @property
     def is_final(self) -> bool:
@@ -95,6 +108,7 @@ def grade_detected(
     detected: dict[int, tuple[str, float, int]],   # {q: (answer, conf, page_number)}
     answer_key_map: dict[int, str],                # {q: correct}
     identification_items: Optional[Iterable[int]] = None,
+    points_by_question: Optional[Mapping[int, int]] = None,   # NEW 2026-11-20
 ) -> GradingResult:
     """
     `identification_items` — the question numbers that are Part IV style word
@@ -173,10 +187,16 @@ def grade_detected(
             verdict=CORRECT if ok else WRONG, similarity=1.0 if ok else 0.0,
         ))
     total = len(answer_key_map)
+    # The mark is a SUM OF POINTS. Computed from the verdicts already decided
+    # above, so pricing cannot change which answers are right - only what they
+    # are worth. Passing no points map reproduces the old arithmetic exactly.
+    s = summarise(((qr.question_number, qr.verdict) for qr in questions),
+                  points_by_question)
     return GradingResult(
         questions=questions, total_items=total, answered=answered, correct=correct,
-        score_percent=round(correct / total * 100, 1) if total else 0.0, success=True,
-        needs_review=review,
+        score_percent=s.percent, success=True, needs_review=review,
+        points_earned=s.points_earned, points_possible=s.points_possible,
+        points_review=s.points_review,
     )
 
 
@@ -185,6 +205,7 @@ def grade_pages(
     answer_key_map: dict[int, str],
     confidence_map: Optional[dict[int, float]] = None,
     identification_items: Optional[Iterable[int]] = None,
+    points_by_question: Optional[Mapping[int, int]] = None,   # NEW 2026-11-20
 ) -> GradingResult:
     """Old API: answers of all pages numbered in order 1..N."""
     detected: dict[int, tuple[str, float, int]] = {}
@@ -196,4 +217,5 @@ def grade_pages(
             q += 1
             conf = confidence_map.get(q, a.confidence) if confidence_map else a.confidence
             detected[q] = (a.letter, conf, page_no)
-    return grade_detected(detected, answer_key_map, identification_items)
+    return grade_detected(detected, answer_key_map, identification_items,
+                          points_by_question)

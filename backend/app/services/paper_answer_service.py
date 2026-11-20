@@ -58,6 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import AnswerKey, PaperScore, TestPaper
 from app.ml.grader import CORRECT, REVIEW
+from app.ml.scoring import ScoreSummary, summarise          # NEW 2026-11-20
 from app.services.answer_key_service import recheck_answer, _identification_items
 from app.services.correction_service import build_sample
 
@@ -81,20 +82,27 @@ async def _key_map(db: AsyncSession, exam_id: int) -> dict[int, str]:
     return {q: (a or "") for q, a in rows}
 
 
-async def _recount(db: AsyncSession, paper_id: int) -> tuple[int, int, int]:
-    """(total_items, correct, needs_review) read back from the rows.
+async def _recount(db: AsyncSession, paper_id: int) -> ScoreSummary:
+    """The paper's score, read back from its rows.
 
     RECOUNTED, never adjusted by a delta — the same rule the answer-key
     cascade follows, and for the same reason: a delta is only right if the
     previous total was, and correcting a wrong total is half the point of
     this function.
+
+    CHANGED 2026-11-20 — it now returns a ScoreSummary instead of three
+    numbers, and joins the key to find what each item is worth. The sum lives
+    in app/ml/scoring.py, which the grader also uses: one definition of "what
+    is this paper worth", so an overridden answer and a freshly checked paper
+    cannot disagree about a student's mark.
     """
-    verdicts = (await db.execute(
-        select(PaperScore.verdict).where(PaperScore.paper_id == paper_id)
-    )).scalars().all()
-    return (len(verdicts),
-            sum(1 for v in verdicts if v == CORRECT),
-            sum(1 for v in verdicts if v == REVIEW))
+    rows = (await db.execute(
+        select(PaperScore.question_number, PaperScore.verdict, AnswerKey.points)
+        .join(AnswerKey, AnswerKey.answer_key_id == PaperScore.answer_key_id)
+        .where(PaperScore.paper_id == paper_id)
+    )).all()
+    return summarise(((q, v) for q, v, _p in rows),
+                     {q: p for q, _v, p in rows})
 
 
 async def override_answer(
@@ -175,7 +183,9 @@ async def override_answer(
 
     await db.flush()
 
-    total_items, correct, needs_review = await _recount(db, paper.paper_id)
+    s = await _recount(db, paper.paper_id)
+    total_items, needs_review = s.total_items, s.review_items
+    correct = s.points_earned          # the MARK, in points
     paper.total_score = correct
     # Mirrors grade_paper's `paper.checked = grading.is_final` and the
     # cascade's rule: a paper with anything under review is NOT finished, and
@@ -199,7 +209,7 @@ async def override_answer(
     else:
         message = (
             f"Item {question_number} changed from {shown_old} to {shown_new} "
-            f"and is now {verdict}. Score {correct} of {total_items}."
+            f"and is now {verdict}. Score {correct} of {s.points_possible}."
         )
 
     return {
@@ -211,8 +221,10 @@ async def override_answer(
         "verdict":           verdict,
         "is_correct":        is_correct,
         "is_identification": is_identification,
-        "correct":           correct,
-        "max_possible":      correct + needs_review,
+        "correct":           correct,                       # points earned
+        "max_possible":      s.max_points,                  # points, review included
+        "correct_items":     s.correct_items,               # NEW — the item count
+        "points_possible":   s.points_possible,             # NEW
         "needs_review":      needs_review,
         "total_items":       total_items,
         "is_final":          needs_review == 0,

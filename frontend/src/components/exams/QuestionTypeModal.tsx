@@ -1,52 +1,43 @@
 "use client";
 /**
- * CHANGED 2026-10-22 — Doc Rubrica, third comment: "Third Button remains ...
- * but the first 2 buttons should be removed."
+ * CHANGED 2026-10-22 — Doc Rubrica, third comment: the first two buttons were
+ * removed; "Mixed — both on one page" and Cancel remain. Every page is now
+ * generated as `mixed`.
  *
- * The "True/False (Written)" and "Multiple Choice (Encircled)" buttons are
- * gone; "Mixed — both on one page" stays, with its label unchanged, and so
- * does Cancel. Every page is now generated as `mixed`.
+ * CHANGED 2026-10-24 — Doc Rubrica, sixth comment: a second mode that lets the
+ * teacher DECLARE THE ITEM RANGES, because one page can hold four parts in
+ * three answering mechanics and "mixed" cannot describe that. `onDeclareParts`
+ * is OPTIONAL, so a parent that does not pass it gets the old dialog exactly.
  *
- * The onSelect(type, expectedItems) contract is UNCHANGED — it simply only
- * ever receives "mixed" now — so the parent page needs no edit, and the
- * backend still accepts all three values. That matters: exams whose keys were
- * generated earlier as true_false or encircled must keep loading.
+ * CHANGED 2026-11-20 — Sir Alex Passion, Recommendations page 12:
  *
- * With the choice gone, this dialog's only input is the item count, so the
- * title and the lead paragraph were reworded to match. The ORIGINAL wording is
- * kept in a comment beside each one if you want it back.
+ *     Aside from "Number of items on this page" input, add new fields:
+ *       1 item equivalent to how many points = Drop-down List for 1..10
+ *       Total Points on this page (Computed) = ______
+ *     "Insert the 2 New Lines after of 'Number of items on this page' line."
+ *     "the equivalent points per item will be used in the computation of
+ *      total scores of each Student."
  *
- * CHANGED 2026-10-24 — Doc Rubrica, SIXTH comment. Her English 101 sheet has
- * five parts in three different answering mechanics, and page 2 alone holds
- * four of them:
+ * Three things about how that was built:
  *
- *     item 12      encircled            (a circled letter)
- *     items 13-18  written letter A-F   (matching type)
- *     items 19-24  identification       (a word on a line)
- *     items 25-30  True/False
+ * ONE VALUE, BOTH MODES. He drew it under the item-count field, which only
+ * exists in page mode. The same value is shown in parts mode too, below the
+ * part list, because a teacher who declares ranges is pricing the same page
+ * and would otherwise silently get 1 point an item with no field to say so.
+ * In parts mode the item count is summed from the declared ranges.
  *
- * "Mixed" cannot describe that. It runs the circle detector and the T/F
- * detector over the whole page and merges by position, and "F" is both a valid
- * matching-type letter AND the first letter of FALSE — item 18 really is F and
- * item 26 really is FALSE, and nothing in a merged read can tell them apart.
+ * THE COMPUTED TOTAL IS READ-ONLY AND NOT SENT. The server recomputes it from
+ * items x points (app/ml/scoring.page_total). A number the browser worked out
+ * is not a number the database should trust; this field is there so the
+ * teacher sees the consequence before pressing the button.
  *
- * So the dialog gains a second mode: DECLARE THE ITEM RANGES. The teacher says
- * which items belong to which part, and the backend reads each part with the
- * right detector and hands the detections out in item order.
- *
- * BACKWARDS COMPATIBLE ON PURPOSE. `onDeclareParts` is OPTIONAL. A parent that
- * does not pass it gets exactly the dialog it has today — same props, same
- * behaviour, no parts UI at all. Drop this file in first, wire the parent when
- * you are ready.
+ * THE THIRD ARGUMENT IS OPTIONAL, so a parent still calling
+ * `onSelect(type, items)` compiles and behaves exactly as before. Same for
+ * `onDeclareParts`. The modal can ship ahead of the page that renders it.
  */
 import { useEffect, useState } from "react";
 import type { QuestionType } from "@/types/exam";
 
-/** The question types a single PART can have. Deliberately NOT QuestionType:
- *  "mixed" is a whole-page strategy and is not a valid part type — the backend
- *  rejects it in validate_parts(). Move this to types/exam.ts if you prefer it
- *  beside QuestionType; it is exported here so the parent can import it
- *  without touching a second file. */
 export type PartQuestionType =
   | "encircled"
   | "written_letter"
@@ -79,14 +70,23 @@ const emptyDraft = (first = ""): PartDraft => ({
   first, last: "", type: "encircled", letters: "ABCD",
 });
 
+/** NEW 2026-11-20 — the dropdown Alex specified, 1 to 10. Mirrored by
+ *  ck_answer_keys_points_range in the database and by MIN/MAX_POINTS in
+ *  app/ml/scoring.py. Three statements of one rule, because it is a rule
+ *  about marks. */
+const POINTS_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const DEFAULT_POINTS = 1;
+
 interface QuestionTypeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** FIX 2026-09-22: 2nd argument = "Number of items on this page" (null = auto-detect). */
-  onSelect: (type: QuestionType, expectedItems: number | null) => void;
-  /** NEW 2026-10-24 — OPTIONAL. Omit it and the parts UI never appears, so an
-   *  existing parent keeps working unchanged. */
-  onDeclareParts?: (parts: PagePartInput[]) => void;
+  /** FIX 2026-09-22: 2nd argument = "Number of items on this page" (null = auto-detect).
+   *  NEW 2026-11-20: 3rd argument = points per item. OPTIONAL — a parent that
+   *  ignores it keeps working and every item is worth 1. */
+  onSelect: (type: QuestionType, expectedItems: number | null, pointsPerItem?: number) => void;
+  /** NEW 2026-10-24 — OPTIONAL. Omit it and the parts UI never appears.
+   *  NEW 2026-11-20: 2nd argument = points per item. */
+  onDeclareParts?: (parts: PagePartInput[], pointsPerItem?: number) => void;
   loading?: boolean;
   pageNumber?: number;
 }
@@ -94,47 +94,50 @@ interface QuestionTypeModalProps {
 export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclareParts, loading = false, pageNumber }: QuestionTypeModalProps) {
   const [items, setItems] = useState("");
   const [itemsError, setItemsError] = useState<string | null>(null);
-  // FIX 2026-10-21: which button was clicked. Without this every button read
-  // the same `loading` prop, so all three said "Generating…" at once.
-  // CHANGED 2026-10-22: there is one action button left, so this now only
-  // separates "this button is generating" from "idle" — and it still dims
-  // Cancel, which passes no type. Kept rather than unpicked, so the behaviour
-  // the 2026-10-21 fix established does not change.
-  // CHANGED 2026-10-24: "parts" joins the union, so the Declare-parts button
-  // can say "Generating…" on its own exactly the same way.
   const [pending, setPending] = useState<QuestionType | "parts" | null>(null);
 
-  // NEW 2026-10-24
   const [mode, setMode] = useState<"page" | "parts">("page");
   const [drafts, setDrafts] = useState<PartDraft[]>([emptyDraft("1")]);
   const [partsError, setPartsError] = useState<string | null>(null);
+
+  // NEW 2026-11-20
+  const [points, setPoints] = useState<number>(DEFAULT_POINTS);
 
   useEffect(() => {
     if (isOpen) {
       setItems(""); setItemsError(null); setPending(null);
       setMode("page"); setDrafts([emptyDraft("1")]); setPartsError(null);
+      setPoints(DEFAULT_POINTS);
     }
   }, [isOpen]);
-  // The parent clears `loading` when generation finishes OR fails — either way
-  // the button must stop saying "Generating…".
   useEffect(() => { if (!loading) setPending(null); }, [loading]);
   if (!isOpen) return null;
 
+  /** Items declared in parts mode, so the computed total means something
+   *  there too. A part with an unfinished range contributes nothing rather
+   *  than NaN. */
+  const declaredItems = drafts.reduce((n, d) => {
+    const a = Number(d.first.trim()), b = Number(d.last.trim());
+    if (!Number.isInteger(a) || !Number.isInteger(b) || b < a) return n;
+    return n + (b - a + 1);
+  }, 0);
+
+  const countedItems = mode === "page" ? Number(items.trim()) : declaredItems;
+  const itemsKnown = Number.isInteger(countedItems) && countedItems > 0;
+  const computedTotal = itemsKnown ? countedItems * points : null;
+
   const choose = (type: QuestionType) => {
     const v = items.trim();
-    if (v === "") { setPending(type); onSelect(type, null); return; }
+    if (v === "") { setPending(type); onSelect(type, null, points); return; }
     const n = Number(v);
     if (!Number.isInteger(n) || n < 1 || n > 200) {
       setItemsError("Enter a whole number from 1 to 200, or leave it blank.");
-      return;                      // nothing goes pending — the input is wrong
+      return;
     }
     setPending(type);
-    onSelect(type, n);
+    onSelect(type, n, points);
   };
 
-  // NEW 2026-10-24 — the same rules the backend enforces in validate_parts(),
-  // checked here only so the teacher sees the problem beside the field instead
-  // of as a 422. The backend remains the authority; this never replaces it.
   const submitParts = () => {
     if (!onDeclareParts) return;
     const parsed: PagePartInput[] = [];
@@ -186,7 +189,7 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
 
     setPartsError(null);
     setPending("parts");
-    onDeclareParts(parsed);
+    onDeclareParts(parsed, points);
   };
 
   const addDraft = () => {
@@ -203,8 +206,6 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
     setPartsError(null);
   };
 
-  // FIX 2026-10-21: `type` lets a button know whether IT is the one
-  // generating, so anything else only dims instead of changing its label.
   const btn = (bg: string, fg: string, border: string, type?: QuestionType | "parts"): React.CSSProperties => ({
     padding: "0.75rem 1rem", background: bg, color: fg, border: `1px solid ${border}`,
     borderRadius: "var(--radius-sm)", fontWeight: 600,
@@ -214,7 +215,6 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
     transition: "opacity .15s",
   });
 
-  // "Generating…" on the clicked button only.
   const label = (type: QuestionType | "parts", text: string) =>
     loading && pending === type
       ? <><span className="spinner" aria-hidden="true" /> Generating…</>
@@ -225,6 +225,50 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
     borderRadius: "var(--radius-sm)", fontSize: "0.85rem", width: "100%",
   };
 
+  const fieldLabel: React.CSSProperties = {
+    display: "block", fontSize: "0.85rem", fontWeight: 600,
+    color: "var(--navy)", marginBottom: "0.35rem",
+  };
+
+  /** NEW 2026-11-20 — Alex's two new lines. Rendered in both modes so the
+   *  page is priced whichever way its key is generated. */
+  const pointsRows = (
+    <>
+      <label htmlFor="qt-points" style={fieldLabel}>
+        1 item equivalent to how many points
+      </label>
+      <select id="qt-points" value={points} disabled={loading}
+        onChange={e => setPoints(Number(e.target.value))}
+        aria-describedby="qt-points-help"
+        style={{ ...fieldStyle, padding: "0.6rem 0.75rem", marginBottom: "0.35rem" }}>
+        {POINTS_CHOICES.map(n => (
+          <option key={n} value={n}>{n} {n === 1 ? "point" : "points"} each</option>
+        ))}
+      </select>
+      <p id="qt-points-help" style={{ fontSize: "0.78rem", marginBottom: "1rem", color: "var(--text-muted)" }}>
+        Used to work out each student&rsquo;s total score, not just the number of
+        items they got right.
+      </p>
+
+      <label htmlFor="qt-total" style={fieldLabel}>
+        Total Points on this page <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(computed)</span>
+      </label>
+      <input id="qt-total" type="text" readOnly disabled tabIndex={-1}
+        value={computedTotal === null ? "—" : String(computedTotal)}
+        aria-describedby="qt-total-help"
+        style={{ ...fieldStyle, padding: "0.6rem 0.75rem", marginBottom: "0.35rem",
+                 background: "var(--muted-bg, #f9fafb)", fontWeight: 600,
+                 color: "var(--navy)", cursor: "default" }} />
+      <p id="qt-total-help" style={{ fontSize: "0.78rem", marginBottom: "1.25rem", color: "var(--text-muted)" }}>
+        {computedTotal === null
+          ? (mode === "page"
+              ? "Fill in the number of items above to see the total."
+              : "Complete the item ranges below to see the total.")
+          : `${countedItems} item${countedItems === 1 ? "" : "s"} × ${points} point${points === 1 ? "" : "s"}. The server works this out again from the key it generates.`}
+      </p>
+    </>
+  );
+
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="qt-title"
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
@@ -234,13 +278,10 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
         maxWidth: mode === "parts" ? 640 : 420,
         width: "calc(100% - 32px)", maxHeight: "calc(100vh - 64px)", overflowY: "auto",
         boxShadow: "var(--shadow-lg)" }} onClick={e => e.stopPropagation()}>
-        {/* COPY 2026-10-22: was "Select Question Type" — there is no type to
-            select any more, so the heading names what the dialog does. */}
         <h2 id="qt-title" style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "1rem", color: "var(--navy)" }}>
           Generate Answer Key{pageNumber ? ` — Page ${pageNumber}` : ""}
         </h2>
 
-        {/* NEW 2026-10-24 — only shown when the parent can handle parts. */}
         {onDeclareParts && (
           <div role="tablist" aria-label="How to read this page"
             style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -263,17 +304,11 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
 
         {mode === "page" ? (
           <>
-            {/* COPY 2026-10-22: was "What type of questions does this page contain?
-                Choose Mixed if one page has both a Multiple Choice part and a
-                True/False part." — that asked a question the teacher can no longer
-                answer. It now explains what will happen and points at the one
-                field that is left. */}
             <p style={{ color: "var(--text-muted)", marginBottom: "1rem", fontSize: "0.9rem" }}>
               This page is read for both encircled Multiple Choice answers and written True/False answers. Enter how many items the page has so stray marks are not mistaken for answers.
             </p>
 
-            <label htmlFor="qt-items" style={{ display: "block", fontSize: "0.85rem", fontWeight: 600,
-              color: "var(--navy)", marginBottom: "0.35rem" }}>
+            <label htmlFor="qt-items" style={fieldLabel}>
               Number of items on this page <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(optional, recommended)</span>
             </label>
             <input id="qt-items" type="number" inputMode="numeric" min={1} max={200} placeholder="e.g. 12"
@@ -282,20 +317,16 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
               aria-invalid={!!itemsError} aria-describedby="qt-items-help"
               style={{ width: "100%", padding: "0.6rem 0.75rem", border: `1px solid ${itemsError ? "var(--error, #dc2626)" : "var(--border)"}`,
                 borderRadius: "var(--radius-sm)", marginBottom: "0.35rem" }} />
-            <p id="qt-items-help" style={{ fontSize: "0.78rem", marginBottom: "1.25rem",
+            <p id="qt-items-help" style={{ fontSize: "0.78rem", marginBottom: "1rem",
               color: itemsError ? "var(--error, #dc2626)" : "var(--text-muted)" }}>
               {itemsError ?? "If filled in, exactly this many answers are kept, so stray marks are not added to the key."}
             </p>
 
-            <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
-              {/* REMOVED 2026-10-22 (Doc Rubrica): the "True/False (Written)" and
-                  "Multiple Choice (Encircled)" buttons. The values "true_false"
-                  and "encircled" are still valid in types/exam.ts and still
-                  accepted by the backend, so answer keys generated with them
-                  before today keep working — they simply cannot be chosen here. */}
+            {/* NEW 2026-11-20 — Alex page 12: "Insert the 2 New Lines after of
+                'Number of items on this page' line." */}
+            {pointsRows}
 
-              {/* NEW 2026-09-26: one page that has BOTH parts, e.g.
-              Part I Multiple Choice (1-5) + Part II True/False (6-10). */}
+            <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
               <button type="button" onClick={() => choose("mixed")} disabled={loading}
                 aria-busy={loading && pending === "mixed"}
                 style={btn("var(--orange-light, #fdf1e3)", "var(--orange)", "var(--orange)", "mixed")}>
@@ -353,8 +384,6 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
                       <option key={t.value} value={t.value}>{t.label} — {t.hint}</option>
                     ))}
                   </select>
-                  {/* Only written_letter uses an alphabet. Matching type needs the
-                      range its Column B actually prints: ABCDEF for her sheet. */}
                   {d.type === "written_letter" && (
                     <>
                       <label htmlFor={`p-letters-${i}`} style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.2rem" }}>
@@ -375,9 +404,13 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
             <button type="button" onClick={addDraft} disabled={loading}
               style={{ background: "transparent", border: "1px dashed var(--border)", color: "var(--navy)",
                 borderRadius: "var(--radius-sm)", padding: "0.5rem", width: "100%", fontSize: "0.85rem",
-                fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", marginBottom: "0.75rem" }}>
+                fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", marginBottom: "1rem" }}>
               + Add another part
             </button>
+
+            {/* NEW 2026-11-20 — the same two lines. A page priced here is a
+                page priced there; the item count comes from the ranges. */}
+            {pointsRows}
 
             {partsError && (
               <p role="alert" style={{ fontSize: "0.78rem", color: "var(--error, #dc2626)", marginBottom: "0.75rem" }}>

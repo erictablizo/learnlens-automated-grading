@@ -172,6 +172,10 @@ async def generate_answer_key(
     question_type: str = Query("encircled"),
     # NEW 2026-09-22: "Number of items on this page" from the Select Question Type dialog
     expected_items: Optional[int] = Query(None, ge=1, le=200),
+    # NEW 2026-11-20 — Alex, Recommendations page 12: "1 item equivalent to how
+    # many points". Defaults to 1, so a client that does not send it generates
+    # exactly the key it generates today.
+    points_per_item: int = Query(1, ge=1, le=10),
     uid: int = Depends(current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -180,6 +184,23 @@ async def generate_answer_key(
     result = await exam_service.generate_answer_key(db, exam_id, page_id, question_type, expected_items)
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("reason", "Answer key generation failed."))
+
+    # Price this page's items. AFTER generation succeeded, so a failed read
+    # prices nothing - there is nothing to price. One statement over exactly
+    # this page's rows: page_id is the generator's own unit of work.
+    #
+    # Local imports, as grade_detected does, so this edit does not depend on
+    # the file's import block.
+    from sqlalchemy import update
+    from app.models.models import AnswerKey
+    from app.ml.scoring import clamp_points
+
+    await db.execute(
+        update(AnswerKey)
+        .where(AnswerKey.page_id == page_id)
+        .values(points=clamp_points(points_per_item))
+    )
+    await db.commit()
     return result
 
 
@@ -202,6 +223,7 @@ async def generate_answer_key_with_parts(
     exam_id: int,
     data: ExamPagePartsRequest,
     page_id: int = Query(...),
+    points_per_item: int = Query(1, ge=1, le=10),        # NEW 2026-11-20
     uid: int = Depends(current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -219,6 +241,17 @@ async def generate_answer_key_with_parts(
     if not result.get("success"):
         raise HTTPException(status_code=422,
                             detail=result.get("reason", "Answer key generation failed."))
+
+    from sqlalchemy import update
+    from app.models.models import AnswerKey
+    from app.ml.scoring import clamp_points
+
+    await db.execute(
+        update(AnswerKey)
+        .where(AnswerKey.page_id == page_id)
+        .values(points=clamp_points(points_per_item))
+    )
+    await db.commit()
     return result
 
 

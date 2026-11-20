@@ -444,6 +444,7 @@ export default function ViewExamPage() {
      const handleGenerateKeyWithType = async (
       questionType: QuestionType,
       expectedItems: number | null = null,
+      pointsPerItem: number = 1,              // NEW 2026-11-20 — Alex page 12
     ) => {
       const currentPage = examPages[pageIdx];
       if (!currentPage) { setShowQuestionTypeModal(false); return; }
@@ -453,7 +454,7 @@ export default function ViewExamPage() {
       setSelectedQuestionType(questionType);
       try {
         const res = await examService.generateAnswerKey(
-          examId, currentPage.page_id, token, questionType, expectedItems);
+          examId, currentPage.page_id, token, questionType, expectedItems, pointsPerItem);
         await loadExam();
         await fetchPapers();   // checked papers are reset when the key changes
         setToast({
