@@ -10,6 +10,7 @@ export interface AnswerKey {
   page_id?: number | null;          // NEW 2026-09-22
   question_number: number;
   correct_answer: string;
+  points?: number;              // NEW 2026-11-20 — Alex page 12
   ocr_confidence: number | null;    // 0 – 1
   generated_at: string;
 }

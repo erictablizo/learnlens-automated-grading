@@ -732,7 +732,7 @@ export default function ViewExamPage() {
           onSelect={handleSelectPaper}
           onEdit={handleEditPaper}
           onDelete={handleDeleteRequest}
-          totalItems={exam.answer_keys?.length ?? null}
+          totalItems={exam.answer_keys?.reduce((n, k) => n + (k.points ?? 1), 0) || null}
         />
 
         {/* ── Delete confirm dialog ── */}
