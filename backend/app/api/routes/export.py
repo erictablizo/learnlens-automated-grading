@@ -165,12 +165,23 @@ async def export_exam_xlsx(
         .where(AnswerKey.exam_id == exam_id)
     )).scalar_one() or len(items)
 
+    # NEW 2026-11-20 — Alex, Recommendations page 12. What the paper is OUT OF.
+    # Same shape and same reasoning as the count above: one cheap query over
+    # the keys, which cannot drift with another service's internals. Falls back
+    # to total_items, so an exam whose keys predate the points column exports
+    # exactly as it did.
+    total_points = (await db.execute(
+        select(func.coalesce(func.sum(AnswerKey.points), 0))
+        .where(AnswerKey.exam_id == exam_id)
+    )).scalar_one() or total_items
+
     data = build_workbook(
         exam={
             "exam_name": exam.exam_name,
             "subject": exam.subject,
             "schedule": exam.schedule,
             "total_items": total_items,
+            "total_points": total_points,
         },
         papers=_paper_rows(papers, numbers),
         items=items,

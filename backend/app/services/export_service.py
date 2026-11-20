@@ -98,7 +98,10 @@ def build_workbook(
               (the field names of schemas.analytics.ItemAnalytics)
     """
     total_items = int(exam.get("total_items") or 0)
-    mark = passing_mark(total_items, passing_pct)
+    # NEW 2026-11-20 — the denominator is POINTS, not items. Falls back to the
+    # item count, so an un-priced exam produces byte-identical output.
+    total_points = int(exam.get("total_points") or total_items)
+    mark = passing_mark(total_points, passing_pct)
     wb = Workbook()
 
     # CHANGED 2026-11-19 (Sir Alex): "Excel Document -> to include Student ID No."
@@ -114,7 +117,7 @@ def build_workbook(
     ws = wb.active
     ws.title = "Scores"
     header = ["#", "Student No.", "Last Name", "First Name", "Score",
-              "Total Items", "Percentage", "Status"]
+              "Total Points", "Percentage", "Status"]
     ws.append(header)
     _style_header(ws)
 
@@ -132,8 +135,8 @@ def build_workbook(
             p.get("last_name") or "",
             p.get("first_name") or "",
             score,
-            total_items,
-            _ratio(score, total_items) if final else None,
+            total_points,
+            _ratio(score, total_points) if final else None,
             status,
         ]
         ws.append(row)
@@ -202,8 +205,9 @@ def build_workbook(
         ("Subject", exam.get("subject") or ""),
         ("Schedule", exam.get("schedule") or ""),
         ("Total items", total_items),
+        ("Total points", total_points),
         ("", ""),
-        ("Passing mark", f"{passing_pct:g}%  ({mark} of {total_items} items)"),
+        ("Passing mark", f"{passing_pct:g}%  ({mark} of {total_points} points)"),
         ("Papers in this exam", len(papers)),
         ("Papers checked", len(counted)),
         ("Papers excluded (under review / not checked)", len(papers) - len(counted)),
