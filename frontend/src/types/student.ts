@@ -83,6 +83,13 @@ export interface StudentExamScore {
   total_score:  number | null;
   checked:      boolean;
   total_items:  number;
+  /**
+   * NEW 2026-11-20 — Alex, Recommendations page 12. The sum of what the items
+   * are WORTH, which is what a score is out of. Optional, and 0 on an exam
+   * whose keys predate the points column — so `total_points || total_items`
+   * reads exactly as it did before.
+   */
+  total_points?: number;
   under_review: number;
 }
 

@@ -139,8 +139,10 @@ interface Category {
   note:     string;
 }
 
-// ── one category: the count, then the students ───────────────────────────────
-function CategoryBlock({ cat, totalItems }: { cat: Category; totalItems: number }) {
+// CHANGED 2026-11-20 — `outOf` rather than `totalItems`: since Alex's page 12
+// the denominator is a sum of POINTS, and a prop called totalItems holding a
+// points total is how a screen starts lying quietly.
+function CategoryBlock({ cat, outOf }: { cat: Category; outOf: number }) {
   return (
     <section
       aria-label={cat.label}
@@ -179,7 +181,7 @@ function CategoryBlock({ cat, totalItems }: { cat: Category; totalItems: number 
                   <td style={{ fontWeight: 700, color: "var(--navy)" }}>
                     {/* "Plus reflect the score with the total number of items.
                         Example: instead 14 - reflect as 14/15" — Alex, page 2. */}
-                    {p.total_score}{totalItems > 0 && ` / ${totalItems}`}
+                    {p.total_score}{outOf > 0 && ` / ${outOf}`}
                   </td>
                 </tr>
               ))}
@@ -246,8 +248,11 @@ export default function DataAnalyticsPage() {
     }
   }, [router]);
 
-  const totalItems = exam?.answer_keys?.length ?? 0;
-  const passMark   = totalItems > 0 ? Math.ceil((totalItems * passPercent) / 100) : 0;
+  // `totalItems` is still the ITEM COUNT, for the "Items:" figure in the
+  // header. Everything that is a MARK is measured against totalPoints.
+  const totalItems  = exam?.answer_keys?.length ?? 0;
+  const totalPoints = exam?.answer_keys?.reduce((n, k) => n + (k.points ?? 1), 0) ?? 0;
+  const passMark    = totalPoints > 0 ? Math.ceil((totalPoints * passPercent) / 100) : 0;
 
   /**
    * Only CHECKED papers are counted.
@@ -289,19 +294,19 @@ export default function DataAnalyticsPage() {
         students: highestScore === null ? [] : sortDesc(final.filter(p => p.total_score === highestScore)),
         note: highestScore === null
           ? "no checked papers yet"
-          : `the highest anyone scored is ${highestScore}${totalItems > 0 ? ` / ${totalItems}` : ""}`,
+          : `the highest anyone scored is ${highestScore}${totalPoints > 0 ? ` / ${totalPoints}` : ""}`,
       },
       {
         key: "passed",
         label: "passed",
-        students: totalItems === 0 ? [] : sortDesc(final.filter(p => (p.total_score as number) >= passMark)),
-        note: totalItems === 0 ? "no answer key yet" : `scored ${passMark} / ${totalItems} or more`,
+        students: totalPoints === 0 ? [] : sortDesc(final.filter(p => (p.total_score as number) >= passMark)),
+        note: totalPoints === 0 ? "no answer key yet" : `scored ${passMark} / ${totalPoints} or more`,
       },
       {
         key: "failed",
         label: "failed",
-        students: totalItems === 0 ? [] : sortDesc(final.filter(p => (p.total_score as number) < passMark)),
-        note: totalItems === 0 ? "no answer key yet" : `scored below ${passMark} / ${totalItems}`,
+        students: totalPoints === 0 ? [] : sortDesc(final.filter(p => (p.total_score as number) < passMark)),
+        note: totalPoints === 0 ? "no answer key yet" : `scored below ${passMark} / ${totalPoints}`,
       },
       {
         key: "zero",
@@ -312,7 +317,7 @@ export default function DataAnalyticsPage() {
         note: "also counted under “failed”",
       },
     ];
-  }, [final, passMark, totalItems]);
+  }, [final, passMark, totalPoints]);
 
   if (loading) {
     return (
@@ -399,7 +404,7 @@ export default function DataAnalyticsPage() {
                   style={{ width: 64, padding: "0.25rem 0.4rem", fontSize: "0.8rem" }}
                 />
                 %
-                {totalItems > 0 && <span>= {passMark} / {totalItems}</span>}
+                {totalPoints > 0 && <span>= {passMark} / {totalPoints}</span>}
               </label>
             </div>
 
@@ -415,7 +420,7 @@ export default function DataAnalyticsPage() {
               </div>
             )}
 
-            {categories.map(c => <CategoryBlock key={c.key} cat={c} totalItems={totalItems} />)}
+            {categories.map(c => <CategoryBlock key={c.key} cat={c} outOf={totalPoints} />)}
 
             {/* "Provide also info of number that students did not get the
                 correct answer" — Doc Rubrica's last line, per item, narrowed

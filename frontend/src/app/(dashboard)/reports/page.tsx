@@ -241,7 +241,10 @@ export default function SummaryReportPage() {
 
   // The exam is out of this many items. answer_keys spans every page, so the
   // length is the whole paper's item count, not one page's.
-  const totalItems = exam?.answer_keys?.length ?? 0;
+  const totalItems  = exam?.answer_keys?.length ?? 0;
+  // NEW 2026-11-20 — the denominator for a SCORE is points; the "Items:"
+  // figure above stays an item count.
+  const totalPoints = exam?.answer_keys?.reduce((n, k) => n + (k.points ?? 1), 0) ?? 0;
   const unsplitCount = sorted.filter(needsNameSplit).length;
 
   if (loading) {
@@ -373,12 +376,12 @@ export default function SummaryReportPage() {
                           <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>Not checked</span>
                         ) : p.checked ? (
                           <span style={{ fontWeight: 700, color: "var(--navy)" }}>
-                            {p.total_score}{totalItems > 0 && ` / ${totalItems}`}
+                            {p.total_score}{totalPoints > 0 && ` / ${totalPoints}`}
                           </span>
                         ) : (
                           <span style={{ fontWeight: 700, color: "var(--orange)" }}
                                 title="Some items are still waiting for your decision, so this score is a minimum.">
-                            {p.total_score}{totalItems > 0 && ` / ${totalItems}`}
+                            {p.total_score}{totalPoints > 0 && ` / ${totalPoints}`}
                             <span style={{ fontWeight: 500, fontSize: "0.72rem", display: "block" }}>
                               pending review
                             </span>

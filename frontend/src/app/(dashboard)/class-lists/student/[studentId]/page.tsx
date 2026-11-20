@@ -34,11 +34,11 @@ import { getToken, isAuthenticated } from "@/lib/auth";
  */
 function scoreOf(r: StudentExamScore): { text: string; muted: boolean; note: string | null } {
   if (r.checked && r.total_score !== null) {
-    return { text: `${r.total_score} / ${r.total_items}`, muted: false, note: null };
+    return { text: `${r.total_score} / ${r.total_points || r.total_items}`, muted: false, note: null };
   }
   if (r.total_score !== null) {
     return {
-      text: `${r.total_score}–${r.total_score + r.under_review} / ${r.total_items}`,
+      text: `${r.total_score}–${r.total_score + r.under_review} / ${r.total_points || r.total_items}`,
       muted: false,
       note: `${r.under_review} item(s) waiting for your decision`,
     };
