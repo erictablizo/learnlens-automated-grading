@@ -111,6 +111,7 @@ class AnswerKeyResponse(BaseModel):
     page_id: Optional[int] = None          # NEW: lets the viewer group answers by page
     question_number: int
     correct_answer: str
+    points: int = 1                        # NEW 2026-11-20 — Alex page 12
     ocr_confidence: Optional[float] = None
     generated_at: datetime
     model_config = {"from_attributes": True}
