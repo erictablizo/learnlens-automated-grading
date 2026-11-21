@@ -32,8 +32,9 @@ pass and a fail, and showing a single number would hide that.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, List, Mapping, Optional
 
 # The dropdown Alex specified: 1 to 10. Mirrored by the CHECK constraint in
 # migrations/2026-11-20_answer_key_points.sql - stated twice, because a rule
@@ -149,3 +150,148 @@ def page_total(items: int, points_per_item) -> int:
     except (TypeError, ValueError):
         return 0
     return max(n, 0) * clamp_points(points_per_item)
+
+# ---------------------------------------------------------------------------
+# NEW 2026-11-21 - Sir Alex Passion, Recommendations page 13.
+#
+#   "Remove this line  1 item equivalent to how many points = Drop-down List"
+#   "Instead add the following lines:
+#      Range of item number from ____ to ____ 1 item equivalents to (1 to 10)
+#      Range of item number from ____ to ____ 1 item equivalents to (1 to 10)
+#      Range of item number from ____ to ____ 1 item equivalents to (1 to 10)"
+#
+# Page 12 priced a whole page at one rate. Page 13 replaces that with up to
+# three priced BANDS, which is what a real paper looks like: twenty encircled
+# items at 1 point and five identification items at 5.
+#
+# WHAT AN ITEM OUTSIDE EVERY BAND IS WORTH. One point. With the page-level
+# dropdown gone there is no field left that could say otherwise, and the
+# column default (points smallint not null default 1) already says it. So a
+# teacher who fills in no bands at all generates exactly the key generated
+# today - which is the control this whole change has to pass.
+#
+# WHY PARSING IS STRICT HERE AND clamp_points() IS FORGIVING. Different jobs.
+# clamp_points reads a value already in the database and must never stop a
+# class being marked. This reads what a teacher just typed, at the door,
+# before anything is stored: a band typed "25-21" is a mistake worth a
+# sentence, not a value worth guessing at.
+# ---------------------------------------------------------------------------
+
+MAX_RANGES = 3          # three lines, because Alex drew three lines
+MAX_ITEM_NUMBER = 500   # the bound parts mode already uses
+
+
+@dataclass(frozen=True)
+class PointRange:
+    """One of Alex's lines: items `first_item`..`last_item` are worth
+    `points` each. Inclusive at both ends, the way a teacher reads
+    "from 21 to 25"."""
+    first_item: int
+    last_item: int
+    points: int
+
+    @property
+    def span(self) -> int:
+        return self.last_item - self.first_item + 1
+
+
+_RANGE_RE = re.compile(r"^\s*(\d{1,3})\s*-\s*(\d{1,3})\s*:\s*(\d{1,2})\s*$")
+
+
+def parse_point_ranges(raw: Optional[Iterable[str]]) -> List[PointRange]:
+    """Turn `["1-20:1", "21-25:5"]` into PointRanges, or raise ValueError
+    with a sentence a teacher can act on.
+
+    The wire form is `first-last:points`. It is a string rather than a nested
+    body because the generate endpoint takes query parameters today and a
+    POST that suddenly needs a JSON body is a breaking change to a route two
+    screens depend on, twelve days out.
+
+    Returns bands sorted by first_item. An empty or missing value returns [],
+    which prices nothing and leaves every item at the column default.
+    """
+    if not raw:
+        return []
+    out: List[PointRange] = []
+    for i, token in enumerate(raw, start=1):
+        # An empty line is not a mistake. The dialog always renders three of
+        # them and a teacher who prices one band leaves two blank; the client
+        # drops them, and the server does too rather than depending on it.
+        if token is None or not str(token).strip():
+            continue
+        m = _RANGE_RE.match(token)
+        if not m:
+            raise ValueError(
+                f"Range {i} is not readable. Write it as first-last:points, "
+                f"for example 21-25:5."
+            )
+        first, last, pts = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if first < 1 or last < 1 or first > MAX_ITEM_NUMBER or last > MAX_ITEM_NUMBER:
+            raise ValueError(
+                f"Range {i}: item numbers must be between 1 and {MAX_ITEM_NUMBER}."
+            )
+        if last < first:
+            raise ValueError(
+                f"Range {i}: the last item ({last}) comes before the first ({first})."
+            )
+        if pts < MIN_POINTS or pts > MAX_POINTS:
+            raise ValueError(
+                f"Range {i}: points must be between {MIN_POINTS} and {MAX_POINTS}."
+            )
+        out.append(PointRange(first, last, pts))
+
+    if len(out) > MAX_RANGES:
+        raise ValueError(f"At most {MAX_RANGES} ranges can be given for one page.")
+
+    out.sort(key=lambda r: r.first_item)
+    for a, b in zip(out, out[1:]):
+        if b.first_item <= a.last_item:
+            raise ValueError(
+                f"Items {b.first_item}-{b.last_item} overlap items "
+                f"{a.first_item}-{a.last_item}. Each item can only be worth one amount."
+            )
+    return out
+
+
+def points_for_items(
+    question_numbers: Iterable[int],
+    ranges: Optional[Iterable[PointRange]] = None,
+) -> dict:
+    """{question_number: points} for the items actually on the page.
+
+    An item no band covers is worth DEFAULT_POINTS. This is the function the
+    route uses to price real generated rows, so the price follows the item
+    numbers that were really created rather than the count the browser
+    guessed at.
+    """
+    bands = list(ranges or [])
+    out = {}
+    for q in question_numbers:
+        p = DEFAULT_POINTS
+        for r in bands:
+            if r.first_item <= q <= r.last_item:
+                p = r.points
+                break
+        out[int(q)] = clamp_points(p)
+    return out
+
+
+def page_total_with_ranges(items, ranges: Optional[Iterable[PointRange]] = None) -> int:
+    """The "Total Points on this page (Computed)" field, server side.
+
+    Mirrors the arithmetic the modal shows while the teacher types: banded
+    items at their band's price, everything else at 1. Items counted by a
+    band beyond the page's item count are NOT subtracted here - the modal
+    refuses that case before it can be sent, and silently discarding part of
+    a band would hide the mistake rather than report it.
+    """
+    try:
+        n = max(int(items), 0)
+    except (TypeError, ValueError):
+        return 0
+    bands = list(ranges or [])
+    if not bands:
+        return n * DEFAULT_POINTS
+    covered = sum(r.span for r in bands)
+    priced = sum(r.span * clamp_points(r.points) for r in bands)
+    return priced + max(0, n - covered) * DEFAULT_POINTS

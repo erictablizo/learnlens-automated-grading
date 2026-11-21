@@ -172,34 +172,62 @@ async def generate_answer_key(
     question_type: str = Query("encircled"),
     # NEW 2026-09-22: "Number of items on this page" from the Select Question Type dialog
     expected_items: Optional[int] = Query(None, ge=1, le=200),
-    # NEW 2026-11-20 — Alex, Recommendations page 12: "1 item equivalent to how
-    # many points". Defaults to 1, so a client that does not send it generates
-    # exactly the key it generates today.
-    points_per_item: int = Query(1, ge=1, le=10),
+    # CHANGED 2026-11-21 — Alex, Recommendations page 13. This REPLACES
+    # points_per_item: the page-level dropdown is gone and up to three priced
+    # bands take its place. Repeated query parameter, one per band:
+    #
+    #     ?points_range=1-20:1&points_range=21-25:5
+    #
+    # Absent, or sent empty, every item on the page is worth 1 — which is the
+    # request the dialog sent before page 13 and the key this route built
+    # before page 12.
+    points_range: Optional[list[str]] = Query(None),
     uid: int = Depends(current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     if not await exam_service.get_exam(db, exam_id, uid):
         raise HTTPException(status_code=404, detail="Exam not found")
+
+    # Read the bands BEFORE generating. A mistyped range is the teacher's to
+    # fix and costs nothing to report; spending forty seconds reading a
+    # photograph first and then refusing is forty seconds wasted.
+    from app.ml.scoring import parse_point_ranges
+    try:
+        bands = parse_point_ranges(points_range)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     result = await exam_service.generate_answer_key(db, exam_id, page_id, question_type, expected_items)
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("reason", "Answer key generation failed."))
 
     # Price this page's items. AFTER generation succeeded, so a failed read
-    # prices nothing - there is nothing to price. One statement over exactly
-    # this page's rows: page_id is the generator's own unit of work.
+    # prices nothing - there is nothing to price. Scoped to page_id, which is
+    # the generator's own unit of work.
     #
     # Local imports, as grade_detected does, so this edit does not depend on
     # the file's import block.
     from sqlalchemy import update
     from app.models.models import AnswerKey
-    from app.ml.scoring import clamp_points
+    from app.ml.scoring import DEFAULT_POINTS
 
+    # Reset to 1 first, THEN lay the bands on top. The reset matters even
+    # when no band was given: regenerating a page that was priced last time
+    # must not silently keep last time's prices. Last generation wins, which
+    # is what the dialog promises by asking every time.
     await db.execute(
         update(AnswerKey)
         .where(AnswerKey.page_id == page_id)
-        .values(points=clamp_points(points_per_item))
+        .values(points=DEFAULT_POINTS)
     )
+    for band in bands:
+        await db.execute(
+            update(AnswerKey)
+            .where(AnswerKey.page_id == page_id,
+                   AnswerKey.question_number >= band.first_item,
+                   AnswerKey.question_number <= band.last_item)
+            .values(points=band.points)
+        )
     await db.commit()
     return result
 
@@ -223,7 +251,7 @@ async def generate_answer_key_with_parts(
     exam_id: int,
     data: ExamPagePartsRequest,
     page_id: int = Query(...),
-    points_per_item: int = Query(1, ge=1, le=10),        # NEW 2026-11-20
+    points_range: Optional[list[str]] = Query(None),     # CHANGED 2026-11-21
     uid: int = Depends(current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -235,6 +263,12 @@ async def generate_answer_key_with_parts(
     """
     if not await exam_service.get_exam(db, exam_id, uid):
         raise HTTPException(status_code=404, detail="Exam not found")
+    from app.ml.scoring import parse_point_ranges
+    try:
+        bands = parse_point_ranges(points_range)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     result = await exam_service.generate_answer_key_parts(
         db, exam_id, page_id, [p.model_dump() for p in data.parts]
     )
@@ -244,13 +278,21 @@ async def generate_answer_key_with_parts(
 
     from sqlalchemy import update
     from app.models.models import AnswerKey
-    from app.ml.scoring import clamp_points
+    from app.ml.scoring import DEFAULT_POINTS
 
     await db.execute(
         update(AnswerKey)
         .where(AnswerKey.page_id == page_id)
-        .values(points=clamp_points(points_per_item))
+        .values(points=DEFAULT_POINTS)
     )
+    for band in bands:
+        await db.execute(
+            update(AnswerKey)
+            .where(AnswerKey.page_id == page_id,
+                   AnswerKey.question_number >= band.first_item,
+                   AnswerKey.question_number <= band.last_item)
+            .values(points=band.points)
+        )
     await db.commit()
     return result
 
