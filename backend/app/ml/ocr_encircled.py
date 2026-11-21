@@ -171,8 +171,8 @@ def detect_circles(gray: "np.ndarray", ink: Optional["np.ndarray"] = None,
 # ---------------------------------------------------------------------------
 # Letter reading
 # ---------------------------------------------------------------------------
-
 _LETTER_MAP = {"A": "A", "B": "B", "C": "C", "D": "D",
+               "T": "T", "F": "F",
                "8": "B", "0": "D", "O": "D", "G": "C", "(": "C", "4": "A"}
 
 
@@ -279,7 +279,7 @@ def _read_letter_at(gray: "np.ndarray", cx: int, cy: int, radius: int, factor: f
     big = cv2.copyMakeBorder(big, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
 
     best_letter, best_conf = "", 0.0
-    for cfg in ("--psm 10 -c tessedit_char_whitelist=ABCDabcd",
+    for cfg in ("--psm 10 -c tessedit_char_whitelist=ABCDFTabcdft",
                 "--psm 10"):
         try:
             data = pytesseract.image_to_data(big, config=cfg, output_type=Output.DICT)
