@@ -8,6 +8,18 @@
  * teacher DECLARE THE ITEM RANGES. `onDeclareParts` is OPTIONAL, so a parent
  * that does not pass it gets the old dialog exactly.
  *
+ * CHANGED 2026-11-17 — "Number of items on this page" is REQUIRED. This is the
+ * fix for the two complaints in the project instructions: "Answer Key Displays
+ * 16 Answer in the System but Page 6 ... shows that is only has 12 Answers",
+ * and "107 Answer ... only has 20". Every gate this project built to keep a
+ * stray mark out of the key is switched OFF when that field is blank —
+ * limit_to_expected is a no-op, the 2026-10-05 stray-items drop needs
+ * bool(expected_items), and the 2026-11-01 phantom-tail _room() guard returns
+ * True when the count is absent. The field was blank on every open, so the
+ * ordinary Generate click sent expected_items = null and switched off all
+ * three. Measured 5 Oct on the thesis p.6 sheet with the field blank: 14
+ * answers on a 12-item page, no warning.
+ *
  * CHANGED 2026-11-20 — Sir Alex Passion, Recommendations page 12: one
  * page-level "1 item equivalent to how many points" dropdown.
  *
@@ -21,7 +33,44 @@
  *        Range of item number from ____ to ____ 1 item equivalents to (1-10)"
  *     "Insert the 3 New Lines after of 'Number of items on this page' line."
  *
- * Four things about how that was built:
+ * MERGED 2026-11-22 — the 2026-11-21 page-13 file and the 2026-11-17
+ * items-required change were written from the SAME September baseline, in two
+ * different sessions, and neither contains the other. Installing the page-13
+ * file over a live tree would have silently reverted all five items-required
+ * edits, and apply_2026-11-17_items_required.py cannot be re-run afterwards:
+ * its required EDIT 2 anchors on the pre-page-13 blank-field line, which
+ * page 13 had already rewritten to carry the encoded ranges. No candidate
+ * matches, the edit is required, so the patcher refuses all-or-nothing and
+ * writes nothing — while its other four edits WOULD have landed, which is
+ * what makes the failure quiet. This file is the two changes in one. See
+ * MODAL-MERGE-2026-11-22.md.
+ *
+ * CHANGED 2026-11-22 — Sir Alex Passion, Recommendations page 14,
+ * requirement 2, against a screenshot of the DEPLOYED (pre-merge) dialog:
+ *
+ *   "Please update the gray color (encircled in RED color) to light brown
+ *    color to distinguish it from input color (black)."
+ *   "Underlined in BLUE color, please update as required not optional in
+ *    'Number of items on this page' and 'Points per item, by range' fields."
+ *
+ * The first of the two blue underlines was ALREADY done by the 2026-11-17
+ * merge above — his screenshot predates it. What page 14 actually adds here
+ * is the placeholder colour and the ranges becoming required.
+ *
+ * WHY A <style> TAG IN A FILE THAT IS OTHERWISE ALL INLINE STYLES. ::placeholder
+ * is a pseudo-element and the style prop cannot reach it. The alternative is a
+ * rule in globals.css, which would colour every placeholder in the app from a
+ * file nobody editing this dialog would think to open. One scoped block, next
+ * to the thing it colours.
+ *
+ * WHAT "REQUIRED" COSTS. A page where every item is worth the same now needs
+ * one line typed — "1 to 15 at 1 pt" — where before it needed nothing. That
+ * is the point: the price is stated rather than inherited. It costs nothing in
+ * correctness, because a band of all-1s produces byte-identical scoring to no
+ * band at all (asserted in measure/2026-11-21_point_ranges.py, "control: bands
+ * of 1 change nothing").
+ *
+ * Four things about how the page-13 pricing was built:
  *
  * AN ITEM NO RANGE COVERS IS WORTH 1. With the page-level dropdown gone there
  * is no field left that could say otherwise, and the column default
@@ -89,6 +138,14 @@ const RANGE_ROWS = 3;
 const DEFAULT_POINTS = 1;
 const MAX_ITEM_NUMBER = 500;
 
+/** NEW 2026-11-22 — Alex page 14: placeholders in light brown, so a hint is
+ *  never mistaken for a typed value. Measured 4.65:1 on white, which clears
+ *  WCAG AA for normal text (my first pick, #A1724A, measured 4.18 and did
+ *  not — a placeholder a teacher cannot read is worse than a grey one).
+ *  `opacity: 1` is not decoration: Firefox dims placeholders by default and
+ *  would wash the brown back out. */
+const PLACEHOLDER_BROWN = "#9A6A42";
+
 /** One of Alex's three lines while it is being typed. */
 export interface PriceDraft {
   first: string;
@@ -106,12 +163,16 @@ export interface ParsedRange {
 }
 
 /** Read the three lines. Returns a sentence instead of ranges when one of
- *  them cannot be honoured. `itemCount` is checked only when it is known —
- *  the item-count field is optional and a teacher may price a page without
- *  filling it in. */
+ *  them cannot be honoured. `itemCount` is checked only when it is known.
+ *
+ *  CHANGED 2026-11-22: in page mode the count is now always known by the time
+ *  this is called from choose(), because the count is validated first. The
+ *  null branch is still reached from parts mode, where the count comes from
+ *  the declared parts and may be incomplete while the teacher types. */
 export function readRanges(
   rows: PriceDraft[],
   itemCount: number | null,
+  opts: { requireOne?: boolean } = {},
 ): { ranges: ParsedRange[]; error: string | null } {
   const parsed: ParsedRange[] = [];
 
@@ -157,6 +218,20 @@ export function readRanges(
     }
   }
 
+  // NEW 2026-11-22 — Alex page 14: the field is required. Checked LAST, after
+  // every shape check, so a teacher who typed one line badly is told what is
+  // wrong with that line rather than being told to fill in a line she filled
+  // in. The live preview calls this without the flag, so typing is never an
+  // error wall; only the submit handlers require it.
+  if (opts.requireOne && sorted.length === 0) {
+    return {
+      ranges: [],
+      error: itemCount !== null
+        ? `Price the items before generating. If every item is worth the same, use one line: 1 to ${itemCount} at 1 pt.`
+        : "Price the items before generating. Fill in at least one range.",
+    };
+  }
+
   return { ranges: sorted, error: null };
 }
 
@@ -167,7 +242,10 @@ export const encodeRanges = (ranges: ParsedRange[]): string[] =>
 interface QuestionTypeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** FIX 2026-09-22: 2nd argument = "Number of items on this page" (null = auto-detect).
+  /** FIX 2026-09-22: 2nd argument = "Number of items on this page".
+   *  CHANGED 2026-11-17: it is REQUIRED in page mode, so this is never null
+   *  from the Mixed button any more. The signature keeps `| null` because the
+   *  parts path and older callers still type it that way.
    *  CHANGED 2026-11-21: 3rd argument is now the priced RANGES, as
    *  ["1-20:1", "21-25:5"]. It replaces page 12's single pointsPerItem number.
    *  An empty array prices nothing and every item stays at 1. */
@@ -232,16 +310,35 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
   };
 
   const choose = (type: QuestionType) => {
-    const { ranges, error } = readRanges(prices, itemsKnown ? countedItems : null);
-    if (error) { setPriceError(error); return; }
-
+    // CHANGED 2026-11-17. Previously a blank field called onSelect with a
+    // null item count and generated anyway. A null count switches off every
+    // gate that keeps a stray mark out of the answer key, and the field is
+    // blank on every open — so that one line WAS the "16 vs 12" and
+    // "107 vs 20" complaint, on the ordinary click.
+    //
+    // The old line is deliberately NOT quoted here: this project's tools grep
+    // for it to decide whether the fix is in place.
+    //
+    // CHANGED 2026-11-22 (merge): the count is read and validated BEFORE the
+    // ranges, where page 13 read the ranges first. Two reasons. The count is
+    // now the required field, so its message is the one the teacher must see
+    // first; and readRanges' coverage check is skipped when the count is
+    // unknown, so validating the count first means "the ranges cover 25 items
+    // but this page has 12" is now always checked rather than only sometimes.
     const v = items.trim();
-    if (v === "") { setPending(type); onSelect(type, null, encodeRanges(ranges)); return; }
-    const n = Number(v);
-    if (!Number.isInteger(n) || n < 1 || n > 200) {
-      setItemsError("Enter a whole number from 1 to 200, or leave it blank.");
+    if (v === "") {
+      setItemsError("Type the number of items on this page first — this is what keeps stray marks out of the key.");
       return;
     }
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 1 || n > 200) {
+      setItemsError("Enter a whole number from 1 to 200.");
+      return;
+    }
+
+    const { ranges, error } = readRanges(prices, n, { requireOne: true });
+    if (error) { setPriceError(error); return; }
+
     setPending(type);
     onSelect(type, n, encodeRanges(ranges));
   };
@@ -295,7 +392,8 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
       }
     }
 
-    const { ranges, error } = readRanges(prices, itemsKnown ? countedItems : null);
+    const { ranges, error } = readRanges(prices, itemsKnown ? countedItems : null,
+                                        { requireOne: true });
     if (error) { setPriceError(error); return; }
 
     setPartsError(null);
@@ -352,7 +450,9 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
     <>
       <span style={fieldLabel}>
         Points per item, by range{" "}
-        <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(optional)</span>
+        {/* CHANGED 2026-11-22 — Alex page 14. Same red (required) as the item
+            count above it, because they are now the same kind of field. */}
+        <span style={{ fontWeight: 400, color: "var(--error, #dc2626)" }}>(required)</span>
       </span>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.35rem" }}>
@@ -397,7 +497,7 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
       <p id="qt-points-help" style={{ fontSize: "0.78rem", marginBottom: "1rem",
         color: (priceError ?? live.error) ? "var(--error, #dc2626)" : "var(--text-muted)" }}>
         {priceError ?? live.error ??
-          "Use the item numbers printed on the paper. Any item you do not list is worth 1 point. Leave all three blank to keep every item at 1."}
+          "Use the item numbers printed on the paper. Fill in at least one line — if every item is worth the same, one line covering them all is enough. Any item you do not list is worth 1 point."}
       </p>
 
       <label htmlFor="qt-total" style={fieldLabel}>
@@ -428,10 +528,15 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
         alignItems: "center", justifyContent: "center", zIndex: 9999 }}
       onClick={loading ? undefined : onClose}>
-      <div style={{ background: "white", borderRadius: "var(--radius-md)", padding: "2rem",
+      <div className="qt-modal" style={{ background: "white", borderRadius: "var(--radius-md)", padding: "2rem",
         maxWidth: mode === "parts" ? 640 : 480,
         width: "calc(100% - 32px)", maxHeight: "calc(100vh - 64px)", overflowY: "auto",
         boxShadow: "var(--shadow-lg)" }} onClick={e => e.stopPropagation()}>
+        {/* NEW 2026-11-22 — Alex page 14. Scoped to .qt-modal so it cannot
+            reach any other dialog in the app. */}
+        <style>{`
+          .qt-modal input::placeholder { color: ${PLACEHOLDER_BROWN}; opacity: 1; }
+        `}</style>
         <h2 id="qt-title" style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "1rem", color: "var(--navy)" }}>
           Generate Answer Key{pageNumber ? ` — Page ${pageNumber}` : ""}
         </h2>
@@ -463,17 +568,17 @@ export default function QuestionTypeModal({ isOpen, onClose, onSelect, onDeclare
             </p>
 
             <label htmlFor="qt-items" style={fieldLabel}>
-              Number of items on this page <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(optional, recommended)</span>
+              Number of items on this page <span style={{ fontWeight: 400, color: "var(--error, #dc2626)" }}>(required)</span>
             </label>
             <input id="qt-items" type="number" inputMode="numeric" min={1} max={200} placeholder="e.g. 12"
               value={items} disabled={loading}
               onChange={e => { setItems(e.target.value); setItemsError(null); }}
-              aria-invalid={!!itemsError} aria-describedby="qt-items-help"
+              aria-required="true" aria-invalid={!!itemsError} aria-describedby="qt-items-help"
               style={{ width: "100%", padding: "0.6rem 0.75rem", border: `1px solid ${itemsError ? "var(--error, #dc2626)" : "var(--border)"}`,
                 borderRadius: "var(--radius-sm)", marginBottom: "0.35rem" }} />
             <p id="qt-items-help" style={{ fontSize: "0.78rem", marginBottom: "1rem",
               color: itemsError ? "var(--error, #dc2626)" : "var(--text-muted)" }}>
-              {itemsError ?? "If filled in, exactly this many answers are kept, so stray marks are not added to the key."}
+              {itemsError ?? "Exactly this many answers are kept, so stray marks are not added to the key. Count only the items printed on THIS page."}
             </p>
 
             {/* NEW 2026-11-21 — Alex page 13: "Insert the 3 New Lines after of
