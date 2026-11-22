@@ -3,32 +3,6 @@
  * app/(dashboard)/class-lists/page.tsx
  * ====================================
  * NEW 2026-11-17 — Recommendations page 7, "List of Students".
- *
- *   "Additional Option in Side Bar after "Student" Options:
- *    Additional Option Label = "List of Students"
- *    This reflect students for each subject and specific schedule a Teacher
- *    handles."
- *   "Update LABEL from "List of Students under section <Section Name>"
- *    to "List of Students under <Subject Name> / <Schedule>""
- *   "Add also back button at the bottom (Back to Manage Exams)"
- *   "Once you input the Student number, it will auto-populate the Student
- *    Name Info ... from GLOBAL Database input of Student Table created
- *    ADMIN ID."
- *
- * /class-lists, not /list-of-students. "List of Students" is the LABEL a
- * teacher reads; the resource is a class list. A URL that reads like a
- * sentence from a document ages badly the moment the document is revised -
- * as page 6 was revised by page 7 two days after it was written.
- *
- * THE NAME BOXES ARE READ-ONLY, ALWAYS. This screen cannot create a student;
- * it can only put an existing one on a list. That is pages 6 and 7 together -
- * the administrator maintains the school record, the teacher assembles
- * classes from it - and making the boxes editable here would quietly give
- * every teacher a second way to write to the global table.
- *
- * Same shell as every other screen: dashboard-layout + <Navbar /> +
- * main-content, because (dashboard) has no layout.tsx and each page renders
- * its own sidebar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -41,6 +15,11 @@ import type { ClassList } from "@/types/classList";
 import type { Student } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import Link from "next/link";
+// NEW 2026-11-22 — Alex, Recommendations page 15. One module so this screen
+// and the student record cannot disagree about the parameter they pass.
+import {
+  readParam, pickList, studentHref, backToListHref, LIST_PARAM,
+} from "@/lib/classListReturn";
 
 const IconTrash = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -72,11 +51,28 @@ export default function ClassListsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /* The lookup is debounced, and a stale answer must not overwrite a newer
-     one: the teacher types "2021-001" and then "2021-00123", and the first
-     reply can land after the second. `seq` is the only guard that survives
-     that - clearing a timer does not cancel a request already in flight. */
   const seq = useRef(0);
+
+  /* NEW 2026-11-22 — Alex, Recommendations page 15.
+   *
+   *   "After clicking this 'Back to List of Students', can it go back to the
+   *    previous screen accessed ... Not this screen [the empty picker]"
+   *
+   * `active` lives in component state, and opening a student record unmounts
+   * this page — so coming back always started over at the picker. The back
+   * button now returns to /class-lists?list=N and this reads it.
+   *
+   * ONCE PER MOUNT, guarded by the ref. Without the guard, "Change subject /
+   * schedule" would set `active` to null and this effect would put the same
+   * list straight back. */
+  const restored = useRef(false);
+
+  useEffect(() => {
+    if (restored.current || listsLoading || lists.length === 0) return;
+    restored.current = true;
+    const want = pickList(readParam(window.location.search, LIST_PARAM), lists);
+    if (want) setActive(want);
+  }, [lists, listsLoading]);
 
   useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
@@ -140,6 +136,7 @@ export default function ClassListsPage() {
       const row = await classListService.create({ subject, schedule }, token);
       setLists(prev => [...prev, row]);
       setActive(row);
+      router.replace(backToListHref(row.class_list_id));   // NEW 2026-11-22
     } catch (e: unknown) {
       setPickerError(e instanceof Error ? e.message : "Could not create that list.");
     } finally { setCreating(false); }
@@ -300,7 +297,10 @@ export default function ClassListsPage() {
                       {/* NEW 2026-11-17 — Recommendations page 11: clicking the
                       Student No. opens that student's exam record. */}
                       <td style={{ fontWeight: 600 }}>
-                        <Link href={`/class-lists/student/${s.student_id}`}
+                        {/* CHANGED 2026-11-22 — Alex page 15: the link says
+                            which list it was opened from, so the record's
+                            back button can return to it. */}
+                        <Link href={studentHref(s.student_id, active?.class_list_id ?? null)}
                               style={{ color: "var(--navy)", textDecoration: "underline" }}>
                           {s.student_number}
                         </Link>
@@ -338,7 +338,13 @@ export default function ClassListsPage() {
             ← Back to Manage Exams
           </Button>
           {active && (
-            <Button variant="secondary" onClick={() => { setActive(null); setNotice(null); }}
+            /* CHANGED 2026-11-22 — Alex page 15. router.replace as well as
+               setActive: the parameter has to go too, or a refresh would
+               restore the list the teacher has just cleared. replace, not
+               push, so this does not become a history entry that Back walks
+               into. */
+            <Button variant="secondary"
+                    onClick={() => { setActive(null); setNotice(null); router.replace("/class-lists"); }}
                     style={{ width: "auto" }}>
               Change subject / schedule
             </Button>
@@ -352,7 +358,13 @@ export default function ClassListsPage() {
             busy={creating}
             error={pickerError}
             onCancel={() => router.push("/exams")}
-            onPickExisting={l => { setActive(l); setPickerError(null); }}
+            onPickExisting={l => {
+              // CHANGED 2026-11-22 — Alex page 15. Put the choice in the URL
+              // as soon as it is made, so a refresh keeps the roster and the
+              // address bar always says which list is on screen.
+              setActive(l); setPickerError(null);
+              router.replace(backToListHref(l.class_list_id));
+            }}
             onCreate={handleCreate}
           />
         )}

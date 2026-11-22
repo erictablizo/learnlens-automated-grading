@@ -3,18 +3,6 @@
  * app/(dashboard)/class-lists/student/[studentId]/page.tsx
  * =======================================================
  * NEW 2026-11-17 — Recommendations page 11.
- *
- *   "If I clicked the 'Student No', it will show a 'new Page' reflecting all
- *    the exams uploaded related to this Student Number.
- *      Student Name: <Last Name>, <First Name>
- *      Student ID:   <Student Number>
- *      Exam Name     Score
- *      <Back to List of Students> Button"
- *
- * UNDER /class-lists, not /students. Page 10 made /students administrator-only
- * and redirects a teacher away from it; a teacher's screen hanging off that
- * path would be a second rule to remember. It is reached from List of
- * Students and it goes back there, so that is where it lives.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -23,15 +11,9 @@ import Button from "@/components/ui/Button";
 import { studentService } from "@/services/studentService";
 import type { StudentExamRecord, StudentExamScore } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
+// NEW 2026-11-22 — Alex, Recommendations page 15.
+import { readParam, backToListHref, FROM_PARAM } from "@/lib/classListReturn";
 
-/**
- * The three states, in one place so the table cannot disagree with itself.
- *
- * A paper under review has a score that is a FLOOR. Printing it bare would
- * state a result the system does not have yet — the same reason Data
- * Analytics excludes those papers and says so. The range is written the way
- * Add Paper already writes it: "28–30 of 30".
- */
 function scoreOf(r: StudentExamScore): { text: string; muted: boolean; note: string | null } {
   if (r.checked && r.total_score !== null) {
     return { text: `${r.total_score} / ${r.total_points || r.total_items}`, muted: false, note: null };
@@ -52,6 +34,18 @@ export default function StudentRecordPage() {
   const raw = params.studentId;
   const studentId = Number(Array.isArray(raw) ? raw[0] : raw);
 
+  /* NEW 2026-11-22 — Alex, Recommendations page 15: which list this record
+   * was opened from, so "Back to List of Students" returns to the roster
+   * rather than to the empty picker.
+   *
+   * Read in an effect from window.location.search rather than with
+   * useSearchParams(), which in the App Router forces this page into a
+   * Suspense boundary at prerender and fails the build without one. null
+   * when the record was opened from a bookmark or a typed URL — the button
+   * then goes to /class-lists plain, which is the only honest answer there. */
+  const [from, setFrom] = useState<number | null>(null);
+  useEffect(() => { setFrom(readParam(window.location.search, FROM_PARAM)); }, []);
+
   const [record, setRecord] = useState<StudentExamRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +63,6 @@ export default function StudentRecordPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
-    // A non-numeric id would be sent to the server as "/students/NaN/exams".
     if (!Number.isFinite(studentId)) {
       setError("That is not a student id."); setLoading(false); return;
     }
@@ -159,7 +152,7 @@ export default function StudentRecordPage() {
         )}
 
         <div style={{ marginTop: "1.5rem" }}>
-          <Button variant="secondary" onClick={() => router.push("/class-lists")}>
+          <Button variant="secondary" onClick={() => router.push(backToListHref(from))}>
             ← Back to List of Students
           </Button>
         </div>
