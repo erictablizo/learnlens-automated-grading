@@ -67,34 +67,25 @@
  * The three name boxes are READ-ONLY ALWAYS now. They are never typed and
  * never sent - the server reads all three off the roster row - so their
  * asterisks mark fields that must be POPULATED, which matching guarantees.
+ *
+ * CHANGED 2026-11-22 (Sir Alex Passion, Recommendations page 16): "During
+ * upload of Individual Test Paper of Student, provide also a status bar
+ * (similar to behavior of the group upload reflected in the second box)".
+ * A bar in both working steps, and the two are different kinds of claim:
+ * uploading is COUNTED (one request per page) and checking is ESTIMATED
+ * (one request, no server-side feed, 40.1s a page measured in
+ * THROUGHPUT-2026-10-23). The estimate is capped below full until the
+ * answer lands. See PAGE16-STATUS-BAR-2026-11-22.md.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { paperService } from "@/services/paperService";
-// NEW 2026-11-14 — the roster, for the Student No. lookup.
 import { studentService } from "@/services/studentService";
 import { getToken } from "@/lib/auth";
-// NEW 2026-11-17 — a 404 from the lookup is an ANSWER ("nobody has that
-// number"), not a failure. Telling it apart from a dead backend needs the
-// status, so that a missing student does not raise a connection banner.
 import { ApiError } from "@/lib/api";
 import { PageUploadState, GradeResult } from "@/types/paper";
-// CHANGED 2026-11-04: checkNamePart replaces checkStudentName. student_name is
-// no longer typed by the teacher, so validating it as user input is now wrong -
-// the apostrophe is legal in a name part and illegal under the label rule, so
-// "O'Brien" would be accepted here and refused by the API.
-//
-// CHANGED 2026-11-14: checkMiddleName and middleInitial. Both are the browser
-// copies of the functions in backend/app/schemas/_text.py, which is the point
-// of that module existing - the screen and the server must agree on what a
-// middle name may contain and on how "R" is written inside a composed name.
-// CHANGED 2026-11-15: checkNamePart, checkMiddleName and tidyText are gone
-// from this screen. Nothing here types or sends a name any more - the server
-// reads all three from the roster - so validating them here would refuse a
-// value this dialog cannot edit. checkStudentNumber is the one rule left.
 import { checkStudentNumber, middleInitial } from "@/lib/textField";
-// NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
 interface Props {
@@ -105,9 +96,6 @@ interface Props {
 }
 
 const MAX_PAGES = 10;
-// CHANGED 2026-10-23: the local IMAGE_EXT / isImage pair is gone - the same
-// check now lives in lib/pageFiles.ts as isImageFile, so the multi-file
-// picker and validate() cannot disagree about what counts as an image.
 
 /** One roster entry, trimmed to what this dialog shows. */
 interface RosterStudent {
@@ -115,68 +103,162 @@ interface RosterStudent {
   student_number: string;
   last_name:      string;
   first_name:     string;
-  // NEW 2026-11-14. Nullable, like the column - a student with no middle name
-  // and a student with an empty one must not be two different things.
   middle_name:    string | null;
   section:        string | null;
 }
 
-/** The same key the database's unique index uses: lower(trim(number)).
- *  Anything else and the screen would call "2021-A123" and "2021-a123"
- *  different students while the server calls them the same one. */
 const numberKey = (s: string) => s.trim().toLowerCase();
 
 const blankPages = (n: number): PageUploadState[] =>
   Array.from({ length: n }, (_, i) => ({ pageNumber: i + 1, file: null, uploaded: false, uploading: false, error: null }));
 
+/* ===========================================================================
+ * NEW 2026-11-22 — Sir Alex Passion, Recommendations page 16:
+ *
+ *   "During upload of Individual Test Paper of Student, provide also a
+ *    status bar (similar to behavior of the group upload reflected in the
+ *    second box)"
+ *
+ * THE TWO PHASES ARE NOT THE SAME KIND OF THING, and the bar says which is
+ * which rather than pretending otherwise.
+ *
+ *   UPLOADING is REAL. One request per page, and the page knows how many
+ *             have come back. 2 of 2 means 2 of 2.
+ *
+ *   CHECKING is an ESTIMATE. It is ONE request - POST .../grade - that
+ *            returns when the whole paper is done. The server reports no
+ *            progress while it runs, so there is no honest way to say "page
+ *            1 of 2" here. What there IS is a measured rate: 40.1 seconds a
+ *            page (THROUGHPUT-2026-10-23), which is the same number the
+ *            class upload already shows as "about 40s a page".
+ *
+ * So the checking bar is driven by elapsed time against that estimate, it is
+ * CAPPED BELOW FULL until the answer actually lands, and its caption says
+ * "about" and names the rate. A bar that reached 100% and then sat there
+ * would be worse than the spinner it replaces: it would be wrong rather than
+ * merely uninformative. And if the estimate is overrun, the caption changes
+ * to say so instead of freezing.
+ * ======================================================================== */
+
+/** Measured, not guessed: 40.1 s per paper page, THROUGHPUT-2026-10-23. The
+ *  class upload states the same figure to the teacher. If that modal keeps
+ *  its own copy of this number, the two should be one constant - two
+ *  spellings of one measurement is how they drift. */
+const SECONDS_PER_PAGE = 40;
+/** How far the ESTIMATED bar may fill before the server has actually
+ *  answered. Not 100: the last of it belongs to the thing finishing. */
+const ESTIMATE_CAP = 0.95;
+
+/** What the UPLOADING bar shows. Real: one request per page, counted.
+ *  Exported so measure/2026-11-22_upload_status.mjs can run it; nothing
+ *  else imports it. */
+export function uploadingProgress(uploaded: number, total: number, sending: number | null):
+    { value: number; caption: string } {
+  const safeTotal = Math.max(0, Math.floor(total));
+  const done = Math.max(0, Math.min(safeTotal, Math.floor(uploaded)));
+  return {
+    value: safeTotal ? done / safeTotal : 0,
+    caption: `${done} of ${safeTotal} page${safeTotal === 1 ? "" : "s"} uploaded` +
+             (sending !== null ? ` — sending page ${sending}` : ""),
+  };
+}
+
+/** What the CHECKING bar shows. An estimate, and the caption says so.
+ *
+ *  `value` never reaches 1 while this is called: the last of the bar belongs
+ *  to the server answering. Past the estimate the bar stops and the words
+ *  change, rather than the bar freezing with nothing to explain it. */
+export function checkingProgress(pages: number, elapsedMs: number):
+    { value: number; caption: string; overrun: boolean } {
+  const n = Math.max(1, Math.floor(pages) || 1);
+  const estimateS = n * SECONDS_PER_PAGE;
+  const elapsedS = Math.max(0, Math.floor(elapsedMs / 1000));
+  const overrun = elapsedS > estimateS;
+  return {
+    overrun,
+    value: overrun ? ESTIMATE_CAP : Math.min(ESTIMATE_CAP, elapsedS / estimateS),
+    caption: overrun
+      ? `${elapsedS}s so far — longer than the usual ${SECONDS_PER_PAGE}s a page. ` +
+        "Still working; do not close this."
+      : `${elapsedS}s of about ${estimateS}s (about ${SECONDS_PER_PAGE}s a page, ` +
+        `${n} page${n === 1 ? "" : "s"})`,
+  };
+}
+
+function ProgressBar({ value, label, caption, estimated }: {
+  /** 0..1. */
+  value: number;
+  /** The heading above the bar, in orange, like the class upload's. */
+  label: string;
+  caption: string;
+  /** True when `value` is an estimate rather than a count of finished work. */
+  estimated?: boolean;
+}) {
+  const pct = Math.max(0, Math.min(1, value));
+  return (
+    <div style={{ textAlign: "left" }}>
+      <p style={{ color: "var(--orange)", fontWeight: 700, fontSize: "0.95rem",
+                  margin: "0 0 0.4rem" }}>
+        {label}
+      </p>
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        /* An estimate has no valuenow worth announcing - a screen reader
+           reading "73%" of a guess states it more confidently than the
+           screen does. The text is the honest channel. */
+        aria-valuenow={estimated ? undefined : Math.round(pct * 100)}
+        aria-valuetext={caption}
+        style={{ height: 8, borderRadius: 999, background: "var(--border, #e2e8f0)",
+                 overflow: "hidden" }}
+      >
+        <div style={{ height: "100%", width: `${pct * 100}%`,
+                      background: "var(--orange)", borderRadius: 999,
+                      transition: "width .3s linear" }} />
+      </div>
+      <p style={{ fontSize: "0.78rem", color: "var(--text-muted)",
+                  margin: "0.4rem 0 0" }}>
+        {caption}
+      </p>
+    </div>
+  );
+}
+
 export default function AddEditPaperModal({ examId, examPages, onClose, onSuccess }: Props) {
-  // NEW 2026-11-14 — the roster lookup.
   const [studentNumber, setStudentNumber] = useState("");
   const [roster,        setRoster]        = useState<RosterStudent[] | null>(null);
   const [rosterError,   setRosterError]   = useState<string | null>(null);
-  // CHANGED 2026-11-04: one studentName state becomes two.
   const [lastName,  setLastName]  = useState("");
   const [firstName, setFirstName] = useState("");
-  // NEW 2026-11-14 — the third, OPTIONAL part.
   const [middleName, setMiddleName] = useState("");
-  // CHANGED 2026-11-15: one error, on the only box that is typed.
   const [numberError, setNumberError] = useState<string | null>(null);
   const [pageCount,   setPageCount]   = useState(Math.max(1, examPages));
   const [pages,       setPages]       = useState<PageUploadState[]>(() => blankPages(Math.max(1, examPages)));
   const [step,        setStep]        = useState<"form" | "uploading" | "grading" | "done">("form");
-  // CHANGED 2026-11-04: the whole GradeResult is kept instead of four renamed
-  // fields. types/paper.ts was missing max_possible / needs_review /
-  // review_items / is_final entirely, so this screen could not say that a
-  // paper was still under review even though the API said so on every grade.
   const [gradeResult, setGradeResult] = useState<GradeResult | null>(null);
   const [gradeError,  setGradeError]  = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
-    // CHANGED 2026-11-17 — ONE NUMBER AT A TIME, AGAINST THE GLOBAL TABLE.
-  //
-  // This used to fetch GET /students once on open and match in the browser.
-  // That endpoint returns only students whose created_by is THIS TEACHER, and
-  // since the 2026-11-17 global-students migration every student is entered by
-  // the administrator - so the list came back EMPTY for every teacher, every
-  // number was unmatched, and because 2026-11-15 made an unmatched number a
-  // blocking error, no teacher could add a paper at all.
-  //
-  // GET /students/lookup?number= is the endpoint stage 3b built for the List
-  // of Students screen: read-only, one number, and it reads the global table.
-  // Using it here rather than widening GET /students keeps the decision
-  // recorded in GLOBAL-STUDENTS-2026-11-17.md - "it cannot list, search or
-  // enumerate" - intact.
-  //
-  // DEBOUNCED 400ms AND SEQUENCE-GUARDED, for the reason the class-lists
-  // screen records: a reply for "2026-0000004" can land after the reply for
-  // "2026-00000041", and clearing a timer does not cancel a request already in
-  // flight. Measured both ways - measure/2026-11-17_paper_lookup.mjs.
+  /* NEW 2026-11-22 — Alex page 16. Elapsed milliseconds in the current
+   * phase, for the checking estimate. A ref for the start instant and state
+   * for the tick: the start must not be re-read on every render, and the
+   * tick must cause one. */
+  const phaseStart = useRef<number>(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (step !== "uploading" && step !== "grading") return;
+    phaseStart.current = Date.now();
+    setElapsedMs(0);
+    const t = setInterval(() => setElapsedMs(Date.now() - phaseStart.current), 250);
+    return () => clearInterval(t);
+  }, [step]);
+
   const lookupSeq = useRef(0);
 
   useEffect(() => {
     const typed = studentNumber.trim();
-    // An empty box is not "nobody has that number" - it is "nothing asked
-    // yet", which is what null means to the hint below.
     if (!typed) { setRoster(null); setRosterError(null); return; }
     const token = getToken();
     if (!token) return;
@@ -186,7 +268,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     const timer = setTimeout(() => {
       studentService.lookup(typed, token)
         .then(s => {
-          if (mine !== lookupSeq.current) return;   // a newer keystroke overtook this
+          if (mine !== lookupSeq.current) return;
           setRoster([{
             student_id:     s.student_id,
             student_number: s.student_number,
@@ -199,8 +281,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
         .catch((e: unknown) => {
           if (mine !== lookupSeq.current) return;
           setRoster([]);
-          // 404 means nobody holds that number. That is an answer, and the
-          // hint below says so; it must not raise the connection banner.
           if (e instanceof ApiError && e.status === 404) return;
           setRosterError(
             "That number could not be looked up just now — check your " +
@@ -216,14 +296,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     return roster.find(s => numberKey(s.student_number) === key) ?? null;
   }, [studentNumber, roster]);
 
-  // When a number matches, the names come off the roster. They are NOT merely
-  // suggested: the save path sends the number, and the server reads the names
-  // itself, so what is shown here has to be what will be stored.
-  //
-  // CHANGED 2026-11-14: the middle name too. It is filled from the roster
-  // rather than left blank because the server WILL store it - it is copied in
-  // batch_paper_service.create_for_student - and a box that stays empty while
-  // the saved paper gains an initial would be a screen that lies.
   useEffect(() => {
     if (!matched) return;
     setLastName(matched.last_name);
@@ -232,13 +304,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setNumberError(null);
   }, [matched]);
 
-  /** CHANGED 2026-11-15. Clear BOTH the number and the names.
-   *
-   *  It used to keep the names so a teacher could correct a spelling for one
-   *  paper. That is no longer possible - the names are read-only and come
-   *  from the roster - so leaving them filled after Clear would show a name
-   *  belonging to a student this paper is no longer linked to. Spelling is
-   *  corrected on the Students page, where it belongs. */
   const unlink = () => {
     setStudentNumber("");
     setLastName(""); setFirstName(""); setMiddleName("");
@@ -247,13 +312,9 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
 
   const handlePageCountChange = (n: number) => {
     setPageCount(n);
-    setPages(prev => blankPages(n).map((p, i) => prev[i] ?? p));   // keep files already chosen
+    setPages(prev => blankPages(n).map((p, i) => prev[i] ?? p));
   };
 
-  // CHANGED 2026-10-23 (Doc Rubrica, 5th comment): "why add a page at a time
-  // when I can select them all at once?" The input is now `multiple`, and the
-  // files fill this row and the rows after it, creating any that are missing.
-  // Picking ONE file behaves exactly as it did before.
   const handleFilesSelected = (idx: number, list: FileList | null) => {
     const plan = planPageFiles({
       files: list, startIndex: idx, currentRows: pages.length, maxRows: MAX_PAGES,
@@ -263,44 +324,28 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       return;
     }
     setPages(prev => {
-      // grow to the length the plan needs, keeping page numbers 1..N
       const next = [...prev, ...blankPages(plan.totalRows).slice(prev.length)];
       for (const { index, file } of plan.assign) {
         next[index] = { ...next[index], file, error: null };
       }
       return next;
     });
-    setPageCount(plan.totalRows);          // the dropdown follows the selection
-    setGlobalError(plan.message);          // null when everything fitted
+    setPageCount(plan.totalRows);
+    setGlobalError(plan.message);
   };
 
   const validate = (): boolean => {
     let ok = true;
     setGlobalError(null);
     setNumberError(null);
-    // CHANGED 2026-11-15. ONE rule, on the one box that is typed.
-    //
-    // The three name boxes are not checked because they are not typed and not
-    // sent: the server reads all three off the roster row the number names.
-    // Validating them here would let a name the teacher legitimately saved on
-    // the Students page block a paper on a screen that cannot edit it.
-    //
-    // THE ORDER MATTERS. The character rule runs first, so "2021 00123" is
-    // told it has a space rather than being told it is not on the list - the
-    // second sentence would send the teacher to the roster to look for a
-    // student who is already there.
     const numMsg = checkStudentNumber(studentNumber);
     if (numMsg) {
       setNumberError(numMsg);
       ok = false;
     } else if (roster === null) {
-      // The lookup has not landed. Saying "nobody has that number" here would
-      // be a claim we cannot support yet.
       setNumberError("Still looking that number up — try again in a moment.");
       ok = false;
     } else if (!matched) {
-      // CHANGED 2026-11-17: the same sentence /class-lists uses. The old one
-      // sent the teacher to a Students page that page 10 removed for them.
       setNumberError(
         `No student with number ${studentNumber.trim()} has been added yet. ` +
         "Ask your administrator to add them first — the paper is linked to " +
@@ -331,33 +376,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     setStep("uploading");
     let paperId: number | null = null;
     try {
-      // CHANGED 2026-11-14 — two create paths, chosen by whether a roster
-      // student is matched.
-      //
-      // MATCHED: send the NUMBER. The server looks the student up and writes
-      // student_id as well as the names - and, since
-      // apply_2026-11-14_middle_name.py, the middle name - which is what makes
-      // the paper linked rather than merely similarly spelled. It answers 404
-      // if the roster changed since this dialog opened, and 409 if that student
-      // already has a paper on this exam - a rule the database enforces with
-      // ux_test_papers_exam_student, so it cannot be worked around from here.
-      //
-      // UNMATCHED: the 2026-11-04 call, with the middle name added. One object,
-      // not positional strings. All three parts are strings, so TypeScript
-      // cannot catch them being swapped - what the object DOES catch is an
-      // omitted field (TS2741), and it names each value at the call site so a
-      // reader can see which is which.
-      //
-      // tidyText, not trim - the server collapses runs of whitespace, so send
-      // what it would have stored anyway. `|| null` rather than "" because the
-      // column must not hold two spellings of "no middle name"; the server
-      // does the same coercion, and agreeing with it here means the value
-      // round-trips unchanged.
-      // CHANGED 2026-11-15: ONE create path. validate() has already proved a
-      // roster student is matched, so `matched` cannot be null here - but it
-      // is checked rather than asserted, because a non-null assertion would
-      // be a promise about a race (the roster reloading between validate and
-      // save) that nothing in this file actually prevents.
       if (!matched) {
         setGlobalError("That student number could not be confirmed. Close this and try again.");
         setStep("form");
@@ -379,7 +397,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
         }
       }
     } catch (e: unknown) {
-      // Don't leave a paper with missing pages behind
       if (paperId !== null) { try { await paperService.delete(examId, paperId, token); } catch { /* ignore */ } }
       setPages(prev => prev.map(p => ({ ...p, uploaded: false, uploading: false })));
       setGlobalError(e instanceof Error ? e.message : "Something went wrong while adding the paper. Please try again.");
@@ -407,22 +424,12 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
       </p>
     );
 
-  // NEW 2026-11-14, ALWAYS ON as of 2026-11-15. Read-only rather than
-  // disabled: a disabled input is skipped by the keyboard and greyed to the
-  // point of looking broken, and the teacher still needs to be able to select
-  // and read the name that will be stored.
   const lockedInput = { background: "var(--bg, #f4f4f5)", color: "var(--text-muted)" };
 
   return (
     <Modal title="Add Paper" onClose={busy ? () => {} : onClose}>
       {step === "form" && (
         <>
-          {/* NEW 2026-11-14 (Alex & Bancud, item 4). FIRST, above the names,
-              because it is the field that fills the other two. Optional - the
-              label says so, and leaving it blank is the 2026-11-04 behaviour
-              exactly. */}
-          {/* CHANGED 2026-11-15: REQUIRED. It was "(optional)" from 2026-11-14
-              until today, when it became the field the whole dialog turns on. */}
           <label className="form-label" htmlFor="student-number">
             Student No. <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
@@ -442,10 +449,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               ? rosterError
               : matched
               ? <>
-                  {/* CHANGED 2026-11-14: the initial is shown here through
-                      middleInitial(), the same function the server composes
-                      student_name with - so this line reads exactly as the
-                      stored name will. */}
                   Linked to <strong>
                     {matched.last_name}, {matched.first_name}
                     {middleInitial(matched.middle_name) ? ` ${middleInitial(matched.middle_name)}` : ""}
@@ -464,15 +467,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               : "Type the number written on the paper. The names fill in from the school roster."}
           </p>
 
-          {/* CHANGED 2026-11-04. The old placeholder was "e.g. Tablizo, Eric",
-              which TAUGHT the comma format the split is meant to end - and a
-              comma is now refused with its own message. These two teach the
-              shape the two boxes actually want.
-
-              CHANGED 2026-11-15: read-only ALWAYS. These three come from the
-              roster row the number names and are never sent from here, so
-              there is nothing to type. Correct a spelling on the Students
-              page; it is the one place that owns these values. */}
           <label className="form-label" htmlFor="last-name">
             Last Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
@@ -487,20 +481,6 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
             placeholder="fills in from the school roster" aria-required="true"
             style={lockedInput} />
 
-          {/* NEW 2026-11-14 (Alex & Bancud, Recommendations page 1, "Student
-              Middle Name"). AFTER First Name, matching both the panel's own
-              order on that page and the Students page.
-
-              CHANGED 2026-11-15: it HAS a red asterisk now. StudentCreate
-              requires a middle name, so every roster row written from today
-              carries one and this box is always filled. A row created before
-              2026-11-14 may still hold NULL - it shows blank here, and that
-              student has to be edited on the Students page before a paper can
-              be added for them.
-
-              Labelled "Middle Initial" and stored as a NAME, so "Reyes" is
-              accepted too. Matching the panel's "Middle Name" wording later is
-              a label change, not a migration. */}
           <label className="form-label" htmlFor="middle-name">
             Middle Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
@@ -576,26 +556,45 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
               <span style={{ fontSize: "0.875rem", color: "var(--navy)" }}>Page {p.pageNumber}</span>
             </div>
           ))}
-          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Uploading pages…</p>
+          {/* NEW 2026-11-22 — Alex page 16. REAL progress: one request per
+              page, counted as each comes back. */}
+          <div style={{ marginTop: "1rem" }}>
+            <ProgressBar
+              label="Uploading"
+              {...uploadingProgress(
+                pages.filter(p => p.uploaded).length,
+                pages.length,
+                pages.find(p => p.uploading)?.pageNumber ?? null,
+              )}
+            />
+          </div>
         </div>
       )}
 
-      {step === "grading" && (
-        <div style={{ padding: "2rem 0", textAlign: "center" }}>
-          <span className="spinner spinner-dark" style={{ width: 32, height: 32, borderWidth: 3 }} />
-          <p style={{ marginTop: "1rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>Running OCR and checking…</p>
-          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>This may take a few seconds</p>
-        </div>
-      )}
+      {step === "grading" && (() => {
+        /* NEW 2026-11-22 — Alex page 16. ESTIMATED progress, and labelled as
+           such. One request, no server-side feed; the only real input is the
+           measured rate and how long we have been waiting. */
+        const p = checkingProgress(pages.length, elapsedMs);
+        return (
+          <div style={{ padding: "1.5rem 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem",
+                          justifyContent: "center", marginBottom: "1.25rem" }}>
+              <span className="spinner spinner-dark" style={{ width: 20, height: 20, borderWidth: 2 }} />
+              <span style={{ fontSize: "0.9rem", color: "var(--navy)" }}>
+                Running OCR and checking…
+              </span>
+            </div>
+            <ProgressBar estimated label="Checking"
+                         value={p.value} caption={p.caption} />
+          </div>
+        );
+      })()}
 
       {step === "done" && (
         <div style={{ padding: "1rem 0", textAlign: "center" }}>
           {gradeResult ? (
             <>
-              {/* CHANGED 2026-11-04. `correct` is a FLOOR when items are still
-                  under review; `max_possible` is the ceiling. Printing only
-                  `correct` is the bug the backend comment named: "the browser
-                  then sees '11 of 19' for a paper whose true score is 15". */}
               <p style={{ fontWeight: 700, fontSize: "1.1rem", color: "var(--navy)", marginBottom: "0.3rem" }}>
                 {gradeResult.is_final
                   ? `${gradeResult.correct} / ${gradeResult.total_items} correct`
