@@ -34,6 +34,8 @@ import { getToken, isAuthenticated } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { downloadExamXlsx, downloadErrorMessage } from "@/services/exportService";
 import type { KeyImageApplyResult } from "@/types/keyImage";
+// NEW 2026-11-23 - Ms. Melanie, Recommendations page 18, requirement 7a.
+import { analyticsHref } from "@/lib/analyticsLink";
 
 // ── icons ─────────────────────────────────────────────────────────────────────
 const IconBack = () => (
@@ -555,7 +557,19 @@ export default function ViewExamPage() {
             <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.subject ?? "—"}</span>
           </span>
           <span>
-            <span style={{ color: "var(--text-muted)" }}>Schedule: </span>
+            {/* CHANGED 2026-11-23 - "Section", not "Schedule".
+
+                BEYOND Ms. Melanie's page 18, which names List of Students and
+                Data Analytics and not this screen. It is here because Create
+                Exam's box was relabelled Section this morning (requirement 1)
+                and Data Analytics' row was relabelled this afternoon
+                (requirement 8) - leaving this one saying Schedule means the
+                teacher types a Section and reads it back as a Schedule two
+                clicks later. Drop this edit if you would rather change only
+                the screens she listed.
+
+                THE LABEL CHANGES; THE FIELD DOES NOT. Still `exam.schedule`. */}
+            <span style={{ color: "var(--text-muted)" }}>Section: </span>
             <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.schedule ?? "—"}</span>
           </span>
         </div>
@@ -569,9 +583,30 @@ export default function ViewExamPage() {
         {/* ── Exam section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Exam</p>
-          <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/edit`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
-            Edit Exam
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            {/* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 7a: a Data
+                Analytics option on this screen that opens the analytics for
+                THIS exam, with no picker to fill in again.
+
+                HERE, beside Edit Exam, rather than in the Test Papers row.
+                That row is already three buttons wide and its last slot is
+                the orange "Add paper" a teacher reaches for most; a fourth
+                button there would push the emphasis around for a link that
+                is about the exam as a whole, not about one paper.
+
+                SECONDARY, so Edit Exam keeps the weight it has today.
+
+                The href is built by lib/analyticsLink.ts rather than written
+                here, so the link and the code that reads it cannot disagree
+                about the parameter's name. */}
+            <Button variant="secondary" onClick={() => router.push(analyticsHref(examId))}
+                    style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+              Data Analytics
+            </Button>
+            <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/edit`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+              Edit Exam
+            </Button>
+          </div>
         </div>
 
         {/* Side-by-side viewer */}

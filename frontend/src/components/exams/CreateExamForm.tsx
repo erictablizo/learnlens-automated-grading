@@ -12,36 +12,29 @@
  * backend until everything is valid — so an exam with no answer-key image can
  * no longer be created.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+// NEW 2026-11-23 — Ms. Melanie, page 18 requirement 3. Shared with Set Up
+// Profile and Edit Profile, which have the same column of boxes.
+import { advanceOnEnter } from "@/lib/formNav";
 import FileUpload from "@/components/ui/FileUpload";
 import Button from "@/components/ui/Button";
 import { useExams } from "@/hooks/useExams";
 import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
-// CHANGED 2026-11-04: checkSubject / checkSchedule join the other two. The
-// browser and schemas/_text.py say the same words in the same order.
 import { checkExamName, checkDescription, checkSubject, checkSchedule,
          tidyText, tidyMultiline } from "@/lib/textField";
-// NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
 interface PageRow { pageNumber: number; file: File | null; }
 
-// NEW 2026-10-23: Create Exam had NO page cap while Edit Exam's dropdown stops
-// at 10 - an exam created with 12 pages could not be edited afterwards,
-// because the select had no option matching its own value. Both are 10 now.
 const MAX_PAGES = 10;
-// CHANGED 2026-10-23: the local IMAGE_EXT / isImage pair is gone - the same
-// check lives in lib/pageFiles.ts as isImageFile.
 
 export default function CreateExamForm() {
   const router = useRouter();
   const { createExam, error } = useExams();
   const [examName, setExamName] = useState("");
   const [description, setDescription] = useState("");
-  // NEW 2026-11-04 (Doc Rubrica, consultation): "2 additional Fields in Exam
-  // Info Table".
   const [subject, setSubject] = useState("");
   const [schedule, setSchedule] = useState("");
   const [pages, setPages] = useState<PageRow[]>([{ pageNumber: 1, file: null }]);
@@ -55,16 +48,16 @@ export default function CreateExamForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  /* NEW 2026-11-23 — req 3. The walk is scoped to this card AND to
+   * `.form-input`, because the card also holds the answer-key file pickers
+   * and Enter from the last text box must not land the cursor on a file
+   * input. See lib/formNav.ts. */
+  const cardRef = useRef<HTMLDivElement>(null);
+
   const addPage = () => setPages(prev =>
     prev.length >= MAX_PAGES ? prev : [...prev, { pageNumber: prev.length + 1, file: null }]);
   const removeLastPage = () => setPages(prev => (prev.length > 1 ? prev.slice(0, -1) : prev));
 
-  /**
-   * CHANGED 2026-10-23 (Doc Rubrica, 5th comment): the zone accepts SEVERAL
-   * images, from the file dialog or dropped together, and they fill this page
-   * and the pages after it, adding any that do not exist yet. Picking ONE file
-   * behaves exactly as it did before.
-   */
   const setPageFiles = (idx: number, files: File[]) => {
     const plan = planPageFiles({
       files, startIndex: idx, currentRows: pages.length, maxRows: MAX_PAGES,
@@ -101,22 +94,12 @@ export default function CreateExamForm() {
     setSubjectError(null); setScheduleError(null);
     setSubmitError(null);
 
-    // CHANGED 2026-10-22 (Doc Rubrica): the required / length checks moved
-    // into lib/textField.ts together with the character rules, so this form,
-    // Edit Exam and schemas/exam.py all say the same words in the same order.
-    // The wording of the existing messages is unchanged - "Exam name is
-    // required." and "Exam name must be at least 7 characters long." - except
-    // that the first one used to read "Exam Name" while the second read
-    // "Exam name", one line apart.
     const nameMsg = checkExamName(name);
     if (nameMsg) { setNameError(nameMsg); ok = false; }
 
     const descMsg = checkDescription(desc);
     if (descMsg) { setDescError(descMsg); ok = false; }
 
-    // NEW 2026-11-04. Both are REQUIRED here because ExamCreate requires them;
-    // catching it in the browser turns a 422 banner into a message under the
-    // field that is wrong.
     const subjMsg = checkSubject(subj);
     if (subjMsg) { setSubjectError(subjMsg); ok = false; }
 
@@ -143,12 +126,8 @@ export default function CreateExamForm() {
     setSaving(true);
     let createdId: number | null = null;
     try {
-      // FIX 2026-10-22: tidy, not trim - the server collapses runs of
-      // whitespace, so send what it would have stored anyway.
       const exam = await createExam({
         exam_name: tidyText(examName), description: tidyMultiline(description),
-        // NEW 2026-11-04. Not optional on ExamCreatePayload, so leaving these
-        // out is a compile error rather than a 422 at run time.
         subject: tidyText(subject), schedule: tidyText(schedule),
       });
       if (!exam) return;             // useExams already set `error`
@@ -158,8 +137,6 @@ export default function CreateExamForm() {
       }
       router.push(`/exams/${exam.exam_id}`);
     } catch (e: unknown) {
-      // An image failed to upload → remove the half-created exam so it is not
-      // saved without its answer-key image.
       if (createdId !== null) {
         try { await examService.delete(createdId, token); } catch { /* ignore */ }
       }
@@ -175,11 +152,36 @@ export default function CreateExamForm() {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <h1 className="page-title" style={{ marginBottom: "1.5rem" }}>Create Exam</h1>
 
-      <div className="create-exam-form">
+      <div
+        className="create-exam-form"
+        ref={cardRef}
+        /* NEW 2026-11-23 — req 3: "press enter key, it will go to the 1st
+           Column of the second box."
+           On the LAST text box, advanceOnEnter returns false and nothing
+           happens — deliberately. Saving from there would fail on the missing
+           answer-key images every single time, because the images are chosen
+           after the text, so Enter would come to mean "show me an error". */
+        onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
+      >
+        {/* NEW 2026-11-23 — Ms. Melanie, page 18 requirement 1: "Please put
+            Reminder here as 'Please fill-up all information:'". She marked the
+            empty strip at the top of this card.
+
+            A REMINDER, NOT AN ALERT. No role="alert" and no error colours:
+            nothing has gone wrong yet, and the error banner at the foot of
+            this form must stay the only red thing on the screen. */}
+        <p style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--navy)",
+                    margin: "0 0 1.25rem" }}>
+          Please fill-up all information:
+        </p>
+
         <label className="form-label" htmlFor="exam-name">Exam Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
         <input
           id="exam-name"
           className="form-input"
+          /* NEW 2026-11-23 — req 3: "automatic the cursor will position on
+             the 1st Column of the First Input Box." */
+          autoFocus
           value={examName}
           onChange={e => { setExamName(e.target.value); setNameError(null); }}
           placeholder="e.g. Long Exam 1"
@@ -221,13 +223,31 @@ export default function CreateExamForm() {
         />
         {fieldErr(subjectError)}
 
-        <label className="form-label" htmlFor="exam-schedule">Schedule <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
+        {/* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 1: "Instead
+            of Schedule, replace it with 'Section'".
+
+            THE LABEL AND THE EXAMPLE CHANGE HERE; THE WIRE DOES NOT, YET.
+            `schedule` is still the state name, still the payload key and
+            still the database column. Renaming the payload key on its own
+            would send `section` to an API that wants `schedule` and 422 every
+            Create Exam until the backend caught up. The column rename is one
+            migration plus about a dozen files and it lands as a SINGLE push —
+            see PAGE18-MELANIE-2026-11-23.md. Until then this box says Section
+            and stores it in the schedule column, which is the honest state of
+            a rename in progress.
+
+            NOTE on validation: this still calls checkSchedule(). If that
+            function enforces a day/time shape rather than just length and
+            characters, a section name like "BSCS 3A" will be refused — and
+            that is a thing to check in lib/textField.ts before showing this
+            to Ms. Melanie. */}
+        <label className="form-label" htmlFor="exam-section">Section <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
         <input
-          id="exam-schedule"
+          id="exam-section"
           className="form-input"
           value={schedule}
           onChange={e => { setSchedule(e.target.value); setScheduleError(null); }}
-          placeholder="e.g. MWF 9:00-10:00 AM"
+          placeholder="e.g. BSCS 3A"
           aria-required="true"
           aria-invalid={!!scheduleError}
           disabled={saving}
@@ -259,24 +279,21 @@ export default function CreateExamForm() {
             page order by file name.
           </p>
 
-          {/* NEW 2026-11-19 (Sir Alex, page 1 point 8): "Put instructions if
-              lower case or upper case. Be specific."
-              Here rather than in a help page, because this is the moment a
-              teacher is about to photograph handwriting — the only moment the
-              advice can still change what is on the paper. */}
-          <p style={{ fontSize: "0.78rem", color: "var(--navy)",
-                      background: "var(--orange-light)",
-                      border: "1px solid var(--orange)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "0.5rem 0.7rem", margin: "0.6rem 0 0", lineHeight: 1.6 }}>
-            Write every answer in <strong>CAPITAL LETTERS</strong>, on the
-            answer key and on the students&rsquo; papers. The scanner reads
-            capitals far more reliably: a lower-case <code>l</code> and the
-            digit <code>1</code> are the same shape to it, and so are
-            <code> o</code> and <code>0</code>. For True or False, write the
-            whole word — <strong>TRUE</strong> or <strong>FALSE</strong>, not
-            T or F.
-          </p>
+          {/* REMOVED 2026-11-23 — Ms. Melanie, page 18 requirement 1, the
+              BLUE circle: "Remove that information".
+
+              This was Sir Alex's page 1 point 8 ("Put instructions if lower
+              case or upper case"), added on 19 November. Two panellists, two
+              answers, and the newer one wins on this screen. Grace removed
+              the same box from the Answer Key panel on 22 November, so the
+              two screens now agree with each other.
+
+              WHAT IS LOST, recorded rather than waved away: nothing enforces
+              upper case on the way in. AnswerKeyPanel's expandTF() turns a
+              typed T into TRUE on a true/false item, but nothing upper-cases
+              a letter, and nothing can reach the handwriting on the paper at
+              all. If a class comes back badly read because the answers were
+              written in lower case, this box is what used to say so. */}
 
           <div className="table-wrapper" style={{ marginTop: "0.5rem" }}>
             <table>

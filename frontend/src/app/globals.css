@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Sora:wght@600;700&display=swap');
- 
+
 :root {
   --bg: #cce8ed;
   --surface: #ffffff;
@@ -23,11 +23,11 @@
   --font-heading: 'Sora', sans-serif;
   --sidebar-w: 200px;
 }
- 
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
- 
+
 html { font-size: 16px; }
- 
+
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -35,7 +35,7 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
- 
+
 /* Auth layout: centered card on light-blue bg */
 .auth-bg {
   min-height: 100vh;
@@ -45,7 +45,7 @@ body {
   justify-content: center;
   padding: 2rem;
 }
- 
+
 .auth-card {
   background: var(--surface);
   border-radius: var(--radius);
@@ -54,7 +54,7 @@ body {
   max-width: 400px;
   box-shadow: var(--shadow);
 }
- 
+
 .auth-title {
   font-family: var(--font-heading);
   font-size: 1.55rem;
@@ -64,7 +64,7 @@ body {
   margin-bottom: 0.5rem;
   line-height: 1.3;
 }
- 
+
 .auth-subtitle {
   font-size: 0.875rem;
   color: var(--text-muted);
@@ -72,13 +72,13 @@ body {
   margin-bottom: 1.75rem;
   line-height: 1.5;
 }
- 
+
 /* Form inputs */
 .field {
   position: relative;
   margin-bottom: 1rem;
 }
- 
+
 .field input {
   width: 100%;
   border: none;
@@ -91,11 +91,11 @@ body {
   outline: none;
   transition: border-color 0.2s;
 }
- 
+
 .field input::placeholder { color: var(--text-muted); }
 .field input:focus { border-bottom-color: var(--orange); }
 .field input.error-input { border-bottom-color: var(--error); }
- 
+
 /* Buttons */
 .btn-primary {
   display: flex;
@@ -118,7 +118,7 @@ body {
 .btn-primary:hover:not(:disabled) { background: var(--orange-hover); }
 .btn-primary:active:not(:disabled) { transform: scale(0.98); }
 .btn-primary:disabled { opacity: 0.65; cursor: not-allowed; }
- 
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -136,7 +136,7 @@ body {
   transition: border-color 0.18s, background 0.18s;
 }
 .btn-secondary:hover { border-color: var(--navy); background: #f4f8fa; }
- 
+
 .btn-icon {
   background: none;
   border: none;
@@ -150,7 +150,7 @@ body {
 }
 .btn-icon:hover { color: var(--navy); background: rgba(26,46,68,0.07); }
 .btn-icon.danger:hover { color: var(--error); background: var(--error-bg); }
- 
+
 /* Links */
 .link-orange {
   color: var(--orange);
@@ -159,7 +159,7 @@ body {
   font-size: 0.9rem;
 }
 .link-orange:hover { text-decoration: underline; }
- 
+
 /* Alert/feedback */
 .alert {
   border-radius: var(--radius-sm);
@@ -169,14 +169,14 @@ body {
 }
 .alert-error { background: var(--error-bg); color: var(--error); border: 1px solid #feb2b2; }
 .alert-success { background: var(--success-bg); color: var(--success); border: 1px solid #b2dfb2; }
- 
+
 /* Dashboard layout */
 .dashboard-layout {
   display: flex;
   min-height: 100vh;
   background: var(--bg);
 }
- 
+
 .sidebar {
   width: var(--sidebar-w);
   background: var(--surface);
@@ -187,7 +187,7 @@ body {
   flex-shrink: 0;
   border-right: 1px solid var(--border);
 }
- 
+
 .sidebar-item {
   display: flex;
   align-items: center;
@@ -208,13 +208,13 @@ body {
 .sidebar-item:hover, .sidebar-item.active { background: var(--orange-light); color: var(--orange); }
 .sidebar-item.signout { color: var(--text-muted); margin-top: 0; }
 .sidebar-item.signout:hover { color: var(--error); background: var(--error-bg); }
- 
+
 .main-content {
   flex: 1;
   padding: 2rem 2.5rem;
   overflow-y: auto;
 }
- 
+
 .page-title {
   font-family: var(--font-heading);
   font-size: 1.6rem;
@@ -223,14 +223,14 @@ body {
   text-align: center;
   margin-bottom: 2rem;
 }
- 
+
 /* Exam grid */
 .exam-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 1.25rem;
 }
- 
+
 .exam-card {
   background: var(--surface);
   border-radius: var(--radius-sm);
@@ -241,7 +241,7 @@ body {
   position: relative;
 }
 .exam-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
- 
+
 .exam-card-thumb {
   width: 100%;
   height: 120px;
@@ -252,13 +252,13 @@ body {
   position: relative;
   overflow: hidden;
 }
- 
+
 .exam-card-thumb img {
   width: 70%;
   height: 100%;
   object-fit: cover;
 }
- 
+
 .exam-card-thumb-placeholder {
   display: flex;
   align-items: center;
@@ -266,11 +266,11 @@ body {
   width: 100%;
   height: 100%;
 }
- 
+
 .exam-card-body {
   padding: 0.65rem 0.75rem 0.75rem;
 }
- 
+
 .exam-card-name {
   font-weight: 600;
   font-size: 0.9rem;
@@ -280,7 +280,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
- 
+
 .exam-card-desc {
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -289,13 +289,13 @@ body {
   text-overflow: ellipsis;
   margin-bottom: 0.6rem;
 }
- 
+
 .exam-card-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
- 
+
 /* Add exam circle button */
 .add-exam-btn {
   width: 64px;
@@ -311,7 +311,7 @@ body {
   color: #607d8b;
 }
 .add-exam-btn:hover { border-color: var(--navy); color: var(--navy); background: rgba(26,46,68,0.06); }
- 
+
 /* Create exam form */
 .create-exam-form {
   background: var(--surface);
@@ -322,7 +322,7 @@ body {
   box-shadow: var(--shadow);
   margin: 0 auto;
 }
- 
+
 .form-label {
   font-size: 0.9rem;
   font-weight: 600;
@@ -330,7 +330,7 @@ body {
   display: block;
   margin-bottom: 0.35rem;
 }
- 
+
 .form-input {
   width: 100%;
   border: none;
@@ -345,7 +345,7 @@ body {
   transition: border-color 0.2s;
 }
 .form-input:focus { border-bottom-color: var(--orange); }
- 
+
 /* Table */
 .table-wrapper {
   background: var(--surface);
@@ -353,7 +353,7 @@ body {
   overflow: hidden;
   border: 1px solid var(--border);
 }
- 
+
 table { width: 100%; border-collapse: collapse; }
 th {
   background: #f4f8fb;
@@ -371,7 +371,7 @@ td {
 }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: #f8fbfd; }
- 
+
 /* Modal */
 .modal-backdrop {
   position: fixed; inset: 0;
@@ -406,7 +406,7 @@ tr:hover td { background: #f8fbfd; }
   transition: color 0.15s, background 0.15s;
 }
 .modal-close:hover { color: var(--navy); background: var(--border); }
- 
+
 /* Spinner */
 .spinner {
   width: 20px; height: 20px;
@@ -420,9 +420,9 @@ tr:hover td { background: #f8fbfd; }
   border-color: rgba(26,46,68,0.2);
   border-top-color: var(--navy);
 }
- 
+
 @keyframes spin { to { transform: rotate(360deg); } }
- 
+
 /* Page viewer */
 .page-viewer {
   display: grid;
@@ -443,7 +443,7 @@ tr:hover td { background: #f8fbfd; }
   overflow: hidden;
 }
 .page-viewer-slot img { width: 100%; height: 100%; object-fit: contain; }
- 
+
 .page-nav {
   display: flex;
   align-items: center;
@@ -453,14 +453,14 @@ tr:hover td { background: #f8fbfd; }
   color: var(--text-muted);
   margin-bottom: 1.5rem;
 }
- 
+
 .section-title {
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--orange);
   margin-bottom: 0.75rem;
 }
- 
+
 /* File upload zone */
 .upload-zone {
   border: 2px dashed var(--border);
@@ -473,7 +473,7 @@ tr:hover td { background: #f8fbfd; }
   font-size: 0.9rem;
 }
 .upload-zone:hover, .upload-zone.drag { border-color: var(--orange); background: var(--orange-light); }
- 
+
 /* Dropdown */
 .dropdown {
   border: none;
@@ -487,7 +487,7 @@ tr:hover td { background: #f8fbfd; }
   cursor: pointer;
   margin-bottom: 1rem;
 }
- 
+
 /* Forgot password link row */
 .forgot-row {
   display: flex;
@@ -495,7 +495,7 @@ tr:hover td { background: #f8fbfd; }
   margin-bottom: 0.75rem;
   margin-top: -0.4rem;
 }
- 
+
 /* Footer text */
 .auth-footer {
   text-align: center;
@@ -503,11 +503,107 @@ tr:hover td { background: #f8fbfd; }
   font-size: 0.88rem;
   color: var(--text-muted);
 }
- 
+
 /* Responsive */
 @media (max-width: 700px) {
   .dashboard-layout { flex-direction: column; }
   .sidebar { width: 100%; flex-direction: row; padding: 0.75rem 1rem; overflow-x: auto; }
   .main-content { padding: 1.25rem; }
   .page-viewer { grid-template-columns: 1fr; }
+}
+
+/* ===========================================================================
+ * NEW 2026-11-23 — Ms. Melanie, Recommendations page 18, requirement 2:
+ *
+ *   "Make the font italic of the sample info in the box (encircled in RED
+ *    Color) and more lighter color; Application is Set Up Profile, Create
+ *    Exam, Edit Exam, Add Paper, Edit Paper, List of Students"
+ *
+ * The "sample info" she circled is the PLACEHOLDER — "e.g. Long Exam 1",
+ * "e.g. Midterm for BSCS 3A", "e.g. Mathematics in the Modern World".
+ *
+ * AT THE END OF THE FILE, DELIBERATELY. The .profile-setup rule below must
+ * come after `.field input::placeholder` (line 95); it also wins on
+ * specificity, so it would work higher up, but "more specific AND later" is
+ * what the comment claims and both halves are now true. VERIFIED in Chromium
+ * against this file — measure/2026-11-23_globals_merge.mjs.
+ *
+ * HOW LIGHT, AND HOW LITTLE ROOM THERE IS. CORRECTED 2026-11-23 after
+ * reading the real globals.css. I had assumed the placeholder was #64748b
+ * (4.76:1). It is not: `.field input::placeholder` is var(--text-muted),
+ * which is #7a8fa6 and measures 3.33:1. `.form-input` has no placeholder
+ * rule at all, so those boxes use the browser's own grey.
+ *
+ *     #7a8fa6   3.33:1   TODAY (--text-muted)
+ *     #8a94a3   3.07:1   this rule - the lightest that still clears 3:1
+ *     #8d96a5   2.98:1   under the floor
+ *     #94a3b8   2.56:1   visibly lighter, and hard to read
+ *
+ * SO THE HONEST POSITION: the placeholders were ALREADY near the limit. From
+ * 3.33 to 3.07 is a real lightening and a barely perceptible one. The change
+ * Ms. Melanie will actually SEE on this screen is the italic. Going further
+ * means going under 3:1 - the point where a hint stops being legible to a
+ * normally-sighted reader at this size - and that is her call, not mine. The
+ * numbers above are what she needs to make it.
+ *
+ * All of them are MEASURED, not picked by eye, and the bench reads the
+ * baseline out of globals.css rather than trusting a number in this comment -
+ * which is exactly the mistake that produced the paragraph above.
+ *
+ * `opacity: 1` is not decoration. Firefox dims placeholders by default and
+ * would take this below the floor on its own.
+ *
+ * WHY THIS DOES NOT FIGHT ALEX'S PAGE 14. He asked for light brown
+ * placeholders in the Generate Answer Key dialog, measured at 4.65:1. That
+ * rule is `.qt-modal input::placeholder`, and the dialog's inputs are styled
+ * inline with no .form-input class, so the two selectors never meet. They are
+ * two different screens with two different panellists' preferences, and both
+ * hold. Worth knowing before someone asks why the placeholders differ.
+ * ======================================================================== */
+
+/* .form-input has NO placeholder rule in globals.css today, so this is the
+   first one - nothing to override. */
+.form-input::placeholder,
+.form-input::-webkit-input-placeholder {
+  font-style: italic;
+  color: #8a94a3;
+  opacity: 1;
+}
+
+/* The same boxes, read-only and filled from the roster (Add Paper's three
+   name fields): their placeholder is "fills in from the school roster", which
+   is the same kind of sample text and gets the same treatment. */
+.form-input[readonly]::placeholder {
+  font-style: italic;
+  color: #8a94a3;
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * ADDED 2026-11-23, after reading the real Set Up Profile page.
+ *
+ * Its boxes are `<div class="field"><input placeholder="First name">`, NOT
+ * .form-input — so the rule above does not reach them, and Set Up Profile is
+ * the first screen on Ms. Melanie's list. The gap only showed up when Grace
+ * sent the file; a rule that covered "all six screens" covered five.
+ *
+ * SCOPED TO .profile-setup, not to .field. Login and Register share
+ * .auth-card and .field with this page and are NOT on her list. Widening this
+ * selector later is a one-word change; explaining italic placeholders on the
+ * login screen to a panellist who did not ask for them is not.
+ *
+ * The page also needs its own change for the three DROPDOWNS: their prompt is
+ * a disabled <option> whose colour comes from an inline style, which no
+ * ::placeholder rule can reach. That half is in setup/page.tsx's selectStyle.
+ * ------------------------------------------------------------------------ */
+
+/* globals.css ALREADY has `.field input::placeholder { color: var(--text-muted) }`.
+   This block is more specific (0-2-2 against 0-1-2) AND later in the file, so
+   it wins twice over. The original rule is deliberately left in place: Login
+   and Register share .field and are not on Ms. Melanie's list. */
+.profile-setup .field input::placeholder,
+.profile-setup .field textarea::placeholder {
+  font-style: italic;
+  color: #8a94a3;
+  opacity: 1;
 }

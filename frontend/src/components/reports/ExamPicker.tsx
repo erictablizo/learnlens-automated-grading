@@ -12,6 +12,22 @@
  * touching it to save a duplication is not worth the risk this week. When
  * convenient, delete ExamPickerDialog from reports/page.tsx and import this
  * instead; the props are identical.
+ *
+ * CHANGED 2026-11-23 — Ms. Melanie, Recommendations page 18, requirement 7b:
+ * the middle box is labelled "Section", not "Schedule".
+ *
+ * ONLY THE LABELS CHANGE. The state is still `schedule`, the field is still
+ * `e.schedule`, and the dropdown is still built from `exams.map(e =>
+ * e.schedule)`. Renaming any of those alone would filter on a field that does
+ * not exist and empty the box on every exam. The column rename is one
+ * migration plus about a dozen files and it lands as a SINGLE push — see
+ * PAGE18-MELANIE-2026-11-23.md.
+ *
+ * THE SUMMARY REPORT STILL SAYS "SCHEDULE". Its picker is the separate copy
+ * inside app/reports/page.tsx, which this component was lifted from and which
+ * was deliberately left alone. Melanie's page 18 is about Data Analytics, so
+ * the two screens now differ by one word — worth one look before the defence,
+ * and the fix is the same three lines in that file.
  */
 import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/Button";
@@ -95,13 +111,16 @@ export default function ExamPicker({
         {subjects.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
-      <label className="form-label" htmlFor="an-schedule">Schedule</label>
+      {/* CHANGED 2026-11-23 — Melanie req 7b. The id stays `an-schedule`:
+          it is the <label for> target and nothing reads it by name, so
+          renaming it is churn that can only break the pairing. */}
+      <label className="form-label" htmlFor="an-schedule">Section</label>
       <select
         id="an-schedule" className="dropdown" value={schedule}
         onChange={e => { setSchedule(e.target.value); setError(null); }}
         style={{ width: "100%", marginBottom: "1rem" }}
       >
-        <option value={ANY}>Select Schedule</option>
+        <option value={ANY}>Select Section</option>
         {schedules.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
@@ -117,7 +136,7 @@ export default function ExamPicker({
 
       {visible.length === 0 && exams.length > 0 && (
         <p style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginBottom: "1rem" }}>
-          No exam matches that subject and schedule.
+          No exam matches that subject and section.
         </p>
       )}
       {exams.length === 0 && (

@@ -98,9 +98,10 @@ export default function ClassListPickerModal({
 
   return (
     <Modal title="Select Option" onClose={onCancel}>
+      {/* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 4. */}
       <p style={{ color: "var(--text-muted)", fontSize: "0.82rem",
                   margin: "-0.75rem 0 1.1rem" }}>
-        Choose the subject and schedule you are working with.
+        Choose the subject and section you are working with.
       </p>
 
       {shown && (
@@ -135,7 +136,7 @@ export default function ClassListPickerModal({
           <option value="">
             {loading ? "Loading…"
               : noneYet ? "No lists yet — create one below"
-              : "Select a subject and schedule…"}
+              : "Select a subject and section…"}
           </option>
           {lists.map(l => (
             <option key={l.class_list_id} value={String(l.class_list_id)}>
@@ -170,16 +171,30 @@ export default function ClassListPickerModal({
           onChange={e => { setSubject(e.target.value); setLocal(null); }}
           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); proceed(); } }}
         />
-        <label className="form-label" htmlFor="cl-schedule"
+        {/* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 4:
+            "we will use 'Section' instead of 'Schedule'".
+
+            THE LABEL AND THE EXAMPLE CHANGE; THE WIRE DOES NOT, YET. `schedule`
+            is still the state, still onCreate's second argument, still
+            ClassList.schedule and still the column. Renaming any of those on
+            their own sends `section` to an API that wants `schedule`. The
+            column rename is one migration plus about a dozen files and it
+            lands as a SINGLE push — see PAGE18-MELANIE-2026-11-23.md.
+
+            NOTE: this still calls checkSchedule(). If that enforces a
+            day/time shape rather than length and characters, "BSCS 1B" will
+            be refused — worth one look at lib/textField.ts before Ms. Melanie
+            sees this. */}
+        <label className="form-label" htmlFor="cl-section"
                style={{ marginTop: "0.6rem" }}>
-          Schedule (Day and Time)
+          Section
         </label>
         <input
-          id="cl-schedule"
+          id="cl-section"
           className="form-input"
           value={schedule}
           disabled={mode !== "new"}
-          placeholder="MWF 7:30AM to 9:30AM"
+          placeholder="BSCS 1B"
           onChange={e => { setSchedule(e.target.value); setLocal(null); }}
           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); proceed(); } }}
         />

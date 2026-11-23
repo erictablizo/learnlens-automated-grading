@@ -13,6 +13,10 @@ import type { StudentExamRecord, StudentExamScore } from "@/types/student";
 import { getToken, isAuthenticated } from "@/lib/auth";
 // NEW 2026-11-22 — Alex, Recommendations page 15.
 import { readParam, backToListHref, FROM_PARAM } from "@/lib/classListReturn";
+// NEW 2026-11-23 - Ms. Melanie, Recommendations page 18, requirement 6.
+import {
+  DEFAULT_PASSING_MARK, clampMark, outOf, passingScore, pct, pctLabel,
+} from "@/lib/passing";
 
 function scoreOf(r: StudentExamScore): { text: string; muted: boolean; note: string | null } {
   if (r.checked && r.total_score !== null) {
@@ -45,6 +49,13 @@ export default function StudentRecordPage() {
    * then goes to /class-lists plain, which is the only honest answer there. */
   const [from, setFrom] = useState<number | null>(null);
   useEffect(() => { setFrom(readParam(window.location.search, FROM_PARAM)); }, []);
+
+  /* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 6. No passing mark is
+   * stored anywhere, so the teacher types one, exactly as she already does on
+   * Data Analytics. It is per visit and deliberately not persisted: persisting
+   * it would make one teacher's 50% silently change what another teacher sees
+   * as "Passing Score" on the same student. See lib/passing.ts. */
+  const [mark, setMark] = useState<number>(DEFAULT_PASSING_MARK);
 
   const [record, setRecord] = useState<StudentExamRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,24 +117,61 @@ export default function StudentRecordPage() {
               </div>
             </div>
 
+            {/* NEW 2026-11-23 - Melanie req 6 item 2. Wording matches the
+                Data Analytics box so the two screens read the same. */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem",
+                          marginBottom: "0.6rem", fontSize: "0.85rem" }}>
+              <label htmlFor="passing-mark" style={{ color: "var(--text-muted)" }}>
+                Passing mark
+              </label>
+              <input
+                id="passing-mark"
+                type="number"
+                min={1}
+                max={100}
+                value={mark}
+                onChange={e => setMark(clampMark(Number(e.target.value)))}
+                className="form-input"
+                style={{ width: 74, padding: "0.3rem 0.5rem", textAlign: "center" }}
+              />
+              <span style={{ color: "var(--text-muted)" }}>%</span>
+            </div>
+
             <div className="table-wrapper">
               <table aria-label="Exams and scores for this student">
                 <thead>
                   <tr>
                     <th>Exam Name</th>
-                    <th style={{ width: 150 }}>Subject</th>
-                    <th style={{ width: 200 }}>Score</th>
+                    <th style={{ width: 160 }}>Subject</th>
+                    <th style={{ width: 170 }}>Score</th>
+                    <th style={{ width: 110 }}>%</th>
+                    <th style={{ width: 130 }}>
+                      Passing Score
+                      <div style={{ fontSize: "0.68rem", fontWeight: 400,
+                                    color: "var(--text-muted)" }}>
+                        at {mark}%
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {exams.length === 0 ? (
                     <tr>
-                      <td colSpan={3} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
                         No paper for this student on any of your exams yet.
                       </td>
                     </tr>
                   ) : exams.map(r => {
                     const c = scoreOf(r);
+                    /* NEW 2026-11-23 - Melanie req 6 items 2 and 3.
+                     * `hi` is the top of the range an unchecked paper could
+                     * still reach, so the percentage shows a range wherever
+                     * the score does - a single percentage next to "12-15 / 65"
+                     * would be a number the teacher cannot place. */
+                    const out = outOf(r);
+                    const lo = r.total_score;
+                    const hi = lo === null ? null : lo + (r.checked ? 0 : r.under_review);
+                    const need = passingScore(out, mark);
                     return (
                       <tr key={r.paper_id}>
                         <td style={{ fontWeight: 600, color: "var(--navy)" }}>{r.exam_name}</td>
@@ -136,6 +184,17 @@ export default function StudentRecordPage() {
                             </div>
                           )}
                         </td>
+                        <td style={{ color: lo === null || out <= 0 ? "var(--text-muted)" : "var(--navy)",
+                                     fontWeight: lo === null || out <= 0 ? 400 : 600 }}>
+                          {lo === null || out <= 0
+                            ? "\u2014"
+                            : hi !== null && hi !== lo
+                              ? `${pct(lo, out).toFixed(1)}\u2013${pctLabel(hi, out)}`
+                              : pctLabel(lo, out)}
+                        </td>
+                        <td style={{ color: "var(--text-muted)" }}>
+                          {out > 0 ? `${need} / ${out}` : "\u2014"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -146,7 +205,9 @@ export default function StudentRecordPage() {
             <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "0.6rem", lineHeight: 1.6 }}>
               Only exams you created are listed. A score shown as a range has items
               still waiting for your decision — the lower number is what the student
-              has already earned.
+              has already earned, and its percentage is shown as the same range.
+              Passing Score is {mark}% of each exam's total, rounded — change the
+              box above to see another mark. It is not saved with the exam.
             </p>
           </>
         )}

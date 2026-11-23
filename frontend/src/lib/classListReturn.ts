@@ -50,7 +50,13 @@ export function readParam(search: string | null | undefined, name: string): numb
     search.startsWith("?") ? search.slice(1) : search,
   ).get(name);
   if (raw === null || raw.trim() === "") return null;
-  if (!/^\d+$/.test(raw.trim())) return null;         // not Number(): "1.5", " 1 ", "1e3"
+  // CORRECTED 2026-11-23: this comment used to claim " 1 " was rejected too.
+  // It is not — the test runs on `raw.trim()`, so surrounding whitespace is
+  // accepted and " 1 " reads as 1. That is the behaviour wanted (a
+  // hand-edited URL with a stray space still names list 1); the comment was
+  // simply describing code that was never written. Found by
+  // measure/2026-11-23_analytics_link.mjs, which reuses this reader.
+  if (!/^\d+$/.test(raw.trim())) return null;         // not Number(): "1.5", "1e3", "12x"
   const n = Number(raw.trim());
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }

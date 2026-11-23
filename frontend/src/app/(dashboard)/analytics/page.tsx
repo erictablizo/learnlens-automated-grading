@@ -43,6 +43,10 @@ import { Paper } from "@/types/paper";
 import { ExamAnalytics } from "@/types/analytics";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { bySurname, paperLastName, paperFirstName } from "@/lib/textField";
+// NEW 2026-11-23 - Ms. Melanie, Recommendations page 18, requirements 7a and 9.
+import { examFromSearch, backHref } from "@/lib/analyticsLink";
+import { DEFAULT_PASSING_MARK, clampMark, passingScore } from "@/lib/passing";
+import { summariseScores, asRows } from "@/lib/scoreStats";
 
 /**
  * The passing mark, as a PERCENTAGE of the exam's item count.
@@ -61,8 +65,15 @@ import { bySurname, paperLastName, paperFirstName } from "@/lib/textField";
  * Math.ceil, not round, so the boundary never drifts BELOW the percentage
  * typed: 60% of 15 items is 9.0 and the mark is 9; 60% of 16 is 9.6 and the
  * mark is 10.
+ *
+ * CHANGED 2026-11-23 - the number and the ceil are now lib/passing.ts, which
+ * Student Record also calls (Melanie page 18 requirement 6). They are not
+ * repeated there. The two screens showed the same student passing on one and
+ * failing on the other for one afternoon, because passing.ts was written with
+ * Math.round: 60% of 17 is 10.2, and that is 11 here and was 10 there. One
+ * function now, so that cannot recur.
  */
-const DEFAULT_PASS_PERCENT = 60;
+const DEFAULT_PASS_PERCENT = DEFAULT_PASSING_MARK;
 
 /**
  * NEW 2026-11-15 (Grace, post-UAT):
@@ -207,6 +218,17 @@ export default function DataAnalyticsPage() {
   const [error,       setError]       = useState<string | null>(null);
   const [passPercent, setPassPercent] = useState<number>(DEFAULT_PASS_PERCENT);
 
+  /* NEW 2026-11-23 - Melanie req 7a. `deepLinked` is the exam named in the
+   * URL by View Exam's Data Analytics button; `pending` is that exam waiting
+   * to be loaded once the exam list has arrived.
+   *
+   * Read from window.location.search in an effect rather than with
+   * useSearchParams(), which in the App Router forces this page into a
+   * Suspense boundary at prerender and fails the build without one - the same
+   * reason, and the same note, as the Student Record page on 22 November. */
+  const [deepLinked, setDeepLinked] = useState<number | null>(null);
+  const [pending,    setPending]    = useState<number | null>(null);
+
   useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
     const load = async () => {
@@ -214,8 +236,20 @@ export default function DataAnalyticsPage() {
       if (!token) { router.replace("/login"); return; }
       setLoading(true);
       try {
-        setExams(await examService.list(token));
-        setPickerOpen(true);
+        const list = await examService.list(token);
+        setExams(list);
+        /* NEW 2026-11-23 - Melanie req 7a: "it will go directly to the
+         * analytics of this exam", so no picker when the URL names one.
+         *
+         * The exam must be IN THIS TEACHER'S LIST. A pasted or stale link can
+         * name an exam that was deleted, or one belonging to somebody else;
+         * loading it would show an error where a picker would have shown a
+         * way forward. An unknown id therefore falls back to the picker,
+         * which is what arriving from the sidebar does anyway. */
+        const wanted = examFromSearch(window.location.search);
+        setDeepLinked(wanted);
+        if (wanted !== null && list.some(e => e.exam_id === wanted)) setPending(wanted);
+        else setPickerOpen(true);
       } catch {
         setError("Could not load your exams.");
       } finally {
@@ -248,11 +282,22 @@ export default function DataAnalyticsPage() {
     }
   }, [router]);
 
+  /* NEW 2026-11-23 - Melanie req 7a. A separate effect rather than a call
+   * inside the one above, so `loadAnalytics` can be an honest dependency:
+   * the exam list load does not re-run when it changes. `pending` is cleared
+   * before the load starts, so this fires exactly once per deep link. */
+  useEffect(() => {
+    if (pending === null) return;
+    const id = pending;
+    setPending(null);
+    void loadAnalytics(id);
+  }, [pending, loadAnalytics]);
+
   // `totalItems` is still the ITEM COUNT, for the "Items:" figure in the
   // header. Everything that is a MARK is measured against totalPoints.
   const totalItems  = exam?.answer_keys?.length ?? 0;
   const totalPoints = exam?.answer_keys?.reduce((n, k) => n + (k.points ?? 1), 0) ?? 0;
-  const passMark    = totalPoints > 0 ? Math.ceil((totalPoints * passPercent) / 100) : 0;
+  const passMark    = passingScore(totalPoints, passPercent);
 
   /**
    * Only CHECKED papers are counted.
@@ -281,6 +326,25 @@ export default function DataAnalyticsPage() {
     [items],
   );
   const hidden = (items?.items.length ?? 0) - majority.length;
+
+  /* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 9, verbatim:
+   *
+   *   "Insert 'Mean, Median and Mode' before the highest score table.
+   *      Statistics (Measure) | Value
+   *      Mean                 |
+   *      Median               |
+   *      Mode                 |"
+   *
+   * COMPUTED FROM `final`, THE SAME ARRAY THE FOUR TABLES BELOW USE. That is
+   * the whole point: the mean sits directly above a list of students, and if
+   * it were fetched from an endpoint that re-derived "which papers count" it
+   * could describe a different set of students than the list under it. See
+   * lib/scoreStats.ts, and app/ml/statistics.py, which is its twin for the
+   * day the Excel export needs the same three numbers. */
+  const stats = useMemo(
+    () => summariseScores(final.map(p => p.total_score), totalPoints > 0 ? totalPoints : null),
+    [final, totalPoints],
+  );
 
   const categories: Category[] = useMemo(() => {
     const scores = final.map(p => p.total_score as number);
@@ -357,7 +421,9 @@ export default function DataAnalyticsPage() {
 
         {!exam && !loadingData && (
           <p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
-            Choose a subject, a schedule and an exam to see its analytics.
+            {/* CHANGED 2026-11-23 - Melanie req 7b: "Section" replaces
+                "Schedule" on this screen. */}
+            Choose a subject, a section and an exam to see its analytics.
           </p>
         )}
 
@@ -377,7 +443,17 @@ export default function DataAnalyticsPage() {
                   <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.subject ?? "—"}</span>
                 </span>
                 <span>
-                  <span style={{ color: "var(--text-muted)" }}>Schedule: </span>
+                  {/* CHANGED 2026-11-23 - Ms. Melanie, page 18 requirement 8:
+                      "Section" instead of "Schedule" in the details shown
+                      after Show.
+
+                      THE LABEL CHANGES; THE FIELD DOES NOT, YET. `exam.schedule`
+                      is still the column, still the API field and still what
+                      Create Exam sends. Renaming it here alone would print an
+                      empty Section on every exam. The column rename is one
+                      migration plus about a dozen files and it lands as a
+                      SINGLE push - see PAGE18-MELANIE-2026-11-23.md. */}
+                  <span style={{ color: "var(--text-muted)" }}>Section: </span>
                   <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.schedule ?? "—"}</span>
                 </span>
                 <span>
@@ -396,10 +472,7 @@ export default function DataAnalyticsPage() {
                 Passing mark
                 <input
                   type="number" min={1} max={100} value={passPercent}
-                  onChange={e => {
-                    const n = Number(e.target.value);
-                    if (Number.isFinite(n)) setPassPercent(Math.min(100, Math.max(1, Math.round(n))));
-                  }}
+                  onChange={e => setPassPercent(clampMark(Number(e.target.value)))}
                   aria-label="Passing mark, percent"
                   style={{ width: 64, padding: "0.25rem 0.4rem", fontSize: "0.8rem" }}
                 />
@@ -419,6 +492,52 @@ export default function DataAnalyticsPage() {
                 is a minimum rather than a result.
               </div>
             )}
+
+            {/* NEW 2026-11-23 - Melanie req 9: "Insert 'Mean, Median and
+                Mode' BEFORE the highest score table". Her two column
+                headings, word for word. */}
+            <section aria-label="Statistics" style={{
+              border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+              background: "var(--surface)", padding: "0.9rem 1rem", marginBottom: "0.9rem",
+            }}>
+              <div className="table-wrapper">
+                <table aria-label="Mean, median and mode">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 220 }}>Statistics (Measure)</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {asRows(stats).map(r => (
+                      <tr key={r.measure}>
+                        <td style={{ color: "var(--navy)", fontWeight: 600 }}>{r.measure}</td>
+                        <td style={{
+                          color: r.value === "\u2014" ? "var(--text-muted)" : "var(--navy)",
+                          fontWeight: r.value === "\u2014" ? 400 : 700,
+                        }}>
+                          {r.value}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ fontSize: "0.74rem", color: "var(--text-muted)",
+                          marginTop: "0.6rem", lineHeight: 1.6 }}>
+                {stats.count === 0
+                  ? "No paper in this exam has been checked yet, so there is nothing to average."
+                  : <>Over the {stats.count} checked paper(s)
+                     {stats.outOf ? <>, out of {stats.outOf} points</> : null}. The same
+                     papers as the tables below: one still waiting for your decision has a
+                     score that is a minimum, not a result, so it is not averaged.
+                     {stats.mode.length === 0 &&
+                       " Mode is a dash because no score occurs more than once."}
+                     {stats.mode.length > 1 &&
+                       " More than one score ties for most common, so all of them are shown."}
+                    </>}
+              </p>
+            </section>
 
             {categories.map(c => <CategoryBlock key={c.key} cat={c} outOf={totalPoints} />)}
 
@@ -521,7 +640,18 @@ export default function DataAnalyticsPage() {
         )}
 
         <div style={{ marginTop: "1.5rem" }}>
-          <Button variant="secondary" onClick={() => router.push("/exams")}>← Back to Manage Exams</Button>
+          {/* NEW 2026-11-23 - arrived from View Exam's Data Analytics button
+              (req 7a), so back goes to that exam rather than to the list. The
+              same principle as Sir Alex's page 15: a back button should undo
+              the click that got you here. BEYOND Melanie's wording - she asked
+              for the way in, not the way out - so it is safe to drop if you
+              would rather not add a behaviour nobody asked for. */}
+          <Button variant="secondary"
+                  onClick={() => router.push(backHref(deepLinked, exam?.exam_id ?? null))}>
+            {backHref(deepLinked, exam?.exam_id ?? null) === "/exams"
+              ? "← Back to Manage Exams"
+              : "← Back to Exam"}
+          </Button>
         </div>
 
         {pickerOpen && (

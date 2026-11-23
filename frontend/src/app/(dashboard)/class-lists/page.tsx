@@ -173,6 +173,16 @@ export default function ClassListsPage() {
     }
   };
 
+  /* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 5: the heading
+   * reads Section, not Schedule. `active.schedule` is still the field it
+   * reads from — see the note in ClassListPickerModal.tsx.
+   *
+   * WHAT THIS DOES NOT FIX, and should be said out loud: rows created BEFORE
+   * today hold a schedule in that column ("THS - 1:30pm to 3:30pm"), so this
+   * heading will read "List of Students under Computer Fundamentals /
+   * THS - 1:30pm to 3:30pm" until someone edits the list. Renaming a column
+   * does not rewrite what is in it. Ms. Melanie may want those rows retyped
+   * before the defence; that is a decision, not a migration. */
   const title = active
     ? `List of Students under ${active.subject} / ${active.schedule}`
     : "List of Students";
@@ -346,7 +356,7 @@ export default function ClassListsPage() {
             <Button variant="secondary"
                     onClick={() => { setActive(null); setNotice(null); router.replace("/class-lists"); }}
                     style={{ width: "auto" }}>
-              Change subject / schedule
+              Change subject / section
             </Button>
           )}
         </div>

@@ -71,52 +71,24 @@ export default function ProfileSetupPage() {
 
   const handleSave = async () => {
     setError(null);
-    // Client-side validation before any API call (HCI: error prevention)
-    // REWRITTEN 2026-11-16 (Grace, post-UAT): "validation for all fields
-    // if blank for setup and edit".
-    //
-    // ONE expression, one sentence per field, in the order the fields
-    // appear on the form. The blank test and the character test are now
-    // the SAME call - checkPersonName and checkPosition each take a
-    // `required` flag as of today - which closes two gaps that the two
-    // separate blocks left open:
-    //
-    //   POSITION had no blank check at all, on either screen. A teacher
-    //   could save a profile with no position and the sidebar rendered
-    //   the empty string after her course.
-    //
-    //   FIRST / LAST NAME were blank-checked with !x.trim(), which is a
-    //   different test from the one the server runs: "\u00a0" (a non-breaking
-    //   space) is truthy after .trim() and empty after tidyName().
-    //
-    // Same rules, same order and same words as _check_person_name() and
-    // _check_position() in backend/app/schemas/profile.py - measured, 404
-    // values, 1212 checks, zero disagreements.
     const fieldError =
          checkPersonName(firstName, "First name", true)
       ?? checkPersonName(lastName,  "Last name",  true)
       ?? (!college ? "Please select your college." : null)
       ?? (!course  ? "Please select your course / program." : null)
-      // !year is correct for BOTH screens: `year` is YearLevel | "", the
-      // empty string is falsy, and year levels start at 1 - so there is no
-      // legal value that this test mistakes for "not chosen".
       ?? (!year ? "Please select a year level." : null)
       ?? checkPosition(position, true);
     if (fieldError) { setError(fieldError); return; }
-    // Year level is optional — it is a default, not part of a complete profile.
 
     const token = getToken();
     if (!token) { router.replace("/login"); return; }
 
     setSaving(true);
     try {
-      // Upload avatar first (if provided) so it's stored before profile save
       if (avatarFile) {
         await profileService.uploadAvatar(avatarFile, token);
       }
       await profileService.save({
-        // FIX 2026-10-22: tidyName, not trim - the server collapses runs of
-        // whitespace, so send what it would have stored anyway.
         first_name: tidyName(firstName),
         last_name:  tidyName(lastName),
         college:    college as College,
@@ -124,7 +96,6 @@ export default function ProfileSetupPage() {
         position:   tidyName(position) || undefined,
         year_level: year === "" ? undefined : year,     // Added 2026-10-05
       }, token);
-      // CHANGED 2026-10-05: straight to Manage Exams — /college no longer exists
       router.replace("/exams");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not save profile. Please try again.");
@@ -133,6 +104,19 @@ export default function ProfileSetupPage() {
 
   const handleSkip = () => router.replace("/exams");   // CHANGED 2026-10-05
 
+  /* CHANGED 2026-11-23 — Ms. Melanie, Recommendations page 18 requirement 2:
+   * the sample text italic and lighter.
+   *
+   * WHY THIS IS HERE AND NOT IN globals.css. The three dropdowns on this
+   * screen show their prompt ("Select your college") as a disabled <option>,
+   * and its colour comes from THIS inline style, not from ::placeholder.
+   * The .form-input::placeholder rule in globals.css cannot reach it — it is
+   * not a placeholder and these boxes are not .form-input. Two mechanisms,
+   * one appearance, and this is the half that has to be written here.
+   *
+   * #8a94a3 is the same value the stylesheet uses, measured at 3.27:1 on
+   * white: lighter than var(--text-muted) was, and above the 3:1 floor where
+   * text stops being legible. See css/placeholders-2026-11-23.css. */
   const selectStyle = (filled: boolean) => ({
     width:        "100%",
     border:       "none",
@@ -140,14 +124,21 @@ export default function ProfileSetupPage() {
     background:   "transparent",
     padding:      "0.7rem 0.2rem",
     fontSize:     "0.95rem",
-    color:        filled ? "var(--text)" : "var(--text-muted)",
+    color:        filled ? "var(--text)" : "#8a94a3",
+    fontStyle:    filled ? "normal" : "italic",
     outline:      "none",
     marginBottom: "1rem",
   } as const);
 
   return (
     <div className="auth-bg">
-      <div className="auth-card" style={{ maxWidth: 440 }}>
+      {/* NEW 2026-11-23 — `profile-setup` exists only so the placeholder rule
+          in globals.css can reach THIS card's boxes and not the Login and
+          Register cards, which share .auth-card and are not on Ms. Melanie's
+          list. Widening that selector later is a one-word change; narrowing
+          it after someone has seen italic placeholders on the login screen
+          is a conversation. */}
+      <div className="auth-card profile-setup" style={{ maxWidth: 440 }}>
 
         {/* Progress dot — CHANGED 2026-10-05: setup is the only step now */}
         <div style={{ display: "flex", gap: 5, justifyContent: "center", marginBottom: "1rem" }}>
@@ -160,6 +151,21 @@ export default function ProfileSetupPage() {
         <h1 className="auth-title" style={{ marginBottom: "0.3rem" }}>Set up your profile</h1>
         <p className="auth-subtitle">
           This helps LearnLens personalise your experience.<br />You only need to do this once.
+        </p>
+
+        {/* NEW 2026-11-23 — Ms. Melanie, Recommendations page 18 requirement 1:
+            "Please put Reminder here as 'Please fill-up all information:'".
+            She marked the top of the card on Create Exam; this is the same
+            place on this screen — above the first field, where it is read
+            before anything is typed rather than after something is wrong.
+
+            A REMINDER, NOT AN ALERT. No role="alert": this says nothing has
+            gone wrong, and announcing it would talk over the real error
+            banner below. The error banner keeps its own styling so the two
+            are never mistaken for each other. */}
+        <p style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--navy)",
+                    margin: "0 0 1rem" }}>
+          Please fill-up all information:
         </p>
 
         {error && (
