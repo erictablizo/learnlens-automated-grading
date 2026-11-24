@@ -293,11 +293,11 @@ export default function AdminPage() {
           marked ⚠ in the table below.
         </p>
       )}
-
+      
+      {/* CHANGED 2026-11-24 — names the same field as the header above. */}
       <input
         value={q}
         onChange={e => setQ(e.target.value)}
-        {/* CHANGED 2026-11-24 — names the same field as the header above. */}
         placeholder="Filter by email, exam, subject or section…"
         aria-label="Filter"
         style={{
