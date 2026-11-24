@@ -29,6 +29,9 @@ import {
 } from "@/types/profile";
 import { useReferenceLists } from "@/hooks/useReferenceLists";
 import { getToken, isAuthenticated } from "@/lib/auth";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3. The shared handler;
+// lib/formNav.ts named this screen as a caller when it was written.
+import { advanceOnEnter } from "@/lib/formNav";
 import { checkPersonName, checkPosition, tidyName }
   from "@/lib/personName";
 // NEW 2026-10-01: shared with the sidebar and the college picker
@@ -37,6 +40,10 @@ import { avatarUrl } from "@/lib/profileDisplay";
 export default function EditProfilePage() {
   const router  = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  /* NEW 2026-11-24 — requirement 3. The card Enter walks inside. The
+     avatar's file input is display:none and formNav skips it, and the
+     ".form-input" selector below skips it a second time, on purpose. */
+  const cardRef = useRef<HTMLDivElement>(null);
   const loaded  = useRef(false);     // so loading a profile does not wipe its course
 
   const [mounted,   setMounted]   = useState(false);
@@ -249,7 +256,17 @@ export default function EditProfilePage() {
 
         {!loading && !loadError && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div className="create-exam-form">
+            <div
+              className="create-exam-form"
+              ref={cardRef}
+              /* NEW 2026-11-24 — requirement 3: "press enter key, it will go to the
+                 1st Column of the second box."  On the LAST box (Position)
+                 advanceOnEnter returns false and nothing happens, deliberately —
+                 the same decision as app/setup/page.tsx, this screen's sibling.
+                 An Enter that silently commits a profile change is worse than an
+                 Enter that waits for Save. */
+              onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
+            >
 
               {/* ── Photo ── */}
               <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
@@ -304,7 +321,11 @@ export default function EditProfilePage() {
               <label className="form-label" htmlFor="first-name" style={labelGap}>
                 First Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
               </label>
-              <input id="first-name" className="form-input" value={firstName} disabled={saving}
+              <input
+                /* NEW 2026-11-24 — requirement 3: "automatic the cursor will position
+                   on the 1st Column of the First Input Box." */
+                autoFocus
+                id="first-name" className="form-input" value={firstName} disabled={saving}
                 onChange={e => { setFirstName(e.target.value); setError(null); setSaved(false); }}
                 aria-required="true" autoComplete="given-name" />
 
