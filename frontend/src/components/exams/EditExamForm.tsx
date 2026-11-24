@@ -44,7 +44,8 @@ import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
 import { Exam, ExamPage } from "@/types/exam";
 // CHANGED 2026-11-04: checkSubject / checkSchedule join the other two.
-import { checkExamName, checkDescription, checkSubject, checkSchedule,
+import { checkExamName, checkDescription, checkSubject, checkSection,
+         checkSchedule,
          tidyText, tidyMultiline } from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
@@ -83,6 +84,7 @@ export default function EditExamForm({ examId }: Props) {
   const [description, setDescription] = useState("");
   const [subject,     setSubject]     = useState("");   // NEW 2026-11-04
   const [schedule,    setSchedule]    = useState("");   // NEW 2026-11-04
+  const loadedSchedule = useRef("");                    // NEW 2026-11-24
   const [pages,        setPages]      = useState<PageRow[]>([]);
 
   const [nameError, setNameError] = useState<string | null>(null);
@@ -112,6 +114,9 @@ export default function EditExamForm({ examId }: Props) {
         // (TS2345). The exams that predate the migration really are null.
         setSubject(data.subject ?? "");
         setSchedule(data.schedule ?? "");
+        // NEW 2026-11-24 — what was LOADED, so an untouched legacy
+        // day/time is not revalidated under the stricter Section rule.
+        loadedSchedule.current = data.schedule ?? "";
 
         const existingPages: ExamPage[] = (data.pages ?? [])
           .slice()
@@ -260,7 +265,28 @@ export default function EditExamForm({ examId }: Props) {
     const subjMsg = checkSubject(subject);
     if (subjMsg) { setSubjectError(subjMsg); ok = false; }
 
-    const schedMsg = checkSchedule(schedule);
+    /* CHANGED 2026-11-24 — checkSchedule -> checkSection.
+
+    THE OPEN QUESTION IN THIS COMMENT IS ANSWERED, and the answer is no:
+    checkSchedule enforces LENGTH AND CHARACTERS, not a day/time shape, so
+    "BSCS 1B" was never going to be refused. What it does instead is say
+    "Schedule is required." under a box labelled Section — seen on
+    learnlens.tech — and accept "---" as a section.
+
+    checkSection has existed since 2026-11-15 and NOTHING CALLED IT. It says
+    the right word and refuses "---". MEASURED over 8 section-shaped values
+    and 6 legacy day/time ones: the two functions agree on everything
+    section-shaped, and differ only on the COLON. */
+    /* THE ONE PLACE THAT STILL NEEDS checkSchedule. This screen can be
+       opened on an exam whose schedule column holds a legacy day and
+       time — "MWF 7:30AM to 9:30AM" is the page-7 spec's own example.
+       checkSection refuses the colon, so validating an UNTOUCHED legacy
+       value would lock the teacher out of editing the exam's NAME until
+       she retyped its schedule. So: the new rule for anything she types,
+       the old rule for what was already there. */
+    const schedMsg = schedule === loadedSchedule.current
+      ? checkSchedule(schedule)
+      : checkSection(schedule, true);
     if (schedMsg) { setScheduleError(schedMsg); ok = false; }
 
     // NEW 2026-09-29: a page with no image can no longer be saved (p.5)

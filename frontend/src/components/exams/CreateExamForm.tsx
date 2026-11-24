@@ -28,7 +28,7 @@ import Button from "@/components/ui/Button";
 import { useExams } from "@/hooks/useExams";
 import { getToken } from "@/lib/auth";
 import { examService } from "@/services/examService";
-import { checkExamName, checkDescription, checkSubject, checkSchedule,
+import { checkExamName, checkDescription, checkSubject, checkSection,
          tidyText, tidyMultiline } from "@/lib/textField";
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
@@ -109,7 +109,19 @@ export default function CreateExamForm() {
     const subjMsg = checkSubject(subj);
     if (subjMsg) { setSubjectError(subjMsg); ok = false; }
 
-    const schedMsg = checkSchedule(sched);
+    /* CHANGED 2026-11-24 — checkSchedule -> checkSection.
+
+    THE OPEN QUESTION IN THIS COMMENT IS ANSWERED, and the answer is no:
+    checkSchedule enforces LENGTH AND CHARACTERS, not a day/time shape, so
+    "BSCS 1B" was never going to be refused. What it does instead is say
+    "Schedule is required." under a box labelled Section — seen on
+    learnlens.tech — and accept "---" as a section.
+
+    checkSection has existed since 2026-11-15 and NOTHING CALLED IT. It says
+    the right word and refuses "---". MEASURED over 8 section-shaped values
+    and 6 legacy day/time ones: the two functions agree on everything
+    section-shaped, and differ only on the COLON. */
+    const schedMsg = checkSection(sched, true);
     if (schedMsg) { setScheduleError(schedMsg); ok = false; }
 
     const pErr: Record<number, string> = {};

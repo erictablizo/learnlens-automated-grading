@@ -30,7 +30,7 @@ import Modal from "@/components/ui/Modal";
 // The SAME rules the exam form applies to these two fields, and the same two
 // schemas/_text.py applies on the server. A teacher types a subject into both
 // screens; two rules would drift.
-import { checkSubject, checkSchedule } from "@/lib/textField";
+import { checkSubject, checkSection } from "@/lib/textField";
 import type { ClassList } from "@/types/classList";
 
 type Mode = "existing" | "new";
@@ -85,7 +85,19 @@ export default function ClassListPickerModal({
     }
     const s = checkSubject(subject);
     if (s) { setLocal(s); return; }
-    const t = checkSchedule(schedule);
+    /* CHANGED 2026-11-24 — checkSchedule -> checkSection.
+
+    THE OPEN QUESTION IN THIS COMMENT IS ANSWERED, and the answer is no:
+    checkSchedule enforces LENGTH AND CHARACTERS, not a day/time shape, so
+    "BSCS 1B" was never going to be refused. What it does instead is say
+    "Schedule is required." under a box labelled Section — seen on
+    learnlens.tech — and accept "---" as a section.
+
+    checkSection has existed since 2026-11-15 and NOTHING CALLED IT. It says
+    the right word and refuses "---". MEASURED over 8 section-shaped values
+    and 6 legacy day/time ones: the two functions agree on everything
+    section-shaped, and differ only on the COLON. */
+    const t = checkSection(schedule, true);
     if (t) { setLocal(t); return; }
     setLocal(null);
     // Tidied, not raw: the rules collapse whitespace, so "English101  " and
