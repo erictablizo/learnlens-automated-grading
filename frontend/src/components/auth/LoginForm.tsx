@@ -1,10 +1,34 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Login".
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
+
+/* NEW 2026-11-24 — requirement 3, FIFTH revision:
+ *
+ *   "Apply validation if you click enter in the first box and it's blank,
+ *    and contains special characters, that when the validaition appears,
+ *    once first box has been entered with info then it will proceed to
+ *    second box, apply it as well in the succeeding input box"
+ *
+ * LIFTED OUT OF handleSubmit, not copied beside it. Both the Enter key and
+ * the Sign in button now call these, so the two cannot drift into disagreeing
+ * about what a valid email is — which is the failure the Create Exam bench
+ * has a mutation for.
+ *
+ * The same two rules live in RegisterForm and ForgotPasswordForm. That
+ * duplication predates this change and is not made worse by it; a shared
+ * lib/authFields.ts would be the tidy answer and is not a thing to do nine
+ * days before a defence. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function checkEmailField(v: string): string | null {
+  if (!v.trim()) return "Please enter your email address.";
+  if (!EMAIL_RE.test(v)) return "Please enter a valid email address.";
+  return null;
+}
 
 function LoginFormInner() {
   const { login, isLoading, error, setError } = useAuth();
@@ -12,6 +36,14 @@ function LoginFormInner() {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [justRegistered, setJustRegistered] = useState(false);
+
+  /* NEW 2026-11-24 — requirement 3, fifth revision. Keyed by aria-label:
+   * these boxes have no ids, and makeFieldCheck falls back to it. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "Email address": { check: checkEmailField, show: setError },
+    "Password": {
+      check: v => (v ? null : "Please enter your password."), show: setError },
+  }), [setError]);
 
   // Show success banner when redirected back from Register
   useEffect(() => {
@@ -25,9 +57,8 @@ function LoginFormInner() {
     setError(null);
     // CHANGED 2026-10-22: was "Please enter your email." Forgot Password says
     // "...your email address." for the same condition, two screens away.
-    if (!email.trim()) { setError("Please enter your email address."); return; }
-    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
+    const emailMsg = checkEmailField(email);
+    if (emailMsg) { setError(emailMsg); return; }
     if (!password) { setError("Please enter your password."); return; }
     await login(email, password);
   };
@@ -67,7 +98,7 @@ function LoginFormInner() {
             note at the top of formNav.ts explains why these screens were not
             turned INTO forms; Login already was one, and that is a gift. */}
         <form onSubmit={handleSubmit} noValidate
-              onKeyDown={e => { advanceOnEnter(e, e.currentTarget); }}>
+              onKeyDown={e => { advanceOnEnter(e, e.currentTarget, undefined, fieldCheck); }}>
           <div className="field">
             <input
               type="email"

@@ -1,10 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { checkPassword, passwordRules } from "@/lib/password";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, "Create Account".
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
+// The email rule, shared with Login rather than written a third time.
+import { checkEmailField } from "@/components/auth/LoginForm";
 
 export default function RegisterForm() {
   const { register, isLoading, error, setError } = useAuth();
@@ -12,15 +14,32 @@ export default function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirm,  setConfirm]  = useState("");
 
+  /* NEW 2026-11-24 — requirement 3, fifth revision. The SAME functions
+   * handleSubmit uses, in the same order.
+   *
+   * CONFIRM DEPENDS ON ANOTHER BOX, so this is not memoised on []: the rule
+   * closes over `password`, and a stale closure would compare the confirm
+   * box against whatever the password was when the form first rendered.
+   * That is the bug this dependency list exists to prevent. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "Email address": { check: checkEmailField, show: setError },
+    "Password": {
+      // Blank first, then the character rules — handleSubmit's order.
+      check: v => (v ? checkPassword(v) : "Please enter a password."),
+      show: setError },
+    "Confirm password": {
+      check: v => (v !== password ? "Passwords do not match." : null),
+      show: setError },
+  }), [password, setError]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     // Client-side validation before any API call (HCI: error prevention)
     // CHANGED 2026-10-22: was "Please enter your email." Forgot Password says
     // "...your email address." for the same condition, two screens away.
-    if (!email.trim()) { setError("Please enter your email address."); return; }
-    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRe.test(email)) { setError("Please enter a valid email address."); return; }
+    const emailMsg = checkEmailField(email);
+    if (emailMsg) { setError(emailMsg); return; }
     if (!password) { setError("Please enter a password."); return; }
     // FIX 2026-10-22 (Doc Rubrica): UPPERCASE, lowercase and a special
     // character. One shared rule, same order and same words as
@@ -52,7 +71,7 @@ export default function RegisterForm() {
             it — lib/formNav.ts only ever looks at input, select and
             textarea. */}
         <form onSubmit={handleSubmit} noValidate
-              onKeyDown={e => { advanceOnEnter(e, e.currentTarget); }}>
+              onKeyDown={e => { advanceOnEnter(e, e.currentTarget, undefined, fieldCheck); }}>
           <div className="field">
             <input
               type="email"

@@ -5,14 +5,14 @@
  * FIX 2026-09-23: token comes as a PROP from ForgotPasswordForm (same page),
  * so no separate /reset_password route is needed. Falls back to ?token= in the URL.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { authService } from "@/services/authService";
 import { checkPassword, passwordRules } from "@/lib/password";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, "Reset Password".
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 
 export default function ResetPasswordForm({ token: tokenProp }: { token?: string }) {
   const router = useRouter();
@@ -25,6 +25,21 @@ export default function ResetPasswordForm({ token: tokenProp }: { token?: string
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [done, setDone] = useState(false);
+
+  /* NEW 2026-11-24 — requirement 3, fifth revision: Enter validates the box
+   * before it moves. The same two rules handleSubmit applies, in its order.
+   *
+   * Depends on `password` for the same reason as RegisterForm: the confirm
+   * rule closes over it, and a [] dependency list would compare against a
+   * stale value. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "New password": {
+      check: v => (v ? checkPassword(v) : "Please enter a new password."),
+      show: setError },
+    "Confirm new password": {
+      check: v => (v !== password ? "Passwords do not match." : null),
+      show: setError },
+  }), [password, setError]);
 
   useEffect(() => {
     const t = tokenProp || new URLSearchParams(window.location.search).get("token") || "";
@@ -92,7 +107,7 @@ export default function ResetPasswordForm({ token: tokenProp }: { token?: string
                 valid, so the cursor lands on a box that is really there
                 rather than on a spinner. */}
             <form onSubmit={handleSubmit} noValidate
-                  onKeyDown={e => { advanceOnEnter(e, e.currentTarget); }}>
+                  onKeyDown={e => { advanceOnEnter(e, e.currentTarget, undefined, fieldCheck); }}>
               <div className="field">
                 {/* CHANGED 2026-10-22: the placeholder used to read
                     "New password (min. 8 characters)". Since today there are

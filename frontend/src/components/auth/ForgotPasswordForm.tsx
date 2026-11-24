@@ -89,7 +89,18 @@ export default function ForgotPasswordForm() {
                  to move to — the call could only ever return false, and a
                  rule that never does anything reads as a rule that does. The
                  <form> already submits on Enter, which is what should happen
-                 on the last box anyway. */
+                 on the last box anyway.
+
+                 THE FIFTH REVISION (2026-11-24) adds "apply validation if you
+                 click enter in the first box and it's blank, and contains
+                 special characters". THAT ALREADY HAPPENS HERE, by the native
+                 submit: Enter fires handleSubmit, which runs the blank check
+                 and then the email-format check and puts the message in the
+                 alert above. Wiring makeFieldCheck would run the same two
+                 rules a second time and change nothing a teacher can see.
+                 MEASURED by measure/2026-11-24_req3_screens.mjs, which lists
+                 this screen with enter:false and the reason, rather than
+                 skipping it. */
               autoFocus
               value={email}
               onChange={e => setEmail(e.target.value)}
