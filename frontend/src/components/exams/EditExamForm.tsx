@@ -435,14 +435,32 @@ export default function EditExamForm({ examId }: Props) {
           </p>
         )}
 
-        {/* Schedule — NEW 2026-11-04 (Doc Rubrica, consultation) */}
-        <label className="form-label" htmlFor="exam-schedule">Schedule</label>
+        {/* Section — NEW 2026-11-04 (Doc Rubrica, consultation) as Schedule.
+            CHANGED 2026-11-24 — Ms. Melanie, page 18 requirement 1, GREEN
+            circle: "Instead of schedule gawin nalang per block like comsci 1,
+            comsci 2, comsci 3", and her list of screens names "Edit Exam in
+            View Exam" outright. This screen was missed on 23 November because
+            the summary I was working from had shortened her list.
+
+            THE LABEL AND THE EXAMPLE CHANGE; THE WIRE DOES NOT. `schedule` is
+            still the state, still what examService.update sends and still the
+            column. The example matches Create Exam's so the two forms a
+            teacher moves between do not disagree about what a Section looks
+            like.
+
+            The id moves to `exam-section` to match Create Exam. Nothing reads
+            it by name - it is the <label for> target and a test selector.
+
+            NOTE: still checkSchedule(). If that enforces a day/time shape
+            rather than length and characters, "BSCS 3A" is refused HERE TOO -
+            one look at lib/textField.ts covers both forms. */}
+        <label className="form-label" htmlFor="exam-section">Section</label>
         <input
-          id="exam-schedule"
+          id="exam-section"
           className="form-input"
           value={schedule}
           onChange={e => { setSchedule(e.target.value); setScheduleError(null); }}
-          placeholder="e.g. MWF 9:00-10:00 AM"
+          placeholder="e.g. BSCS 3A"
           aria-required="true"
           aria-invalid={!!scheduleError}
           disabled={saving}

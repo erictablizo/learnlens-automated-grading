@@ -128,7 +128,17 @@ function ExamPickerDialog({ exams, current, onCreate, onClose }: PickerProps) {
         {subjects.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
-      <label className="form-label" htmlFor="pick-schedule">Schedule</label>
+      {/* CHANGED 2026-11-24 — Ms. Melanie, page 18 requirement 1, GREEN
+          circle, which names "Summary of Report" explicitly. This dialog is
+          the SEPARATE COPY that components/reports/ExamPicker.tsx was lifted
+          from on 11 November and deliberately left alone; Data Analytics'
+          copy was relabelled on 23 November and this one was not, so the two
+          screens differed by one word for a day. They now agree.
+
+          ONLY THE LABELS. `schedule` is still the state and `e.schedule` is
+          still what the dropdown is built from - renaming that would filter
+          on a field that does not exist and empty the box on every exam. */}
+      <label className="form-label" htmlFor="pick-schedule">Section</label>
       <select
         id="pick-schedule"
         className="dropdown"
@@ -136,7 +146,7 @@ function ExamPickerDialog({ exams, current, onCreate, onClose }: PickerProps) {
         onChange={e => { setSchedule(e.target.value); setError(null); }}
         style={{ width: "100%", marginBottom: "1rem" }}
       >
-        <option value={ANY}>Select schedule</option>
+        <option value={ANY}>Select section</option>
         {schedules.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
@@ -156,7 +166,7 @@ function ExamPickerDialog({ exams, current, onCreate, onClose }: PickerProps) {
           empty dropdown with no explanation. */}
       {visible.length === 0 && exams.length > 0 && (
         <p style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginBottom: "1rem" }}>
-          No exam matches that subject and schedule.
+          No exam matches that subject and section.
         </p>
       )}
       {exams.length === 0 && (
@@ -287,7 +297,7 @@ export default function SummaryReportPage() {
 
         {!exam && !loadingReport && (
           <p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
-            Choose a subject, a schedule and an exam to create its summary report.
+            Choose a subject, a section and an exam to create its summary report.
           </p>
         )}
 
@@ -312,7 +322,11 @@ export default function SummaryReportPage() {
                 <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.subject ?? "—"}</span>
               </span>
               <span>
-                <span style={{ color: "var(--text-muted)" }}>Schedule: </span>
+                {/* CHANGED 2026-11-24 — requirement 1's green circle names
+                    this screen. The same label change requirement 8 made on
+                    Data Analytics, and the same rule: the FIELD is still
+                    `exam.schedule`. */}
+                <span style={{ color: "var(--text-muted)" }}>Section: </span>
                 <span style={{ color: "var(--navy)", fontWeight: 600 }}>{exam.schedule ?? "—"}</span>
               </span>
               <span>

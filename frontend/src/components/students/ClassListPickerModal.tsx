@@ -171,8 +171,18 @@ export default function ClassListPickerModal({
           onChange={e => { setSubject(e.target.value); setLocal(null); }}
           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); proceed(); } }}
         />
-        {/* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 4:
-            "we will use 'Section' instead of 'Schedule'".
+        {/* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 4, her
+            words: "Under List of Students (in the Side Bar): Instead of
+            schedule gawin nalang per block like comsci 1, comsci 2,
+            comsci 3."
+
+            CORRECTED 2026-11-24: this used to quote her as writing "we will
+            use 'Section' instead of 'Schedule'". She never wrote that
+            sentence. The word "Section" comes from her requirement 8, which
+            says to replace "Schedule: <schedule info>" with
+            "Section: <Section Name>" — so the LABEL is right, but it is
+            requirement 8's word, not requirement 4's, and her example of the
+            content is "comsci 1", not a day and time.
 
             THE LABEL AND THE EXAMPLE CHANGE; THE WIRE DOES NOT, YET. `schedule`
             is still the state, still onCreate's second argument, still

@@ -114,9 +114,18 @@ export default function ProfileSetupPage() {
    * not a placeholder and these boxes are not .form-input. Two mechanisms,
    * one appearance, and this is the half that has to be written here.
    *
-   * #8a94a3 is the same value the stylesheet uses, measured at 3.27:1 on
-   * white: lighter than var(--text-muted) was, and above the 3:1 floor where
-   * text stops being legible. See css/placeholders-2026-11-23.css. */
+   * #9aa5b4 is the same value the stylesheet uses, measured at 2.50:1 on
+   * white — a step lighter than the #7a8fa6 (3.33:1) these prompts had, and
+   * deliberately below the 3:1 guideline. The reasoning, and what it costs,
+   * is written out once at the foot of globals.css rather than twice.
+   *
+   * CORRECTED 2026-11-23: this comment said 3.27:1, which is the ratio of
+   * #858f9e — a colour shipped for a few hours and then replaced. The hex was
+   * updated here and the number beside it was not. Measured, not retyped:
+   * measure/2026-11-23_placeholder_contrast.mjs computes it from the
+   * stylesheet and checks that this file uses the same hex.
+   *
+   * The rule itself now lives at the foot of frontend/src/app/globals.css. */
   const selectStyle = (filled: boolean) => ({
     width:        "100%",
     border:       "none",
@@ -124,7 +133,7 @@ export default function ProfileSetupPage() {
     background:   "transparent",
     padding:      "0.7rem 0.2rem",
     fontSize:     "0.95rem",
-    color:        filled ? "var(--text)" : "#8a94a3",
+    color:        filled ? "var(--text)" : "#9aa5b4",
     fontStyle:    filled ? "normal" : "italic",
     outline:      "none",
     marginBottom: "1rem",
@@ -153,11 +162,18 @@ export default function ProfileSetupPage() {
           This helps LearnLens personalise your experience.<br />You only need to do this once.
         </p>
 
-        {/* NEW 2026-11-23 — Ms. Melanie, Recommendations page 18 requirement 1:
-            "Please put Reminder here as 'Please fill-up all information:'".
-            She marked the top of the card on Create Exam; this is the same
-            place on this screen — above the first field, where it is read
-            before anything is typed rather than after something is wrong.
+        {/* NEW 2026-11-23 — Ms. Melanie, page 18 requirement 1, RED circle:
+            "Put directions for user because not everyone is technically
+            inclined, make every form user friendly" — and she names this
+            screen first: "Application is for Set Up Profile (For New Users),
+            and Create Exam".
+
+            CORRECTED 2026-11-24: this quoted her as asking for "Please put
+            Reminder here as 'Please fill-up all information:'". That
+            sentence is mine, not hers. See CreateExamForm.tsx.
+
+            Above the first field, where it is read before anything is typed
+            rather than after something is wrong.
 
             A REMINDER, NOT AN ALERT. No role="alert": this says nothing has
             gone wrong, and announcing it would talk over the real error

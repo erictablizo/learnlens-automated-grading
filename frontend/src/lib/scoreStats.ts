@@ -1,14 +1,40 @@
 /**
  * lib/scoreStats.ts
  * =================
- * NEW 2026-11-23 — Ms. Melanie, Recommendations page 18, requirement 9,
- * verbatim:
+ * NEW 2026-11-23 — Ms. Melanie, Recommendations page 18, requirement 9.
+ * Her words, in full:
  *
- *   "Insert 'Mean, Median and Mode' before the highest score table.
+ *   "Additional Info in Data Analytics:
+ *    Mean : average score ng lahat; Mode: average kung saan item ang pinaka
+ *    nagkamali lahat at naging tama lahat; Median
+ *
  *      Statistics (Measure) | Value
  *      Mean                 |
  *      Median               |
  *      Mode                 |"
+ *
+ * CORRECTED 2026-11-24. This used to quote her as writing "Insert 'Mean,
+ * Median and Mode' before the highest score table." She did not write that
+ * sentence; the POSITION comes from the red arrow on her screenshot, which
+ * points at the gap between the passing-mark row and the highest-score card,
+ * and that is where the table now sits. The position is right. The quotation
+ * was not.
+ *
+ * HER DEFINITION OF MODE IS NOT THE STATISTICAL ONE, AND THIS IS OPEN.
+ * "Mode: average kung saan item ang pinaka nagkamali lahat at naging tama
+ * lahat" describes an ITEM — which question the class got wrong most, and
+ * which they got right most. This module computes the statistical mode: the
+ * most common SCORE. Those are different numbers answering different
+ * questions.
+ *
+ * The statistical reading is what the table itself argues for — it is headed
+ * "Statistics (Measure)" and its other two rows are Mean and Median, which
+ * are score statistics. It is also the reading a panellist would expect of a
+ * row labelled Mode. And the item question is already answered lower down the
+ * same page, by "Items incorrectly answered by the majority of the class".
+ *
+ * So the statistical mode is what is built, and this note is here so nobody
+ * discovers the ambiguity for the first time during the defence. ASK HER.
  *
  * THE TYPESCRIPT TWIN OF `backend/app/ml/statistics.py`, line for line, and
  * measure/2026-11-23_stats_twins.mjs runs both on the same fixtures and fails

@@ -511,22 +511,31 @@ tr:hover td { background: #f8fbfd; }
   .main-content { padding: 1.25rem; }
   .page-viewer { grid-template-columns: 1fr; }
 }
-
 /* ===========================================================================
- * NEW 2026-11-23 — Ms. Melanie, Recommendations page 18, requirement 2:
+ * APPEND TO frontend/src/app/globals.css
  *
- *   "Make the font italic of the sample info in the box (encircled in RED
- *    Color) and more lighter color; Application is Set Up Profile, Create
- *    Exam, Edit Exam, Add Paper, Edit Paper, List of Students"
+ * NEW 2026-11-23 — Ms. Melanie, Recommendations page 18, requirement 2,
+ * her words in full:
  *
- * The "sample info" she circled is the PLACEHOLDER — "e.g. Long Exam 1",
- * "e.g. Midterm for BSCS 3A", "e.g. Mathematics in the Modern World".
+ *   "Make the e.g. less visible; Application is Set Up Profile (For New
+ *    Users), Create Exam in Manage Exam, Edit Exam in View Exam, Add Paper
+ *    in View Exam, Edit Paper in View Exam, List of Students in Manage Exam
+ *    (for new users and existing users)."
  *
- * AT THE END OF THE FILE, DELIBERATELY. The .profile-setup rule below must
- * come after `.field input::placeholder` (line 95); it also wins on
- * specificity, so it would work higher up, but "more specific AND later" is
- * what the comment claims and both halves are now true. VERIFIED in Chromium
- * against this file — measure/2026-11-23_globals_merge.mjs.
+ * CORRECTED 2026-11-24. This comment used to quote her as asking to "make the
+ * font italic ... and more lighter color". She wrote neither word. The six
+ * screens are hers; LESS VISIBLE is hers; the ITALIC WAS MINE, and it is not
+ * obviously what she asked for — italic makes a hint more distinctive, which
+ * is the opposite axis from less visible. It is left in place because it does
+ * no harm and she has not seen it yet, but REQUIREMENT 2 IS NOT SETTLED: the
+ * only lever that makes a placeholder less visible is contrast, and the
+ * measurements below show there is almost none left above the legibility
+ * floor. That is a decision for her, and the numbers are here for it.
+ *
+ * The "e.g." she circled is the PLACEHOLDER — "e.g. Long Exam 1",
+ * "e.g. Midterm for BSCS 3A", "e.g. Mathematics in the Modern World". Every
+ * one of the six screens she listed builds its boxes from .form-input, so one
+ * rule reaches all six and there is nothing to keep in step.
  *
  * HOW LIGHT, AND HOW LITTLE ROOM THERE IS. CORRECTED 2026-11-23 after
  * reading the real globals.css. I had assumed the placeholder was #64748b
@@ -534,17 +543,31 @@ tr:hover td { background: #f8fbfd; }
  * which is #7a8fa6 and measures 3.33:1. `.form-input` has no placeholder
  * rule at all, so those boxes use the browser's own grey.
  *
- *     #7a8fa6   3.33:1   TODAY (--text-muted)
- *     #8a94a3   3.07:1   this rule - the lightest that still clears 3:1
- *     #8d96a5   2.98:1   under the floor
- *     #94a3b8   2.56:1   visibly lighter, and hard to read
+ *     #7a8fa6   3.33:1   was, before page 18 (--text-muted)
+ *     #8a94a3   3.07:1   first attempt - above 3:1, and barely perceptible
+ *     #929cab   2.78:1
+ *     #9aa5b4   2.50:1   THIS RULE
+ *     #94a3b8   2.56:1
+ *     #aab4c0   2.10:1   too far - the hint stops being readable
  *
- * SO THE HONEST POSITION: the placeholders were ALREADY near the limit. From
- * 3.33 to 3.07 is a real lightening and a barely perceptible one. The change
- * Ms. Melanie will actually SEE on this screen is the italic. Going further
- * means going under 3:1 - the point where a hint stops being legible to a
- * normally-sighted reader at this size - and that is her call, not mine. The
- * numbers above are what she needs to make it.
+ * DECIDED 2026-11-24, AND DELIBERATELY BELOW 3:1. The first attempt went to
+ * 3.07:1 because 3:1 is the usual floor for text this size, and the result
+ * was a change of 0.26 of a contrast step - invisible, on the one requirement
+ * whose whole content is "make it less visible". Grace confirmed the
+ * requirement is followed as written, so this is 2.50:1: a step a reader can
+ * actually see.
+ *
+ * WHAT THAT COSTS, so nobody is surprised by the question. 2.50:1 is under
+ * the 3:1 guideline for non-decorative text. The case for it: a placeholder
+ * is a HINT, not content - every box here also carries a visible <label>, the
+ * hint disappears the moment anything is typed, and nothing in it is needed
+ * to complete the form. The case against it is that WCAG draws no such
+ * exception for placeholder text. The panellist who asked for this is the one
+ * who will read it on screen; if she or Doc Rubrica wants it back above the
+ * floor, #8a94a3 is one line up this ladder and the number is right here.
+ *
+ * THE ITALIC WAS NOT ASKED FOR - see the quotation above - and is kept only
+ * because it does no harm and distinguishes a hint from a typed value.
  *
  * All of them are MEASURED, not picked by eye, and the bench reads the
  * baseline out of globals.css rather than trusting a number in this comment -
@@ -566,7 +589,7 @@ tr:hover td { background: #f8fbfd; }
 .form-input::placeholder,
 .form-input::-webkit-input-placeholder {
   font-style: italic;
-  color: #8a94a3;
+  color: #9aa5b4;
   opacity: 1;
 }
 
@@ -575,7 +598,7 @@ tr:hover td { background: #f8fbfd; }
    is the same kind of sample text and gets the same treatment. */
 .form-input[readonly]::placeholder {
   font-style: italic;
-  color: #8a94a3;
+  color: #9aa5b4;
   opacity: 1;
 }
 
@@ -604,6 +627,6 @@ tr:hover td { background: #f8fbfd; }
 .profile-setup .field input::placeholder,
 .profile-setup .field textarea::placeholder {
   font-style: italic;
-  color: #8a94a3;
+  color: #9aa5b4;
   opacity: 1;
 }

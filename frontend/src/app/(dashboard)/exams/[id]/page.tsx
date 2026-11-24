@@ -85,6 +85,48 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
   );
 }
 
+// ── Page pager ────────────────────────────────────────────────────────────────
+// NEW 2026-11-24 — Ms. Melanie, Recommendations page 18 requirement 10. Her
+// requirement is a photograph with a large < and > drawn UNDER the answer-key
+// card; this screen's pager was only above it, and on a two-page exam the
+// teacher reading answer 15 has scrolled it off the top.
+//
+// EXTRACTED rather than copied. Two hand-written pagers are two places for
+// "Page 1 of 2" to be computed, and the top one has already been wrong once —
+// see the 2026-11-01 note on sorting below, where it printed pageIdx + 1 and
+// disagreed with every other number on the screen.
+//
+// `where` only reaches the aria-labels. Two buttons with the identical
+// accessible name on one page is not an error, but "Previous page, bottom"
+// is what lets somebody listening tell which one they have landed on.
+function PageNav({ examPages, pageIdx, totalPages, goPage, studentName, where }: {
+  examPages:   { page_number: number }[];
+  pageIdx:     number;
+  totalPages:  number;
+  goPage:      (dir: 1 | -1) => void;
+  studentName: string | null;
+  where:       "top" | "bottom";
+}) {
+  const at = where === "top" ? "" : ", bottom";
+  return (
+    <div className="page-nav">
+      <button className="btn-icon" onClick={() => goPage(-1)} disabled={pageIdx === 0}
+              aria-label={`Previous page${at}`}><IconLeft /></button>
+      {/* the page's OWN number, not its position in the array - see the
+          sort in the page body. They agree once sorted, and this stays
+          correct if a page is ever missing from the middle. */}
+      <span>Page {examPages[pageIdx]?.page_number ?? pageIdx + 1} of {totalPages}</span>
+      <button className="btn-icon" onClick={() => goPage(1)} disabled={pageIdx >= examPages.length - 1}
+              aria-label={`Next page${at}`}><IconRight /></button>
+      {studentName && (
+        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginLeft: "0.5rem" }}>
+          {studentName}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ViewExamPage() {
   const params  = useParams();
@@ -583,30 +625,9 @@ export default function ViewExamPage() {
         {/* ── Exam section ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
           <p className="section-title" style={{ marginBottom: 0 }}>Exam</p>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            {/* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 7a: a Data
-                Analytics option on this screen that opens the analytics for
-                THIS exam, with no picker to fill in again.
-
-                HERE, beside Edit Exam, rather than in the Test Papers row.
-                That row is already three buttons wide and its last slot is
-                the orange "Add paper" a teacher reaches for most; a fourth
-                button there would push the emphasis around for a link that
-                is about the exam as a whole, not about one paper.
-
-                SECONDARY, so Edit Exam keeps the weight it has today.
-
-                The href is built by lib/analyticsLink.ts rather than written
-                here, so the link and the code that reads it cannot disagree
-                about the parameter's name. */}
-            <Button variant="secondary" onClick={() => router.push(analyticsHref(examId))}
-                    style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
-              Data Analytics
-            </Button>
-            <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/edit`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
-              Edit Exam
-            </Button>
-          </div>
+          <Button variant="secondary" onClick={() => router.push(`/exams/${examId}/edit`)} style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+            Edit Exam
+          </Button>
         </div>
 
         {/* Side-by-side viewer */}
@@ -644,19 +665,9 @@ export default function ViewExamPage() {
         </div>
 
         {/* Page nav */}
-        <div className="page-nav">
-          <button className="btn-icon" onClick={() => goPage(-1)} disabled={pageIdx === 0} aria-label="Previous page"><IconLeft /></button>
-          {/* the page's OWN number, not its position in the array - see the
-              sort above. They agree once sorted, and this stays correct if a
-              page is ever missing from the middle. */}
-          <span>Page {examPages[pageIdx]?.page_number ?? pageIdx + 1} of {totalPages}</span>
-          <button className="btn-icon" onClick={() => goPage(1)} disabled={pageIdx >= examPages.length - 1} aria-label="Next page"><IconRight /></button>
-          {selectedPaper && (
-            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginLeft: "0.5rem" }}>
-              {selectedPaper.student_name}
-            </span>
-          )}
-        </div>
+        <PageNav examPages={examPages} pageIdx={pageIdx} totalPages={totalPages}
+                 goPage={goPage} studentName={selectedPaper?.student_name ?? null}
+                 where="top" />
 
         {/* ── Answer Key section ── */}
         <p className="section-title">Answer Key</p>
@@ -722,6 +733,15 @@ export default function ViewExamPage() {
           </div>
         </div>
 
+        {/* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 10: the same
+            pager again, in the gap she drew the < and > into. Rendered only
+            when there is more than one page, because a single-page exam
+            would show two identical dead pagers twenty lines apart. */}
+        {examPages.length > 1 && (
+          <PageNav examPages={examPages} pageIdx={pageIdx} totalPages={totalPages}
+                   goPage={goPage} studentName={null} where="bottom" />
+        )}
+
         {/* ── Test Papers section ── */}
         {/* RESTORED 2026-11-12. The heading and this outer row were lost when
             the Download button was pasted in: the inner button div replaced
@@ -736,10 +756,34 @@ export default function ViewExamPage() {
                 {downloadError}
               </span>
             )}
+            {/* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 7: "Add
+                'Data Analytics' Option but no need to input info because the
+                system should automatically get info of the exam under the
+                Manage Exam currently viewing."
+
+                MOVED HERE 2026-11-24, from beside Edit Exam. Her screenshot
+                for this requirement is this screen with a red circle around
+                an EMPTY SLOT in this row, immediately left of Download
+                Excel. The first attempt put it beside Edit Exam and carried
+                a comment arguing that this row was already too crowded for a
+                fourth button - an argument about a row she had just drawn a
+                circle in. The circle wins.
+
+                It also reads better here than it did there: Download Excel
+                and Data Analytics are both "what came out of this exam",
+                while Edit Exam is "change this exam".
+
+                The href is built by lib/analyticsLink.ts rather than written
+                here, so the link and the code that reads it cannot disagree
+                about the parameter's name. */}
+            <Button variant="secondary" onClick={() => router.push(analyticsHref(examId))}
+                    style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+              Data Analytics
+            </Button>
             {/* NEW 2026-11-12 (Alex & Bancud, page 2 item 6: "Results: Export ->
-                to Excel"). Leftmost and SECONDARY so the two paper-adding
-                buttons keep their order and "Add paper" keeps the rightmost,
-                orange, most-reached-for slot it has today. */}
+                to Excel"). SECONDARY so the two paper-adding buttons keep
+                their order and "Add paper" keeps the rightmost, orange,
+                most-reached-for slot it has today. */}
             <Button variant="secondary" onClick={handleDownloadExcel} disabled={downloading}
                     style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
               {downloading ? "Preparing…" : "Download Excel"}

@@ -14,8 +14,14 @@
  */
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-// NEW 2026-11-23 — Ms. Melanie, page 18 requirement 3. Shared with Set Up
-// Profile and Edit Profile, which have the same column of boxes.
+// NEW 2026-11-23 — Ms. Melanie, page 18 requirement 3.
+//
+// CORRECTED 2026-11-23: this said "Shared with Set Up Profile and Edit
+// Profile, which have the same column of boxes." lib/formNav.ts was written
+// to be shared with them — that is why it is a module and not a handler in
+// this file — but NEITHER of those screens imports it yet. Melanie's
+// requirement 3 names Create Exam, so only Create Exam was wired. The
+// sentence described the intention as though it were the state.
 import { advanceOnEnter } from "@/lib/formNav";
 import FileUpload from "@/components/ui/FileUpload";
 import Button from "@/components/ui/Button";
@@ -163,9 +169,20 @@ export default function CreateExamForm() {
            after the text, so Enter would come to mean "show me an error". */
         onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
       >
-        {/* NEW 2026-11-23 — Ms. Melanie, page 18 requirement 1: "Please put
-            Reminder here as 'Please fill-up all information:'". She marked the
-            empty strip at the top of this card.
+        {/* NEW 2026-11-23 — Ms. Melanie, page 18 requirement 1, RED circle,
+            her words: "Put directions for user because not everyone is
+            technically inclined, make every form user friendly; Application
+            is for Set Up Profile (For New Users), and Create Exam". She
+            circled the empty strip at the top of this card.
+
+            CORRECTED 2026-11-24 after reading the original document. This
+            comment used to quote her as asking for "Please put Reminder here
+            as 'Please fill-up all information:'". She did not write that — I
+            did, and then quoted it back as hers. The line below is one
+            reasonable reading of "put directions"; it is NOT the only one,
+            and she asked for DIRECTIONS for someone not technically
+            inclined, which is more than a reminder to fill the form in.
+            Open with her before the defence.
 
             A REMINDER, NOT AN ALERT. No role="alert" and no error colours:
             nothing has gone wrong yet, and the error banner at the foot of
