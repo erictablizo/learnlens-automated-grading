@@ -19,10 +19,19 @@ import { useReferenceLists } from "@/hooks/useReferenceLists";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { checkPersonName, checkPosition, looksMiscased, tidyName }
   from "@/lib/personName";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Set Up".
+import { advanceOnEnter } from "@/lib/formNav";
 
 export default function ProfileSetupPage() {
   const router  = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  /* NEW 2026-11-24 — requirement 3. The walk is scoped to this card and uses
+   * the DEFAULT selector, not ".form-input": this screen's boxes are
+   * `.field input` and its three dropdowns are plain `<select>`s, and she
+   * asks for the succeeding input box, which on this screen includes them.
+   * The avatar's file input is display:none, and lib/formNav.ts skips
+   * anything with no offsetParent, so Enter cannot land on it. */
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const [firstName,     setFirstName]     = useState("");
   const [lastName,      setLastName]      = useState("");
@@ -147,7 +156,17 @@ export default function ProfileSetupPage() {
           list. Widening that selector later is a one-word change; narrowing
           it after someone has seen italic placeholders on the login screen
           is a conversation. */}
-      <div className="auth-card profile-setup" style={{ maxWidth: 440 }}>
+      <div
+        className="auth-card profile-setup"
+        style={{ maxWidth: 440 }}
+        ref={cardRef}
+        /* NEW 2026-11-24 — requirement 3: "press enter key, it will go to the
+           1st Column of the second box."  On the LAST box advanceOnEnter
+           returns false and nothing happens, deliberately: Continue would
+           fail on the fields below it and Enter would come to mean "show me
+           an error". */
+        onKeyDown={e => { advanceOnEnter(e, cardRef.current); }}
+      >
 
         {/* Progress dot — CHANGED 2026-10-05: setup is the only step now */}
         <div style={{ display: "flex", gap: 5, justifyContent: "center", marginBottom: "1rem" }}>
@@ -291,6 +310,9 @@ export default function ProfileSetupPage() {
             <input
               type="text"
               placeholder="First name"
+              /* NEW 2026-11-24 — requirement 3: "automatic the cursor will
+                 position on the 1st Column of the First Input Box." */
+              autoFocus
               value={firstName}
               onChange={e => setFirstName(e.target.value)}
               aria-label="First name"

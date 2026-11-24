@@ -20,6 +20,9 @@ import Link from "next/link";
 import {
   readParam, pickList, studentHref, backToListHref, LIST_PARAM,
 } from "@/lib/classListReturn";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "List of
+// Students in Manage Exam".
+import { advanceOnEnter } from "@/lib/formNav";
 
 const IconTrash = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -53,6 +56,19 @@ export default function ClassListsPage() {
 
   const seq = useRef(0);
 
+  /* NEW 2026-11-24 — requirement 3, and the interesting case on this screen.
+   *
+   * The Add-a-student row has ONE typable box, Student No.; the four beside
+   * it are read-only and filled from the roster. lib/formNav.ts skips
+   * read-only targets, so advanceOnEnter finds nothing to move to and returns
+   * false — and Enter still Adds, exactly as it did before.
+   *
+   * It is wired anyway, scoped to THIS ROW, for two reasons. The row is
+   * where her rule applies if a typable box is ever added beside the number,
+   * and scoping it here keeps Enter from jumping to the Search box further
+   * down the page, which is what an unscoped walk would do. */
+  const addRowRef = useRef<HTMLDivElement>(null);
+
   /* NEW 2026-11-22 — Alex, Recommendations page 15.
    *
    *   "After clicking this 'Back to List of Students', can it go back to the
@@ -63,8 +79,10 @@ export default function ClassListsPage() {
    * button now returns to /class-lists?list=N and this reads it.
    *
    * ONCE PER MOUNT, guarded by the ref. Without the guard, "Change subject /
-   * schedule" would set `active` to null and this effect would put the same
-   * list straight back. */
+   * section" would set `active` to null and this effect would put the same
+   * list straight back. (That button was relabelled from "schedule" to
+   * "section" on 2026-11-23 — Melanie page 18 requirement 5 — and this
+   * sentence quotes it, so it moved too.) */
   const restored = useRef(false);
 
   useEffect(() => {
@@ -214,7 +232,14 @@ export default function ClassListsPage() {
         {active && (
           <>
             <p className="section-title">Add a student</p>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap",
+            <div ref={addRowRef}
+                 /* NEW 2026-11-24 — requirement 3. Returns false on the only
+                    typable box, so this reads as "Enter adds the student",
+                    which is what it did before and what a teacher expects. */
+                 onKeyDown={e => { if (!advanceOnEnter(e, addRowRef.current)) {
+                   if (e.key === "Enter") { e.preventDefault(); void handleAdd(); }
+                 } }}
+                 style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap",
                           alignItems: "flex-start", marginBottom: "1.5rem" }}>
               <div style={{ flex: "0 1 180px" }}>
                 <label className="form-label" htmlFor="cl-number">
@@ -224,15 +249,16 @@ export default function ClassListsPage() {
                 <input
                   id="cl-number"
                   className="form-input"
+                  /* NEW 2026-11-24 — requirement 3: the cursor starts here. */
+                  autoFocus
                   value={number}
                   placeholder="2021-00000123"
                   aria-required="true"
                   aria-invalid={!!lookupMsg}
                   style={lookupMsg ? { borderBottomColor: "var(--error)" } : undefined}
                   onChange={e => setNumber(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter") { e.preventDefault(); void handleAdd(); }
-                  }}
+                  /* The Enter handler moved to the row above on 2026-11-24, so
+                     there is ONE rule for this row rather than one per box. */
                 />
               </div>
 

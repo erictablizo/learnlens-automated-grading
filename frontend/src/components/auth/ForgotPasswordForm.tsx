@@ -24,7 +24,7 @@ export default function ForgotPasswordForm() {
     setToken(t);
     setView(t ? "reset" : "form");
   }, []);
- 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -60,7 +60,7 @@ export default function ForgotPasswordForm() {
       />
     );
   }
- 
+
   return (
     <div className="auth-bg">
       <div className="auth-card" style={{ textAlign: "center" }}>
@@ -68,18 +68,29 @@ export default function ForgotPasswordForm() {
         <p className="auth-subtitle">
           Enter your email so that we can send you a password reset link
         </p>
- 
+
         {error && (
           <div role="alert" aria-live="assertive" className="alert alert-error">
             {error}
           </div>
         )}
- 
+
         <form onSubmit={handleSubmit} noValidate>
           <div className="field">
             <input
               type="email"
               placeholder="Email"
+              /* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which
+                 names "Forgot Password": "automatic the cursor will position
+                 on the 1st Column of the First Input Box."
+
+                 autoFocus ONLY, and advanceOnEnter is deliberately NOT wired.
+                 This screen has one box, so there is no succeeding input box
+                 to move to — the call could only ever return false, and a
+                 rule that never does anything reads as a rule that does. The
+                 <form> already submits on Enter, which is what should happen
+                 on the last box anyway. */
+              autoFocus
               value={email}
               onChange={e => setEmail(e.target.value)}
               autoComplete="email"
@@ -87,12 +98,12 @@ export default function ForgotPasswordForm() {
               disabled={isLoading}
             />
           </div>
- 
+
           <button type="submit" className="btn-primary" disabled={isLoading} aria-busy={isLoading}>
             {isLoading ? <><span className="spinner" aria-hidden="true" /> Sending…</> : "Send email"}
           </button>
         </form>
- 
+
         <p className="auth-footer" style={{ marginTop: "1rem" }}>
           <Link href="/login" className="link-orange">Back to login</Link>
         </p>

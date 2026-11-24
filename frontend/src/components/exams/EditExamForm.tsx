@@ -34,7 +34,10 @@
  * backfill on the 7 existing exams FIRST and no teacher ever meets a blank.
  */
 import ExamKeyViewer from "@/components/exams/ExamKeyViewer";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Edit Exam
+// in Manage Exam" and "Edit Exam in View Exam" — both of which are this form.
+import { advanceOnEnter } from "@/lib/formNav";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import { getToken } from "@/lib/auth";
@@ -65,6 +68,12 @@ const byNumber = (a: PageRow, b: PageRow) => a.pageNumber - b.pageNumber;
 
 export default function EditExamForm({ examId }: Props) {
   const router = useRouter();
+  /* NEW 2026-11-24 — requirement 3. Scoped to ".form-input" exactly as Create
+   * Exam is, so the walk covers Exam Name, Description, Subject and Section
+   * and stops there. Without the selector it would continue into the Pages
+   * count dropdown and then the per-page number dropdowns, which are not
+   * "input boxes" in the sense she drew. */
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const [exam,      setExam]      = useState<Exam | null>(null);
   const [loading,   setLoading]   = useState(true);
@@ -374,12 +383,22 @@ export default function EditExamForm({ examId }: Props) {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <h1 className="page-title" style={{ marginBottom: "1.5rem" }}>Edit Exam</h1>
 
-      <div className="create-exam-form">
+      <div
+        className="create-exam-form"
+        ref={cardRef}
+        /* NEW 2026-11-24 — requirement 3. See the note on cardRef. */
+        onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
+      >
         {/* Exam Name */}
         <label className="form-label" htmlFor="exam-name">Exam Name</label>
         <input
           id="exam-name"
           className="form-input"
+          /* NEW 2026-11-24 — requirement 3: the cursor starts here. Safe
+             despite the async load: this input only mounts once `loading`
+             is false, so autoFocus fires on the real form rather than on a
+             spinner. */
+          autoFocus
           value={examName}
           onChange={e => { setExamName(e.target.value); setNameError(null); }}
           aria-required="true"

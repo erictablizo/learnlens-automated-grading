@@ -11,6 +11,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { authService } from "@/services/authService";
 import { checkPassword, passwordRules } from "@/lib/password";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, "Reset Password".
+import { advanceOnEnter } from "@/lib/formNav";
 
 export default function ResetPasswordForm({ token: tokenProp }: { token?: string }) {
   const router = useRouter();
@@ -82,14 +84,22 @@ export default function ResetPasswordForm({ token: tokenProp }: { token?: string
           <>
             <p className="auth-subtitle">Choose a new password for <strong>{email}</strong></p>
             {error && <div role="alert" aria-live="assertive" className="alert alert-error">{error}</div>}
-            <form onSubmit={handleSubmit} noValidate>
+            {/* NEW 2026-11-24 — requirement 3. Root is the <form>, so Enter on
+                Confirm falls through to the browser's submit. See LoginForm.
+
+                autoFocus is safe despite the token check: this branch only
+                mounts once `checking` is false and the link turned out to be
+                valid, so the cursor lands on a box that is really there
+                rather than on a spinner. */}
+            <form onSubmit={handleSubmit} noValidate
+                  onKeyDown={e => { advanceOnEnter(e, e.currentTarget); }}>
               <div className="field">
                 {/* CHANGED 2026-10-22: the placeholder used to read
                     "New password (min. 8 characters)". Since today there are
                     three more rules, that sentence was no longer true - it
                     named one requirement out of four. The list below says all
                     of them. */}
-                <input type="password" placeholder="New password" value={password}
+                <input type="password" placeholder="New password" autoFocus value={password}
                   onChange={e => setPassword(e.target.value)} autoComplete="new-password"
                   aria-label="New password" disabled={isLoading} />
               </div>

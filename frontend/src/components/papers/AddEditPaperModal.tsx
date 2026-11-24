@@ -433,7 +433,19 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
           <label className="form-label" htmlFor="student-number">
             Student No. <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
-          <input id="student-number" className="form-input" value={studentNumber}
+          {/* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names
+              "Add Paper in View Exam".
+
+              autoFocus ONLY. The three boxes after this one are read-only and
+              filled from the roster, so there is no succeeding input box for
+              Enter to move to — lib/formNav.ts skips read-only targets on
+              purpose, and the note in its header is about these exact three
+              fields. Wiring advanceOnEnter here would be a call that can only
+              ever return false.
+
+              This needed components/ui/Modal.tsx to stop focusing its own
+              panel on mount; see the note there. */}
+          <input id="student-number" className="form-input" autoFocus value={studentNumber}
             onChange={e => { setStudentNumber(e.target.value); setNumberError(null); setGlobalError(null); }}
             placeholder="e.g. 2021-00000123" autoComplete="off"
             aria-required="true" aria-invalid={!!numberError}

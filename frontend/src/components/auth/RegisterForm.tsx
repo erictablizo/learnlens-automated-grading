@@ -3,13 +3,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { checkPassword, passwordRules } from "@/lib/password";
- 
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, "Create Account".
+import { advanceOnEnter } from "@/lib/formNav";
+
 export default function RegisterForm() {
   const { register, isLoading, error, setError } = useAuth();
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [confirm,  setConfirm]  = useState("");
- 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -29,23 +31,34 @@ export default function RegisterForm() {
     await register(email, password);
     // useAuth.register() signs the teacher in and redirects to /setup
   };
- 
+
   return (
     <div className="auth-bg">
       <div className="auth-card">
         <h1 className="auth-title">Create new account</h1>
- 
+
         {error && (
           <div role="alert" aria-live="assertive" className="alert alert-error">
             {error}
           </div>
         )}
- 
-        <form onSubmit={handleSubmit} noValidate>
+
+        {/* NEW 2026-11-24 — requirement 3. Root is the <form> itself, so the
+            last box falls through to the browser's own submit. See the fuller
+            note in LoginForm.tsx.
+
+            The password-rules list below sits BETWEEN the password box and
+            Confirm password and holds no inputs, so Enter walks straight past
+            it — lib/formNav.ts only ever looks at input, select and
+            textarea. */}
+        <form onSubmit={handleSubmit} noValidate
+              onKeyDown={e => { advanceOnEnter(e, e.currentTarget); }}>
           <div className="field">
             <input
               type="email"
               placeholder="Email"
+              /* NEW 2026-11-24 — requirement 3: the cursor starts here. */
+              autoFocus
               value={email}
               onChange={e => setEmail(e.target.value)}
               autoComplete="email"
@@ -53,7 +66,7 @@ export default function RegisterForm() {
               disabled={isLoading}
             />
           </div>
- 
+
           <div className="field">
             <input
               type="password"
@@ -65,7 +78,7 @@ export default function RegisterForm() {
               disabled={isLoading}
             />
           </div>
- 
+
           {/* NEW 2026-10-22: the rules are no longer guessable from "8
               characters", so show them instead of only refusing on submit.
               Only once the teacher starts typing, so an empty form is not
@@ -82,7 +95,7 @@ export default function RegisterForm() {
               ))}
             </ul>
           )}
- 
+
           <div className="field">
             <input
               type="password"
@@ -94,14 +107,14 @@ export default function RegisterForm() {
               disabled={isLoading}
             />
           </div>
- 
+
           <button type="submit" className="btn-primary" disabled={isLoading} aria-busy={isLoading}>
             {isLoading
               ? <><span className="spinner" aria-hidden="true" /> Creating account…</>
               : "Sign up"}
           </button>
         </form>
- 
+
         <p className="auth-footer">
           Already have an account?{" "}
           <Link href="/login" className="link-orange">Login</Link>

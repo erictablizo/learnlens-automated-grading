@@ -56,7 +56,19 @@ export default function Modal({ title, onClose, children }: ModalProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handler);
-    ref.current?.focus();
+    /* CHANGED 2026-11-24 — Ms. Melanie, page 18 requirement 3, which now names
+     * "Add Paper in View Exam" and "Edit Paper in View Exam": the cursor must
+     * start in the first input box.
+     *
+     * THIS LINE WAS TAKING IT AWAY. autoFocus runs during commit; a parent's
+     * effect runs after its children's, so the panel grabbed focus a moment
+     * after the first box had it and the teacher was left typing nowhere. The
+     * panel is only focused now if focus is not ALREADY inside the dialog,
+     * which keeps the original purpose - a dialog opened with no focusable
+     * child still takes focus off the page behind it - and lets a child that
+     * asked for focus keep it. */
+    const inside = ref.current?.contains(document.activeElement ?? null);
+    if (!inside) ref.current?.focus();
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 

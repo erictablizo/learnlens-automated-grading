@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { Paper } from "@/types/paper";
@@ -13,6 +13,9 @@ import { checkNamePart, checkMiddleName, tidyText, paperLastName, paperFirstName
   from "@/lib/textField";
 // NEW 2026-10-23 (Doc Rubrica, 5th comment): several pages in one dialog.
 import { planPageFiles } from "@/lib/pageFiles";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Edit
+// Paper in View Exam".
+import { advanceOnEnter } from "@/lib/formNav";
 
 interface ExistingPage {
   paper_page_id: number;
@@ -131,6 +134,15 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
   const [step, setStep] = useState<"confirm" | "form">(
     paper.checked ? "confirm" : "form"
   );
+
+  /* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3. Scoped to
+   * ".form-input", so the walk is Last Name → First Name → Middle Name and
+   * stops. Without the selector it would carry on into the Pages dropdown.
+   *
+   * UNLIKE Add Paper, all three name boxes here are EDITABLE — that screen's
+   * are read-only and filled from the roster, which is why it gets autoFocus
+   * and no Enter handler and this one gets both. */
+  const formRef = useRef<HTMLDivElement>(null);
 
   // CHANGED 2026-11-04 (Doc Rubrica, page 4). One box becomes two, and on a
   // paper that predates the migration they are PRE-FILLED from a best-effort
@@ -400,6 +412,11 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
 
   return (
     <Modal title="Edit Paper" onClose={onClose}>
+      {/* NEW 2026-11-24 — requirement 3. A plain wrapper so the walk has a
+          root: <Modal> renders the shell and takes no key handler of its own,
+          and the div adds nothing to the layout. See the note on formRef. */}
+      <div ref={formRef}
+           onKeyDown={e => { advanceOnEnter(e, formRef.current, ".form-input"); }}>
       {error && (
         <div role="alert" aria-live="assertive" className="alert alert-error" style={{ marginBottom: "1rem" }}>
           {error}
@@ -433,6 +450,12 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
       <input
         id="edit-last-name"
         className="form-input"
+        /* NEW 2026-11-24 — requirement 3: the cursor starts here. This needed
+           components/ui/Modal.tsx to stop focusing its own panel on mount;
+           see the note there. On an already-checked paper the ConfirmDialog
+           shows first, so the cursor lands here when the form appears after
+           Yes — which is the right moment, not before. */
+        autoFocus
         value={lastName}
         onChange={e => { setLastName(e.target.value); setLastNameError(null); setError(null); }}
         placeholder="e.g. Dela Cruz-Santos"
@@ -594,6 +617,7 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
         >
           Save
         </Button>
+      </div>
       </div>
     </Modal>
   );
