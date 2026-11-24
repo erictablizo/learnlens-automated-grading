@@ -152,3 +152,5 @@ venv/
 __pycache__/
 *.pyc
 .next/
+__pycache__/
+*.py[cod]
