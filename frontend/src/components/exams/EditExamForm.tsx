@@ -34,10 +34,10 @@
  * backfill on the 7 existing exams FIRST and no teacher ever meets a blank.
  */
 import ExamKeyViewer from "@/components/exams/ExamKeyViewer";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Edit Exam
 // in Manage Exam" and "Edit Exam in View Exam" — both of which are this form.
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import { getToken } from "@/lib/auth";
@@ -91,6 +91,26 @@ export default function EditExamForm({ examId }: Props) {
   const [descError, setDescError] = useState<string | null>(null);
   const [subjectError,  setSubjectError]  = useState<string | null>(null);  // NEW 2026-11-04
   const [scheduleError, setScheduleError] = useState<string | null>(null);  // NEW 2026-11-04
+
+  /* NEW 2026-11-24 — requirement 3, fifth revision: Enter validates the box
+   * before it moves. The same four functions validate() uses, so the Enter
+   * key and the Save button cannot disagree about what is valid.
+   *
+   * THE SECTION RULE IS THE GUARDED ONE, exactly as in validate(): a legacy
+   * day/time that the teacher has not touched is judged by checkSchedule, so
+   * Enter cannot trap her in a box she did not type in. The mapping is read
+   * from loadedSchedule like the Save path, not duplicated. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "exam-name":    { check: checkExamName,    show: setNameError },
+    "exam-desc":    { check: checkDescription, show: setDescError },
+    "exam-subject": { check: checkSubject,     show: setSubjectError },
+    "exam-section": {
+      check: v => (v === loadedSchedule.current
+        ? checkSchedule(v)
+        : checkSection(v, true)),
+      show: setScheduleError,
+    },
+  }), []);
   const [formError, setFormError] = useState<string | null>(null);
   const [pageErrors, setPageErrors] = useState<Record<number, string>>({});
 
@@ -413,7 +433,7 @@ export default function EditExamForm({ examId }: Props) {
         className="create-exam-form"
         ref={cardRef}
         /* NEW 2026-11-24 — requirement 3. See the note on cardRef. */
-        onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
+        onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input", fieldCheck); }}
       >
         {/* Exam Name */}
         <label className="form-label" htmlFor="exam-name">Exam Name</label>

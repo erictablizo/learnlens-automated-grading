@@ -8,7 +8,7 @@
  *    2026-10-04_year_level.sql) and is the teacher's default year, editable
  *    later on the Edit Profile page.
  */
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { profileService } from "@/services/profileService";
 import {
@@ -20,7 +20,7 @@ import { getToken, isAuthenticated } from "@/lib/auth";
 import { checkPersonName, checkPosition, looksMiscased, tidyName }
   from "@/lib/personName";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Set Up".
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 
 export default function ProfileSetupPage() {
   const router  = useRouter();
@@ -111,6 +111,29 @@ export default function ProfileSetupPage() {
     } finally { setSaving(false); }
   };
 
+  /* NEW 2026-11-24 — requirement 3, fifth revision: Enter validates the box
+   * before it moves.
+   *
+   * KEYED BY aria-label, not by id: this card's boxes have no ids — they are
+   * `.field input` and bare `<select>`s — and makeFieldCheck falls back to
+   * aria-label for exactly this screen. The keys below are the aria-label
+   * strings from the markup, character for character; change one there and
+   * the rule silently stops applying, which is what
+   * measure/2026-11-24_setup_directions.mjs now counts.
+   *
+   * THE SAME RULES handleSave uses, in the same order, so Enter and Continue
+   * cannot disagree. One `error` slot, because that is all this screen has. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "First name": { check: v => checkPersonName(v, "First name", true), show: setError },
+    "Last name":  { check: v => checkPersonName(v, "Last name",  true), show: setError },
+    "College":    { check: v => (v ? null : "Please select your college."), show: setError },
+    "Course or program": {
+      check: v => (v ? null : "Please select your course / program."), show: setError },
+    "Year level you usually teach": {
+      check: v => (v ? null : "Please select a year level."), show: setError },
+    "Position or title": { check: v => checkPosition(v, true), show: setError },
+  }), []);
+
   const handleSkip = () => router.replace("/exams");   // CHANGED 2026-10-05
 
   /* CHANGED 2026-11-23 — Ms. Melanie, Recommendations page 18 requirement 2:
@@ -165,7 +188,7 @@ export default function ProfileSetupPage() {
            returns false and nothing happens, deliberately: Continue would
            fail on the fields below it and Enter would come to mean "show me
            an error". */
-        onKeyDown={e => { advanceOnEnter(e, cardRef.current); }}
+        onKeyDown={e => { advanceOnEnter(e, cardRef.current, undefined, fieldCheck); }}
       >
 
         {/* Progress dot — CHANGED 2026-10-05: setup is the only step now */}

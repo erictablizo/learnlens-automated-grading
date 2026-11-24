@@ -101,6 +101,48 @@ export function nextAdvanceTarget(
   return all[i + 1] ?? null;
 }
 
+/** NEW 2026-11-24 — one box's rule, for `fieldRules` below. `show` is how the
+ *  screen displays the message; this module never sees a message itself. */
+export interface FieldRule {
+  check: (value: string) => string | null;
+  show: (message: string | null) => void;
+}
+
+/**
+ * Turn a map of {elementId: rule} into the `fieldIsValid` callback
+ * advanceOnEnter takes.                                      NEW 2026-11-24
+ *
+ * Ms. Melanie, page 18 requirement 3, FIFTH revision of the document:
+ *
+ *   "Apply validation if you click enter in the first box and it's blank,
+ *    and contains special characters, that when the validaition appears,
+ *    once first box has been entered with info then it will proceed to
+ *    second box, apply it as well in the succeeding input box"
+ *
+ * So Enter is no longer only a way to move: it is a way to be TOLD. The box
+ * is checked first, and the cursor stays put while the message is on screen.
+ *
+ * A BOX WITH NO RULE PASSES. That is deliberate and it is the quiet part: a
+ * screen that wires three of its four boxes gets no warning from this
+ * function. measure/2026-11-24_req3_screens.mjs is what counts the boxes
+ * against the rules, because only the screen knows how many it has.
+ *
+ * KEYED BY id. Every box on her eleven screens has one except the Setup
+ * card's, which are keyed by aria-label — so both are tried, id first.
+ */
+export function makeFieldCheck(
+  rules: Record<string, FieldRule>,
+): (el: HTMLElement) => boolean {
+  return (el) => {
+    const key = el.id || el.getAttribute("aria-label") || "";
+    const rule = rules[key];
+    if (!rule) return true;                       // no rule: not this one's business
+    const msg = rule.check((el as HTMLInputElement).value ?? "");
+    rule.show(msg);
+    return msg === null;
+  };
+}
+
 /**
  * The Enter handler. Put it on the form's wrapper, once:
  *
@@ -119,6 +161,13 @@ export function advanceOnEnter(
   root: ParentNode | null,
   /** Narrows which boxes count — see advanceTargets. */
   selector?: string,
+  /** NEW 2026-11-24 — requirement 3, fifth revision. Called with the box
+   *  Enter was pressed in, BEFORE anything moves. Return false and the
+   *  cursor stays there; the screen shows the message, because this module
+   *  deliberately knows nothing about messages. Omit it and Enter behaves
+   *  exactly as it did before, which is what the screens not yet wired for
+   *  this rely on. See makeFieldCheck. */
+  fieldIsValid?: (el: HTMLElement) => boolean,
 ): boolean {
   if (e.key !== "Enter") return false;
   // Shift+Enter, Ctrl+Enter and friends are somebody else's shortcut.
@@ -139,6 +188,21 @@ export function advanceOnEnter(
   if (tag === "TEXTAREA") return false;          // Enter is a newline there
   if (tag === "BUTTON") return false;            // Enter is a press there
   if (tag !== "INPUT" && tag !== "SELECT") return false;
+
+  /* VALIDATE BEFORE MOVING, and before asking whether there IS anywhere to
+     move to. Her sentence applies the rule to "the succeeding input box" as
+     well as the first, and the last box is one of those: an Enter that
+     submits a form from a box containing "@@@" would be the rule stopping
+     one box short of where she put it.
+
+     Returns TRUE — handled — because the key HAS been acted on: the message
+     is now on screen. Returning false here would let the caller submit, and
+     the teacher would see the validation message and the form go through
+     together. */
+  if (fieldIsValid && !fieldIsValid(el)) {
+    e.preventDefault();
+    return true;
+  }
 
   const next = nextAdvanceTarget(root, el, selector);
   if (!next) return false;                       // last box: let the caller act

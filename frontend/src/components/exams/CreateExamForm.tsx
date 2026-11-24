@@ -12,7 +12,7 @@
  * backend until everything is valid — so an exam with no answer-key image can
  * no longer be created.
  */
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 // NEW 2026-11-23 — Ms. Melanie, page 18 requirement 3.
 //
@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation";
 // this file — but NEITHER of those screens imports it yet. Melanie's
 // requirement 3 names Create Exam, so only Create Exam was wired. The
 // sentence described the intention as though it were the state.
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 import FileUpload from "@/components/ui/FileUpload";
 import Button from "@/components/ui/Button";
 import { useExams } from "@/hooks/useExams";
@@ -136,6 +136,27 @@ export default function CreateExamForm() {
     return ok;
   };
 
+  /* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, FIFTH revision:
+   *
+   *   "Apply validation if you click enter in the first box and it's blank,
+   *    and contains special characters, that when the validaition appears,
+   *    once first box has been entered with info then it will proceed to
+   *    second box, apply it as well in the succeeding input box"
+   *
+   * THE SAME FOUR FUNCTIONS validate() uses, against the same four setters,
+   * keyed by the id each box already carries. Deliberately not a second set
+   * of rules: a screen whose Enter key and whose Save button disagree about
+   * what is valid is worse than one that only checks on Save.
+   *
+   * Save still calls validate() — this does not replace it. A teacher who
+   * never presses Enter must still be stopped. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "exam-name":    { check: checkExamName,    show: setNameError },
+    "exam-desc":    { check: checkDescription, show: setDescError },
+    "exam-subject": { check: checkSubject,     show: setSubjectError },
+    "exam-section": { check: v => checkSection(v, true), show: setScheduleError },
+  }), []);
+
   const handleSave = async () => {
     if (!validate()) return;
     const token = getToken();
@@ -179,7 +200,7 @@ export default function CreateExamForm() {
            happens — deliberately. Saving from there would fail on the missing
            answer-key images every single time, because the images are chosen
            after the text, so Enter would come to mean "show me an error". */
-        onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
+        onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input", fieldCheck); }}
       >
         {/* NEW 2026-11-23 — Ms. Melanie, page 18 requirement 1, RED circle,
             her words: "Put directions for user because not everyone is
