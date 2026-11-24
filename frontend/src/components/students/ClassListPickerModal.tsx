@@ -24,13 +24,15 @@
  * the lesson from 2026-11-16, when this component's twin hand-rolled all six
  * and drifted visibly from every other dialog in the system.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 // The SAME rules the exam form applies to these two fields, and the same two
 // schemas/_text.py applies on the server. A teacher types a subject into both
 // screens; two rules would drift.
 import { checkSubject, checkSection } from "@/lib/textField";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, fifth revision.
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 import type { ClassList } from "@/types/classList";
 
 type Mode = "existing" | "new";
@@ -62,6 +64,10 @@ export default function ClassListPickerModal({
 
   const selectRef = useRef<HTMLSelectElement | null>(null);
   const subjectRef = useRef<HTMLInputElement | null>(null);
+  /* NEW 2026-11-24 — the Create New block, which is the only part of this
+   * dialog Enter walks. The dropdown above belongs to the other radio and
+   * is not a box she types in. */
+  const newRef = useRef<HTMLDivElement | null>(null);
 
   // With no lists yet there is nothing to view, so the only live path is
   // creating one. Leaving "View Existing" selected and empty would be a
@@ -105,6 +111,26 @@ export default function ClassListPickerModal({
     onCreate(subject.replace(/\s+/g, " ").trim(),
              schedule.replace(/\s+/g, " ").trim());
   };
+
+  /* NEW 2026-11-24 — requirement 3, FIFTH revision:
+   *
+   *   "Apply validation if you click enter in the first box and it's blank,
+   *    and contains special characters, that when the validaition appears,
+   *    once first box has been entered with info then it will proceed to
+   *    second box, apply it as well in the succeeding input box"
+   *
+   * Enter USED TO RUN proceed() FROM EITHER BOX. That validated, so a blank
+   * Subject was caught — but a VALID Subject did not move the cursor to
+   * Section; it ran the whole dialog and complained about the box below.
+   * Her sentence says the cursor proceeds. Now it does, and Enter from the
+   * last box still runs proceed(), which is what the caller does when
+   * advanceOnEnter returns false.
+   *
+   * THE SAME TWO FUNCTIONS proceed() uses, against the same `local` slot. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "cl-subject": { check: checkSubject, show: setLocal },
+    "cl-section": { check: v => checkSection(v, true), show: setLocal },
+  }), []);
 
   const shown = local ?? error;
 
@@ -171,7 +197,19 @@ export default function ClassListPickerModal({
           Create New List of Students
         </label>
       </div>
-      <div style={{ marginLeft: "1.6rem", marginBottom: "1.4rem" }}>
+      <div
+        ref={newRef}
+        style={{ marginLeft: "1.6rem", marginBottom: "1.4rem" }}
+        /* NEW 2026-11-24 — requirement 3, fifth revision. One handler on the
+           block, not one per box: advanceOnEnter needs to see both boxes to
+           know which is next. On the LAST box it returns false and Proceed
+           runs, which is what Enter did from both boxes before. */
+        onKeyDown={e => {
+          if (!advanceOnEnter(e, newRef.current, ".form-input", fieldCheck)) {
+            if (e.key === "Enter") { e.preventDefault(); proceed(); }
+          }
+        }}
+      >
         <label className="form-label" htmlFor="cl-subject">Subject Name</label>
         <input
           ref={subjectRef}
@@ -181,7 +219,6 @@ export default function ClassListPickerModal({
           disabled={mode !== "new"}
           placeholder="English101"
           onChange={e => { setSubject(e.target.value); setLocal(null); }}
-          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); proceed(); } }}
         />
         {/* CHANGED 2026-11-23 — Ms. Melanie, page 18 requirement 4, her
             words: "Under List of Students (in the Side Bar): Instead of
@@ -203,10 +240,15 @@ export default function ClassListPickerModal({
             column rename is one migration plus about a dozen files and it
             lands as a SINGLE push — see PAGE18-MELANIE-2026-11-23.md.
 
-            NOTE: this still calls checkSchedule(). If that enforces a
-            day/time shape rather than length and characters, "BSCS 1B" will
-            be refused — worth one look at lib/textField.ts before Ms. Melanie
-            sees this. */}
+            ANSWERED AND ACTED ON 2026-11-24. This used to say "still calls
+            checkSchedule() - if that enforces a day/time shape, a section
+            name will be refused". It does not: checkSchedule tests length
+            and characters only, so "BSCS 3A" was never at risk. The real
+            defect was the WORD - a box labelled Section answering
+            "Schedule is required.", seen on learnlens.tech - and that
+            checkSchedule accepts "---" as a section. This box now calls
+            checkSection(), which has existed since 2026-11-15 and which
+            nothing called. See measure/2026-11-24_section_rule.mjs. */}
         <label className="form-label" htmlFor="cl-section"
                style={{ marginTop: "0.6rem" }}>
           Section
@@ -218,7 +260,6 @@ export default function ClassListPickerModal({
           disabled={mode !== "new"}
           placeholder="BSCS 1B"
           onChange={e => { setSchedule(e.target.value); setLocal(null); }}
-          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); proceed(); } }}
         />
         <p style={{ fontSize: "0.72rem", color: "var(--text-muted)",
                     margin: "0.25rem 0 0", lineHeight: 1.35 }}>

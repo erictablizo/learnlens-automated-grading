@@ -516,9 +516,20 @@ export default function EditExamForm({ examId }: Props) {
             The id moves to `exam-section` to match Create Exam. Nothing reads
             it by name - it is the <label for> target and a test selector.
 
-            NOTE: still checkSchedule(). If that enforces a day/time shape
-            rather than length and characters, "BSCS 3A" is refused HERE TOO -
-            one look at lib/textField.ts covers both forms. */}
+            ANSWERED AND ACTED ON 2026-11-24. This used to say "still calls
+            checkSchedule() - if that enforces a day/time shape, a section
+            name will be refused". It does not: checkSchedule tests length
+            and characters only, so "BSCS 3A" was never at risk. The real
+            defect was the WORD - a box labelled Section answering
+            "Schedule is required.", seen on learnlens.tech - and that
+            checkSchedule accepts "---" as a section. This box now calls
+            checkSection(), which has existed since 2026-11-15 and which
+            nothing called. See measure/2026-11-24_section_rule.mjs.
+
+            ON THIS SCREEN ONLY, checkSchedule survives behind a guard: an
+            UNTOUCHED legacy day/time keeps the old rule, because refusing
+            the colon in a value she did not type would lock her out of
+            editing the exam's name. See validate(). */}
         <label className="form-label" htmlFor="exam-section">Section</label>
         <input
           id="exam-section"

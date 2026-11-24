@@ -311,11 +311,15 @@ export default function CreateExamForm() {
             and stores it in the schedule column, which is the honest state of
             a rename in progress.
 
-            NOTE on validation: this still calls checkSchedule(). If that
-            function enforces a day/time shape rather than just length and
-            characters, a section name like "BSCS 3A" will be refused — and
-            that is a thing to check in lib/textField.ts before showing this
-            to Ms. Melanie. */}
+            ANSWERED AND ACTED ON 2026-11-24. This used to say "still calls
+            checkSchedule() - if that enforces a day/time shape, a section
+            name will be refused". It does not: checkSchedule tests length
+            and characters only, so "BSCS 3A" was never at risk. The real
+            defect was the WORD - a box labelled Section answering
+            "Schedule is required.", seen on learnlens.tech - and that
+            checkSchedule accepts "---" as a section. This box now calls
+            checkSection(), which has existed since 2026-11-15 and which
+            nothing called. See measure/2026-11-24_section_rule.mjs. */}
         <label className="form-label" htmlFor="exam-section">Section <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
         <input
           id="exam-section"
