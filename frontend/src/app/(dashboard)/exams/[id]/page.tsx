@@ -99,13 +99,19 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
 // `where` only reaches the aria-labels. Two buttons with the identical
 // accessible name on one page is not an error, but "Previous page, bottom"
 // is what lets somebody listening tell which one they have landed on.
-function PageNav({ examPages, pageIdx, totalPages, goPage, studentName, where }: {
+function PageNav({ examPages, pageIdx, totalPages, goPage, studentName, where,
+                   what }: {
   examPages:   { page_number: number }[];
   pageIdx:     number;
   totalPages:  number;
   goPage:      (dir: 1 | -1) => void;
   studentName: string | null;
   where:       "top" | "bottom";
+  /** NEW 2026-11-24 - what this pager moves. The sixth revision of
+   *  requirement 10 gives the two pagers DIFFERENT jobs, so "Page 1 of 2"
+   *  twice on one screen now names two different things. Omitted on the
+   *  top pager, which moves the pictures and sits under them. */
+  what?:       string;
 }) {
   const at = where === "top" ? "" : ", bottom";
   return (
@@ -115,7 +121,8 @@ function PageNav({ examPages, pageIdx, totalPages, goPage, studentName, where }:
       {/* the page's OWN number, not its position in the array - see the
           sort in the page body. They agree once sorted, and this stays
           correct if a page is ever missing from the middle. */}
-      <span>Page {examPages[pageIdx]?.page_number ?? pageIdx + 1} of {totalPages}</span>
+      <span>{what ? `${what} page ` : "Page "}
+            {examPages[pageIdx]?.page_number ?? pageIdx + 1} of {totalPages}</span>
       <button className="btn-icon" onClick={() => goPage(1)} disabled={pageIdx >= examPages.length - 1}
               aria-label={`Next page${at}`}><IconRight /></button>
       {studentName && (
@@ -149,6 +156,14 @@ export default function ViewExamPage() {
 
   // Page viewer
   const [pageIdx,     setPageIdx]     = useState(0);
+  /* NEW 2026-11-24 - Ms. Melanie, requirement 10, SIXTH revision:
+   *   "Previous and Next above the answer key, should only be applied on
+   *    uploaded answer key and exam test paper pictures"
+   *   "Previous and next below the answer key, should applicable on
+   *    answer key"
+   * So the two pagers move DIFFERENT things and need two indices. They
+   * start together and drift only when she moves one. */
+  const [keyPageIdx,  setKeyPageIdx]  = useState(0);
   const [examImgErr,  setExamImgErr]  = useState(false);
   const [paperImgErr, setPaperImgErr] = useState(false);
 
@@ -566,7 +581,9 @@ export default function ViewExamPage() {
       expectedItems: number | null = null,
       pointRanges: string[] = [],             // CHANGED 2026-11-21 — Alex page 13
     ) => {
-      const currentPage = examPages[pageIdx];
+      // CHANGED 2026-11-24 - the key pager's page, matching the card this
+      // button lives in. See the note on AnswerKeyPanel's props.
+      const currentPage = examPages[keyPageIdx];
       if (!currentPage) { setShowQuestionTypeModal(false); return; }
       const token = getToken();
       if (!token) { router.replace("/login"); return; }
@@ -607,17 +624,28 @@ export default function ViewExamPage() {
     .slice().sort((a, b) => a.page_number - b.page_number);
   const totalPages = Math.max(examPages.length, 1);
 
+  /* NEW 2026-11-24 - the BOTTOM pager. No image-error reset: this one moves
+   * no pictures, so there is no <img> whose onError flag could be stale. */
+  const goKeyPage = (dir: 1 | -1) => {
+    setKeyPageIdx(i => Math.min(Math.max(0, i + dir), examPages.length - 1));
+  };
+
   const goPage = (dir: 1 | -1) => {
     setPageIdx(i => Math.min(Math.max(0, i + dir), examPages.length - 1));
     setExamImgErr(false); setPaperImgErr(false);
   };
 
   const currentExamPage  = examPages[pageIdx];
+  /* NEW 2026-11-24 - requirement 10, sixth revision. The page whose ANSWER
+   * KEY is listed, which is no longer the page whose picture is shown. */
+  const currentKeyPage   = examPages[keyPageIdx];
   const currentPaperPage = paperPages[pageIdx];
 
   // FIX 2026-09-22: show only the answers of the page being viewed
   const currentPageKeys = (exam?.answer_keys ?? [])
-    .filter(ak => !currentExamPage || ak.page_id == null || ak.page_id === currentExamPage.page_id)
+    /* CHANGED 2026-11-24 - was currentExamPage. The grid is what the BOTTOM
+       pager moves now; the pictures above it move on their own. */
+    .filter(ak => !currentKeyPage || ak.page_id == null || ak.page_id === currentKeyPage.page_id)
     .slice()
     .sort((a, b) => a.question_number - b.question_number);
 
@@ -757,8 +785,12 @@ export default function ViewExamPage() {
             <AnswerKeyPanel
               examId={examId}
               keys={currentPageKeys}
-              pageNumber={examPages[pageIdx]?.page_number ?? 1}
-              pageId={currentExamPage?.page_id ?? 0}
+              /* CHANGED 2026-11-24 - the card shows the KEY pager's page, and
+                 so does its Generate button. Decided with Grace: the button
+                 is inside this card, so it regenerates the key in front of
+                 her, even when the photograph above shows another page. */
+              pageNumber={currentKeyPage?.page_number ?? 1}
+              pageId={currentKeyPage?.page_id ?? 0}
               canGenerate={!!currentExamPage}
               generating={generatingKey}
               onGenerate={handleGenerateKey}
@@ -814,8 +846,22 @@ export default function ViewExamPage() {
             when there is more than one page, because a single-page exam
             would show two identical dead pagers twenty lines apart. */}
         {examPages.length > 1 && (
-          <PageNav examPages={examPages} pageIdx={pageIdx} totalPages={totalPages}
-                   goPage={goPage} studentName={null} where="bottom" />
+          <>
+            <PageNav examPages={examPages} pageIdx={keyPageIdx} totalPages={totalPages}
+                     goPage={goKeyPage} studentName={null} where="bottom"
+                     what="Answer key" />
+            {/* NEW 2026-11-24 - the cost of decoupling them, said out loud.
+                The grid can now list page 1 while the photographs show page
+                2, which is what she asked for and also a way to misread the
+                screen. Shown only when they have actually drifted. */}
+            {keyPageIdx !== pageIdx && (
+              <p role="status" style={{ fontSize: "0.75rem", color: "var(--text-muted)",
+                                        textAlign: "center", margin: "0.3rem 0 0" }}>
+                The pictures above are showing page{" "}
+                {examPages[pageIdx]?.page_number ?? pageIdx + 1}.
+              </p>
+            )}
+          </>
         )}
 
         {/* ── Test Papers section ── */}
@@ -1001,7 +1047,7 @@ export default function ViewExamPage() {
         /> */}
         <QuestionTypeModal
           isOpen={showQuestionTypeModal}
-          pageNumber={examPages[pageIdx]?.page_number}
+          pageNumber={examPages[keyPageIdx]?.page_number}
           onClose={() => { if (!generatingKey) setShowQuestionTypeModal(false); }}
           onSelect={handleGenerateKeyWithType}
           loading={generatingKey}
