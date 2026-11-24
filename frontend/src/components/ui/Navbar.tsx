@@ -443,14 +443,23 @@ export default function Navbar() {
       </div>
 
       {/* ── Nav links ── */}
-      <Link
-        href="/exams"
-        className={`sidebar-item${onExams ? " active" : ""}`}
-        aria-current={onExams ? "page" : undefined}
-      >
-        <IconList />
-        Manage Exams
-      </Link>
+      {!isAdmin && (
+        /* HIDDEN FOR ADMINS 2026-11-24 - Ms. Melanie, page 19 requirement 1.
+           She circled this entry on a screenshot of an ADMIN session and
+           asked for the circled ones to be reworked to match what an admin
+           actually does: "monitor how many the teachers recorrected answer"
+           and "create accounts, edit and delete". None of that is this
+           screen, and the admin account in her screenshot owns 0 exams.
+           Teachers are unaffected. */
+        <Link
+          href="/exams"
+          className={`sidebar-item${onExams ? " active" : ""}`}
+          aria-current={onExams ? "page" : undefined}
+        >
+          <IconList />
+          Manage Exams
+        </Link>
+      )}
 
       {/* NEW 2026-11-12 (Doc Rubrica): "Create List of Students per Section".
 
@@ -491,18 +500,27 @@ export default function Navbar() {
           The icon is written inline rather than as another module-level
           const: it is used once, and a sixth Icon* beside the five above
           would be five lines of ceremony for one call site. */}
-      <Link
-        href="/class-lists"
-        className={`sidebar-item${onClassLists ? " active" : ""}`}
-        aria-current={onClassLists ? "page" : undefined}
-      >
-        <svg width="18" height="18" fill="none" viewBox="0 0 24 24"
-             stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-        </svg>
-        List of Students
-      </Link>
+      {!isAdmin && (
+        /* HIDDEN FOR ADMINS 2026-11-24 - Ms. Melanie, page 19 requirement 1.
+           She circled this entry on a screenshot of an ADMIN session and
+           asked for the circled ones to be reworked to match what an admin
+           actually does: "monitor how many the teachers recorrected answer"
+           and "create accounts, edit and delete". None of that is this
+           screen, and the admin account in her screenshot owns 0 exams.
+           Teachers are unaffected. */
+        <Link
+          href="/class-lists"
+          className={`sidebar-item${onClassLists ? " active" : ""}`}
+          aria-current={onClassLists ? "page" : undefined}
+        >
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          List of Students
+        </Link>
+      )}
 
       {/* NEW 2026-11-04 (Doc Rubrica, page 4): "Add Additional TAB for Summary
           Report". Between Manage Exams and Sign out, which is where her
@@ -510,14 +528,23 @@ export default function Navbar() {
 
           /reports does not collide with the /exams test above, so Manage Exams
           does not light up on this screen. */}
-      <Link
-        href="/reports"
-        className={`sidebar-item${onReports ? " active" : ""}`}
-        aria-current={onReports ? "page" : undefined}
-      >
-        <IconReport />
-        Summary Report
-      </Link>
+      {!isAdmin && (
+        /* HIDDEN FOR ADMINS 2026-11-24 - Ms. Melanie, page 19 requirement 1.
+           She circled this entry on a screenshot of an ADMIN session and
+           asked for the circled ones to be reworked to match what an admin
+           actually does: "monitor how many the teachers recorrected answer"
+           and "create accounts, edit and delete". None of that is this
+           screen, and the admin account in her screenshot owns 0 exams.
+           Teachers are unaffected. */
+        <Link
+          href="/reports"
+          className={`sidebar-item${onReports ? " active" : ""}`}
+          aria-current={onReports ? "page" : undefined}
+        >
+          <IconReport />
+          Summary Report
+        </Link>
+      )}
 
       {/* NEW 2026-11-11 (Doc Rubrica, post-UAT page 1): "Data Analytics -
           separate clickable option in the side bar".
@@ -525,14 +552,23 @@ export default function Navbar() {
           It reads the same three Subject / Schedule / Exam Name boxes the
           Summary Report does, so it belongs beside it rather than under
           Manage Exams. Sign out stays last. */}
-      <Link
-        href="/analytics"
-        className={`sidebar-item${onAnalytics ? " active" : ""}`}
-        aria-current={onAnalytics ? "page" : undefined}
-      >
-        <IconChart />
-        Data Analytics
-      </Link>
+      {!isAdmin && (
+        /* HIDDEN FOR ADMINS 2026-11-24 - Ms. Melanie, page 19 requirement 1.
+           She circled this entry on a screenshot of an ADMIN session and
+           asked for the circled ones to be reworked to match what an admin
+           actually does: "monitor how many the teachers recorrected answer"
+           and "create accounts, edit and delete". None of that is this
+           screen, and the admin account in her screenshot owns 0 exams.
+           Teachers are unaffected. */
+        <Link
+          href="/analytics"
+          className={`sidebar-item${onAnalytics ? " active" : ""}`}
+          aria-current={onAnalytics ? "page" : undefined}
+        >
+          <IconChart />
+          Data Analytics
+        </Link>
+      )}
 
       {/* NEW 2026-11-13 (Alex Passion / Julius Bancud, post-UAT page 2, item 1):
           "(*) Admin -> ID -> to handle maintenance".
