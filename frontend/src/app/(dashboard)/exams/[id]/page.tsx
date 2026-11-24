@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Navbar from "@/components/ui/Navbar";
 import Button from "@/components/ui/Button";
@@ -159,6 +159,19 @@ export default function ViewExamPage() {
 
   // Grading
   const [checking, setChecking] = useState(false);
+
+  /* NEW 2026-11-24 — Sir Alex Passion, 8:09 AM: "can you place a button that
+   * will update (re-check) ALL test paper?"
+   *
+   * `recheckStop` is a REF, not state. The loop below reads it between
+   * papers, and a state read inside a running async loop would see the
+   * value captured when the loop started — the Stop button would do
+   * nothing until the whole run finished, which is the opposite of a
+   * Stop button. */
+  const [recheckAsk,  setRecheckAsk]  = useState(false);
+  const [recheckBusy, setRecheckBusy] = useState(false);
+  const [recheckDone, setRecheckDone] = useState(0);
+  const recheckStop = useRef(false);
 
   // Delete confirm dialog
   const [deletingPaper, setDeletingPaper] = useState<Paper | null>(null);
@@ -322,6 +335,69 @@ export default function ViewExamPage() {
     } catch (e: unknown) {
       setToast({ msg: e instanceof Error ? e.message : "Something went wrong while checking the paper. Please try again.", type: "error" });
     } finally { setChecking(false); }
+  };
+
+  /* ── Re-check EVERY paper ────────────────────────────────────────────────
+   * NEW 2026-11-24 — Sir Alex Passion, Messenger, 8:09 AM:
+   *
+   *   "when the answer key was updated, how can u update the rest of the
+   *    test paper at once without re-uploading each students paper? can you
+   *    place a button that will update (re-check) ALL test paper?"
+   *
+   * NOT FOR THE CASCADE PATHS. Editing one key item, and importing a key
+   * from an image, already re-check every paper from the STORED answers
+   * with no OCR at all — see handleKeySaved and handleKeyImported above.
+   * This is for the third path: Generate Answer Key calls
+   * exam_service.reset_exam_paper_scores(), which DELETES the PaperScore
+   * rows. student_answer goes with them, so no cascade is possible and
+   * each paper has to be read again.
+   *
+   * SEQUENTIAL, NOT Promise.all. Each grade is an OCR run on the server;
+   * firing twelve at once would queue them there anyway and the page would
+   * have no honest progress to show. One at a time means `recheckDone` is
+   * a fact rather than an estimate — the same distinction AddEditPaperModal
+   * draws between its two bars.
+   *
+   * A FAILURE DOES NOT STOP THE RUN. One unreadable paper should not leave
+   * the other eleven unchecked; it is counted and named at the end. */
+  const handleRecheckAll = async () => {
+    const token = getToken();
+    if (!token) { router.replace("/login"); return; }
+    setRecheckAsk(false);
+    recheckStop.current = false;
+    setRecheckBusy(true);
+    setRecheckDone(0);
+
+    let done = 0, failed = 0, review = 0;
+    for (const p of papers) {
+      if (recheckStop.current) break;
+      try {
+        const r = await paperService.grade(examId, p.paper_id, token);
+        done++;
+        if (!r.is_final) review++;
+      } catch {
+        failed++;
+      }
+      setRecheckDone(n => n + 1);
+    }
+
+    await fetchPapers();
+    if (selectedPaper) {
+      try {
+        const updated = await paperService.get(examId, selectedPaper.paper_id, token);
+        setSelectedPaper(updated); setSelectedPaperFull(updated);
+      } catch {}
+    }
+    setRecheckBusy(false);
+
+    const bits: string[] = [`${done} paper(s) re-checked`];
+    if (review > 0) bits.push(`${review} need your review`);
+    if (failed > 0) bits.push(`${failed} could not be read`);
+    if (recheckStop.current) bits.push("stopped early");
+    setToast({
+      msg: bits.join(" \u00b7 "),
+      type: (failed > 0 || review > 0 || recheckStop.current) ? "error" : "success",
+    });
   };
 
   // ── Paper added ───────────────────────────────────────────────────────────
@@ -784,6 +860,25 @@ export default function ViewExamPage() {
                 to Excel"). SECONDARY so the two paper-adding buttons keep
                 their order and "Add paper" keeps the rightmost, orange,
                 most-reached-for slot it has today. */}
+            {/* NEW 2026-11-24 — Sir Alex Passion, 8:09 AM. Only useful once there
+                are papers, so it is hidden rather than disabled when there are
+                none: a greyed button on an empty exam invites a click that can
+                never do anything.
+
+                WHILE RUNNING IT BECOMES THE STOP BUTTON, showing real progress.
+                A separate Stop would be a fifth control in a row that already
+                holds four, and the thing a teacher wants to click while a
+                sixteen-minute job runs is the thing that started it. */}
+            {papers.length > 0 && (
+              <Button variant="secondary"
+                      onClick={() => { if (recheckBusy) recheckStop.current = true;
+                                      else setRecheckAsk(true); }}
+                      style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
+                {recheckBusy
+                  ? `Stop — ${recheckDone} of ${papers.length}`
+                  : "Re-check all papers"}
+              </Button>
+            )}
             <Button variant="secondary" onClick={handleDownloadExcel} disabled={downloading}
                     style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}>
               {downloading ? "Preparing…" : "Download Excel"}
@@ -813,6 +908,45 @@ export default function ViewExamPage() {
           onDelete={handleDeleteRequest}
           totalItems={exam.answer_keys?.reduce((n, k) => n + (k.points ?? 1), 0) || null}
         />
+
+        {/* NEW 2026-11-24 — Sir Alex Passion, 8:09 AM.
+
+            TWO THINGS THE TEACHER MUST KNOW BEFORE PRESSING YES, and the
+            second matters more than the first.
+
+            THE TIME is 40.1 s per page (THROUGHPUT-2026-10-23) — the same
+            measured figure the class upload and the Add Paper estimate
+            already quote. Nothing is re-uploaded; the photographs are
+            already on the server. It is the READING that is redone.
+
+            THE LOSS is that re-checking re-reads the paper, so it replaces
+            paper_scores — including any answer corrected by hand through the
+            answer table. Those corrections live in `student_answer`, which
+            is exactly what a re-read overwrites. Editing a key ITEM instead
+            cascades and preserves them; see PAPER-ANSWER-OVERRIDE-2026-11-11.
+            A teacher who has corrected OCR errors by hand should be told
+            that before, not after. */}
+        {recheckAsk && (
+          <ConfirmDialog
+            title="Re-check all test papers"
+            message={
+              `This will read all ${papers.length} test paper(s) again against the `
+              + `current answer key. Nothing is re-uploaded — the photos are already `
+              + `saved — but the reading takes about 40 seconds per page, so this `
+              + `may take around ${Math.max(1, Math.round(papers.length * totalPages * 40 / 60))} `
+              + `minute(s). You can stop it at any time.\n\n`
+              + `Any answer you corrected by hand on a paper will be replaced by `
+              + `what the scanner reads this time. If you only changed one answer `
+              + `key item, close this and edit that item instead — that updates `
+              + `every paper straight away and keeps your corrections.`
+            }
+            confirmLabel="Yes, re-check all"
+            cancelLabel="Cancel"
+            onConfirm={handleRecheckAll}
+            onCancel={() => setRecheckAsk(false)}
+            dangerous
+          />
+        )}
 
         {/* ── Delete confirm dialog ── */}
         {deletingPaper && (
