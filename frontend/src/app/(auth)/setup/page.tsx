@@ -199,9 +199,39 @@ export default function ProfileSetupPage() {
             banner below. The error banner keeps its own styling so the two
             are never mistaken for each other. */}
         <p style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--navy)",
-                    margin: "0 0 1rem" }}>
+                    margin: "0 0 0.5rem" }}>
           Please fill-up all information:
         </p>
+
+        {/* NEW 2026-11-24 — the DIRECTIONS half of requirement 1, the same
+            treatment Create Exam got. Her sentence names this screen FIRST:
+            "Application is for Set Up Profile (For New Users), and Create
+            Exam", and a new user is exactly the reader she means by "not
+            everyone is technically inclined".
+
+            STEP 1 EXISTS BECAUSE THIS SCREEN LIES ABOUT WHAT IS OPTIONAL.
+            The photo is the only optional field and says so; the Year Level
+            dropdown said "(optional)" while handleSave refused to continue
+            without it (fixed below). Saying plainly which one field may be
+            left blank is the direction that was missing.
+
+            STEP 3 EXISTS BECAUSE THE FORM CHANGES SHAPE. Course and Year
+            Level are not rendered at all until a College is chosen, so a
+            teacher looking for them before that sees a form with no course
+            on it and no explanation. */}
+        <ol style={{ margin: "0 0 1rem", paddingLeft: "1.1rem",
+                     fontSize: "0.78rem", lineHeight: 1.65,
+                     color: "var(--text-muted)" }}>
+          <li>Add a photo if you like &mdash; it is the only thing on this page
+              you can leave blank.</li>
+          <li>Type your first and last name the way you want them to appear in
+              the sidebar. LearnLens keeps the capitals you type.</li>
+          <li>Choose your college first; your course and year level appear once
+              you have.</li>
+          <li>Type your position, then press <strong>Continue &rarr;</strong>.
+              You can change any of this later from <strong>Edit</strong> in the
+              sidebar.</li>
+        </ol>
 
         {error && (
           <div role="alert" aria-live="assertive" className="alert alert-error">
@@ -369,7 +399,18 @@ export default function ProfileSetupPage() {
           </div>
         )}
 
-        {/* ── Year level — Added 2026-10-05, optional, filtered by college ── */}
+        {/* ── Year level — Added 2026-10-05, filtered by college ──
+            CORRECTED 2026-11-24: this comment and the prompt below both said
+            "optional". handleSave has required it since
+            apply_2026-11-16_profile_required.py added
+            `?? (!year ? "Please select a year level." : null)` — so the form
+            invited the teacher to skip the one field it would then refuse to
+            continue without. apply_2026-11-16_profile_asterisks.py fixed the
+            same contradiction on Edit Profile ("No default" became "Select
+            your year level…") and could not fix it here, because this screen
+            has no visible labels and the wording lives in the <option>.
+            The prompt is now `disabled`, matching College and Course, so it
+            cannot be chosen back once a year is picked. */}
         {college && (
           <div className="field">
             <select
@@ -383,7 +424,7 @@ export default function ProfileSetupPage() {
               style={selectStyle(year !== "")}
               disabled={saving}
             >
-              <option value="">Year level you usually teach (optional)</option>
+              <option value="" disabled>Select the year level you usually teach</option>
               {yearOptions.map(y => (
                 <option key={y} value={y}>{lists.yearLabel(college || null, y)}</option>
               ))}
@@ -421,7 +462,13 @@ export default function ProfileSetupPage() {
             <span>
               Sidebar will show:{" "}
               <strong style={{ color: "var(--navy)" }}>
-                {tidyName(firstName)} {tidyName(lastName)}, {course} {tidyName(position) || "Teacher"}
+                {/* CHANGED 2026-11-24: this read `|| "Teacher"`, which previewed a
+                    value that cannot be saved — checkPosition(position, true) has
+                    required Position since 2026-11-16. The preview was telling the
+                    teacher that leaving it blank gives "Teacher". It shows what is
+                    typed, and nothing when nothing is. */}
+                {tidyName(firstName)} {tidyName(lastName)}, {course}{" "}
+                {tidyName(position)}
               </strong>
               {caseHint && (
                 <>
