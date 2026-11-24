@@ -2,39 +2,24 @@
 /**
  * NEW 2026-10-01 — Edit Profile.
  *
- * The profile could only ever be set once, during /setup. This page lets the
- * teacher change it afterwards: photo, name, college, course and position.
- * It reuses the endpoints that already exist, so the backend is unchanged
- * apart from `updated_at` being added to the profile response:
- *     GET  /api/profile          profileService.get
- *     PUT  /api/profile          profileService.save
- *     POST /api/profile/avatar   profileService.uploadAvatar
- *
- * Validation matches /setup — first name, last name, college and course are
- * all required, so saving here can never leave the profile incomplete.
- *
  * Save as, beside the exams folder:
  *     frontend/src/app/(dashboard)/profile/page.tsx     ->  /profile
- *
- * Same shell as the Manage Exams page (dashboard-layout + <Navbar /> +
- * main-content), because the sidebar is rendered per page, not by a layout.
  */
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Navbar, { PROFILE_UPDATED_EVENT } from "@/components/ui/Navbar";
 import { profileService } from "@/services/profileService";
 import {
   College, UserProfile,
-  YearLevel,   // the lists now come from useReferenceLists()
+  YearLevel,
 } from "@/types/profile";
 import { useReferenceLists } from "@/hooks/useReferenceLists";
 import { getToken, isAuthenticated } from "@/lib/auth";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3. The shared handler;
 // lib/formNav.ts named this screen as a caller when it was written.
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 import { checkPersonName, checkPosition, tidyName }
   from "@/lib/personName";
-// NEW 2026-10-01: shared with the sidebar and the college picker
 import { avatarUrl } from "@/lib/profileDisplay";
 
 export default function EditProfilePage() {
@@ -44,7 +29,7 @@ export default function EditProfilePage() {
      avatar's file input is display:none and formNav skips it, and the
      ".form-input" selector below skips it a second time, on purpose. */
   const cardRef = useRef<HTMLDivElement>(null);
-  const loaded  = useRef(false);     // so loading a profile does not wipe its course
+  const loaded  = useRef(false);
 
   const [mounted,   setMounted]   = useState(false);
   const [profile,   setProfile]   = useState<UserProfile | null>(null);
@@ -54,13 +39,10 @@ export default function EditProfilePage() {
   const [firstName, setFirstName] = useState("");
   const [lastName,  setLastName]  = useState("");
   const [college,   setCollege]   = useState<College | "">("");
-  // NEW 2026-11-14. The College / Course / Year Level choices come from the
-  // database now, not from COLLEGE_OPTIONS and COURSES_BY_COLLEGE. See
-  // hooks/useReferenceLists.ts; the shapes are deliberately the same.
   const lists = useReferenceLists();
   const [course,    setCourse]    = useState("");
   const [position,  setPosition]  = useState("");
-  const [year,      setYear]      = useState<YearLevel | "">("");   // Added on 2026-10-04
+  const [year,      setYear]      = useState<YearLevel | "">("");
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
@@ -68,6 +50,33 @@ export default function EditProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState<string | null>(null);
+
+  /* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, FIFTH revision:
+   *
+   *   "Apply validation if you click enter in the first box and it's blank,
+   *    and contains special characters, that when the validaition appears,
+   *    once first box has been entered with info then it will proceed to
+   *    second box, apply it as well in the succeeding input box"
+   *
+   * THE SAME SIX RULES handleSave() applies, in its order, against the one
+   * `error` slot this screen has. Not a second, weaker copy: an Enter key
+   * and a Save button that disagree about what is valid is worse than a
+   * screen that only checks on Save.
+   *
+   * KEYED BY id, which every box on this card has — unlike app/setup, whose
+   * boxes have none and are keyed by aria-label.
+   *
+   * The two dropdowns that depend on College are DISABLED until one is
+   * chosen, and lib/formNav.ts skips disabled controls, so Enter cannot
+   * strand the cursor on a Course box with nothing in it. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "first-name": { check: v => checkPersonName(v, "First name", true), show: setError },
+    "last-name":  { check: v => checkPersonName(v, "Last name",  true), show: setError },
+    "college":    { check: v => (v ? null : "Please select your college."), show: setError },
+    "course":     { check: v => (v ? null : "Please select your course / program."), show: setError },
+    "year-level": { check: v => (v ? null : "Please select a year level."), show: setError },
+    "position":   { check: v => checkPosition(v, true), show: setError },
+  }), []);
 
   useEffect(() => {
     setMounted(true);
@@ -83,12 +92,6 @@ export default function EditProfilePage() {
         setCollege((p.college as College) ?? "");
         setCourse(p.course ?? "");
         setPosition(p.position ?? "");
-        // CHANGED 2026-11-14 - the saved year is kept, NOT validated here.
-        //
-        // This runs when the profile arrives, which can be BEFORE the lists
-        // have. Validating against an empty list would answer "invalid" and
-        // silently wipe the teacher's saved year level. The effect below does
-        // the validating, once the lists are actually there.
         setYear((p.year_level as YearLevel) ?? "");
         loaded.current = true;
       })
@@ -96,8 +99,6 @@ export default function EditProfilePage() {
       .finally(() => setLoading(false));
   }, [router]);
 
-  // Clear the course when the college CHANGES — but not while loading the
-  // saved profile, or the teacher's existing course would be wiped on arrival.
   useEffect(() => {
     if (!loaded.current) return;
     setCourse(c => (lists.loading ? c
@@ -106,7 +107,6 @@ export default function EditProfilePage() {
     : (lists.isValidYear(college || null, y) ? y : "")));
   }, [college]);
 
-  // Keep a course that is not in the list (entered before the list changed)
   const courseOptions = (() => {
     if (!college) return [];
     const list = lists.coursesFor(college);
@@ -145,34 +145,11 @@ export default function EditProfilePage() {
 
   const handleSave = async () => {
     setError(null); setSaved(false);
-    // REWRITTEN 2026-11-16 (Grace, post-UAT): "validation for all fields
-    // if blank for setup and edit".
-    //
-    // ONE expression, one sentence per field, in the order the fields
-    // appear on the form. The blank test and the character test are now
-    // the SAME call - checkPersonName and checkPosition each take a
-    // `required` flag as of today - which closes two gaps that the two
-    // separate blocks left open:
-    //
-    //   POSITION had no blank check at all, on either screen. A teacher
-    //   could save a profile with no position and the sidebar rendered
-    //   the empty string after her course.
-    //
-    //   FIRST / LAST NAME were blank-checked with !x.trim(), which is a
-    //   different test from the one the server runs: "\u00a0" (a non-breaking
-    //   space) is truthy after .trim() and empty after tidyName().
-    //
-    // Same rules, same order and same words as _check_person_name() and
-    // _check_position() in backend/app/schemas/profile.py - measured, 404
-    // values, 1212 checks, zero disagreements.
     const fieldError =
          checkPersonName(firstName, "First name", true)
       ?? checkPersonName(lastName,  "Last name",  true)
       ?? (!college ? "Please select your college." : null)
       ?? (!course  ? "Please select your course / program." : null)
-      // !year is correct for BOTH screens: `year` is YearLevel | "", the
-      // empty string is falsy, and year levels start at 1 - so there is no
-      // legal value that this test mistakes for "not chosen".
       ?? (!year ? "Please select a year level." : null)
       ?? checkPosition(position, true);
     if (fieldError) { setError(fieldError); return; }
@@ -182,13 +159,6 @@ export default function EditProfilePage() {
 
     setSaving(true);
     try {
-      // Upload the photo first (if changed) so the saved profile already has it.
-      // CHANGED 2026-11-02: keep the response. POST /profile/avatar is declared
-      // response_model=ProfileResponse and returns the profile with the new
-      // avatar_path AND a freshly bumped updated_at. Throwing it away made the
-      // photo depend on the PUT below bumping the timestamp — and when only the
-      // photo changed, the PUT sends identical values and may issue no UPDATE at
-      // all, leaving ?v= unchanged and the browser showing the cached old photo.
       let uploaded: UserProfile | null = null;
       if (avatarFile) uploaded = await profileService.uploadAvatar(avatarFile, token);
 
@@ -198,14 +168,9 @@ export default function EditProfilePage() {
         college:    college as College,
         course,
         position:   tidyName(position) || undefined,
-        // FIX 2026-11-03: was never sent, so Year Level could be set during
-        // /setup and then never changed from here.
         year_level: year === "" ? undefined : year,
       }, token);
 
-      // Take whichever stamp is actually newer. Date.parse, not a string
-      // compare: "2026-11-02T14:10:00+08:00" sorts above "2026-11-02T07:55:14Z"
-      // as text while being the same instant.
       const newest = [updated.updated_at, uploaded?.updated_at]
         .filter(Boolean)
         .sort((a, b) => Date.parse(b as string) - Date.parse(a as string))[0]
@@ -219,7 +184,6 @@ export default function EditProfilePage() {
       setAvatarFile(null);
       setAvatarPreview(null);
       setSaved(true);
-      // tell the sidebar to reload, so the new name / photo show immediately
       window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not save your profile. Please try again.");
@@ -263,9 +227,10 @@ export default function EditProfilePage() {
                  1st Column of the second box."  On the LAST box (Position)
                  advanceOnEnter returns false and nothing happens, deliberately —
                  the same decision as app/setup/page.tsx, this screen's sibling.
-                 An Enter that silently commits a profile change is worse than an
-                 Enter that waits for Save. */
-              onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input"); }}
+
+                 FIFTH REVISION, same day: the box is CHECKED before anything
+                 moves. See fieldCheck above. */
+              onKeyDown={e => { advanceOnEnter(e, cardRef.current, ".form-input", fieldCheck); }}
             >
 
               {/* ── Photo ── */}
@@ -357,9 +322,6 @@ export default function EditProfilePage() {
                 {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
 
-              {/* Added on 2026-10-04 — the year level this teacher usually teaches */}
-              {/* FIX 2026-10-22: every other label on this form is a short
-                  noun phrase - First Name, Last Name, College, Position. */}
               <label className="form-label" htmlFor="year-level" style={labelGap}>
                 Year Level <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
               </label>
@@ -371,34 +333,23 @@ export default function EditProfilePage() {
                   setError(null); setSaved(false);
                 }}
                 aria-required="true">
-                {/* CHANGED 2026-11-16: this option used to offer the teacher
-                    no year at all, which told her the field was optional - and
-                    it stopped being optional the moment handleSave() started
-                    requiring it. */}
-                <option value="">{college ? "Select your year level\u2026" : "Select a college first"}</option>
+                <option value="">{college ? "Select your year level…" : "Select a college first"}</option>
                 {lists.yearLevelsFor(college || null).map(y => (
                   <option key={y} value={y}>{lists.yearLabel(college || null, y)}</option>
                 ))}
               </select>
               <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
-                {/* FIX 2026-10-22: the screen this sentence described was
-                    deleted together with /college on 5 Oct. */}
                 The year level you usually teach. Saved to your profile.
               </p>
 
               <label className="form-label" htmlFor="position" style={labelGap}>
                 Position <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
               </label>
-              {/* CHANGED 2026-11-16: the placeholder was "Teacher", which is
-                  the value this box used to fall back to when left blank. */}
               <input id="position" className="form-input" value={position} disabled={saving}
                 placeholder="e.g. Instructor II"
                 aria-required="true"
                 onChange={e => { setPosition(e.target.value); setError(null); setSaved(false); }} />
               <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "-0.7rem", marginBottom: "1rem" }}>
-                {/* CHANGED 2026-11-16: this sentence told the teacher to do the
-                    one thing handleSave() now refuses. The "Teacher" fallback
-                    is gone with it. */}
                 Shown in the sidebar under your name, above your course.
               </p>
 
