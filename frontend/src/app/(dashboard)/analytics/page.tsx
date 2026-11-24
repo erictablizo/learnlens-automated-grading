@@ -47,6 +47,13 @@ import { bySurname, paperLastName, paperFirstName } from "@/lib/textField";
 import { examFromSearch, backHref } from "@/lib/analyticsLink";
 import { DEFAULT_PASSING_MARK, clampMark, passingScore } from "@/lib/passing";
 import { summariseScores, asRows } from "@/lib/scoreStats";
+// NEW 2026-11-24 - requirement 9's Mode, as Ms. Melanie defines it.
+import { itemExtremes, itemModeLines } from "@/lib/itemExtremes";
+
+/** NEW 2026-11-24 — "6 checked paper(s)" on a screen Ms. Melanie asked to
+ *  make user-friendly (requirement 1). Local to this page because all
+ *  three "(s)" sites are in this file. */
+const plural = (n: number, one: string, many = one + "s") => (n === 1 ? one : many);
 
 /**
  * The passing mark, as a PERCENTAGE of the exam's item count.
@@ -327,13 +334,22 @@ export default function DataAnalyticsPage() {
   );
   const hidden = (items?.items.length ?? 0) - majority.length;
 
-  /* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 9, verbatim:
+  /* NEW 2026-11-23 - Ms. Melanie, page 18 requirement 9. Her words:
    *
-   *   "Insert 'Mean, Median and Mode' before the highest score table.
+   *   "Additional Info in Data Analytics:
+   *    Mean : average score ng lahat; Mode: average kung saan item ang
+   *    pinaka nagkamali lahat at naging tama lahat; Median
+   *
    *      Statistics (Measure) | Value
    *      Mean                 |
    *      Median               |
    *      Mode                 |"
+   *
+   * CORRECTED 2026-11-24. The position - above the highest-score table - is
+   * from the red arrow on her screenshot and is right. The sentence this
+   * used to quote was not hers. Her gloss defines Mode as being about an
+   * ITEM rather than a score; see lib/scoreStats.ts, where that is written
+   * out. OPEN QUESTION.
    *
    * COMPUTED FROM `final`, THE SAME ARRAY THE FOUR TABLES BELOW USE. That is
    * the whole point: the mean sits directly above a list of students, and if
@@ -344,6 +360,18 @@ export default function DataAnalyticsPage() {
   const stats = useMemo(
     () => summariseScores(final.map(p => p.total_score), totalPoints > 0 ? totalPoints : null),
     [final, totalPoints],
+  );
+
+  /* NEW 2026-11-24 - the Mode row, from her own definition: "average kung
+   * saan item ang pinaka nagkamali lahat at naging tama lahat".
+   *
+   * From `items`, NOT from `final`. The other two rows are score statistics
+   * over the checked papers; this one is about questions, and it reads the
+   * same per-item counts the table at the foot of this page uses - so the
+   * item it names is the same item that table shows. */
+  const modeLines = useMemo(
+    () => itemModeLines(itemExtremes(items?.items)),
+    [items],
   );
 
   const categories: Category[] = useMemo(() => {
@@ -487,9 +515,12 @@ export default function DataAnalyticsPage() {
                 color: "var(--navy)", background: "var(--orange-light)",
                 border: "1px solid var(--orange)", borderRadius: "var(--radius-sm)",
               }}>
-                {excluded} of {papers.length} paper(s) are not included below: they are not
-                graded yet, or still have items waiting for your decision, so their score
-                is a minimum rather than a result.
+                {excluded} of {papers.length} {plural(papers.length, "paper")}{" "}
+                {plural(excluded, "is", "are")} not included below: {plural(excluded,
+                "it is", "they are")} not graded yet, or still {plural(excluded, "has",
+                "have")} items waiting for your decision, so {plural(excluded,
+                "its score is a minimum", "their scores are minimums")} rather than a
+                result.
               </div>
             )}
 
@@ -509,17 +540,30 @@ export default function DataAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {asRows(stats).map(r => (
-                      <tr key={r.measure}>
-                        <td style={{ color: "var(--navy)", fontWeight: 600 }}>{r.measure}</td>
-                        <td style={{
-                          color: r.value === "\u2014" ? "var(--text-muted)" : "var(--navy)",
-                          fontWeight: r.value === "\u2014" ? 400 : 700,
-                        }}>
-                          {r.value}
-                        </td>
-                      </tr>
-                    ))}
+                    {asRows(stats, "\u2014", modeLines).map(r => {
+                      const lines = Array.isArray(r.value) ? r.value : [r.value];
+                      const empty = lines.length === 1 && lines[0] === "\u2014";
+                      return (
+                        <tr key={r.measure}>
+                          <td style={{ color: "var(--navy)", fontWeight: 600 }}>{r.measure}</td>
+                          <td style={{
+                            color: empty ? "var(--text-muted)" : "var(--navy)",
+                            fontWeight: empty ? 400 : 700,
+                          }}>
+                            {/* Mode is TWO lines - the item most got wrong and
+                                the item most got right. One joined string
+                                reads as a single sentence and the two item
+                                numbers run together. */}
+                            {lines.map((t, i) => (
+                              <div key={i} style={{ fontWeight: lines.length > 1 ? 600 : undefined,
+                                                    fontSize: lines.length > 1 ? "0.82rem" : undefined }}>
+                                {t}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -527,14 +571,28 @@ export default function DataAnalyticsPage() {
                           marginTop: "0.6rem", lineHeight: 1.6 }}>
                 {stats.count === 0
                   ? "No paper in this exam has been checked yet, so there is nothing to average."
-                  : <>Over the {stats.count} checked paper(s)
+                  /* CORRECTED 2026-11-24, from a screenshot of learnlens.tech.
+                     This clause was UNCONDITIONAL and said "one", so on an exam
+                     with nothing under review it printed a false statement: the
+                     live page showed "Over the 6 checked paper(s) ... one still
+                     waiting for your decision ... is not averaged" while all six
+                     were averaged (mean 54.5 = 327/6, median 59.5, both over all
+                     six). `excluded` was already computed on line 316 and already
+                     drives the banner above; it just never reached this sentence.
+                     The two clauses also contradicted each other outright. */
+                  : <>Over the {stats.count} checked {plural(stats.count, "paper")}
                      {stats.outOf ? <>, out of {stats.outOf} points</> : null}. The same
-                     papers as the tables below: one still waiting for your decision has a
-                     score that is a minimum, not a result, so it is not averaged.
-                     {stats.mode.length === 0 &&
-                       " Mode is a dash because no score occurs more than once."}
-                     {stats.mode.length > 1 &&
-                       " More than one score ties for most common, so all of them are shown."}
+                     papers as the tables below
+                     {excluded > 0
+                       ? <>: {excluded} more {plural(excluded, "is", "are")} still waiting
+                         for your decision, so {plural(excluded, "its score is a minimum",
+                         "their scores are minimums")} rather than a result and
+                         {plural(excluded, " it is", " they are")} not averaged.</>
+                       : <>.</>}
+                     {" Mode names the ITEM the class got wrong most and the " +
+                      "item they got right most, which is how requirement 9 " +
+                      "defines it; it is counted over every graded paper, not " +
+                      "only the checked ones. Ties are all listed."}
                     </>}
               </p>
             </section>
@@ -570,8 +628,9 @@ export default function DataAnalyticsPage() {
                    load. */
                 <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>
                   No item was missed by more than half the class. All{" "}
-                  {items.items.length} item(s) were answered correctly by at least
-                  half of the papers counted.
+                  {items.items.length} {plural(items.items.length, "item")}{" "}
+                  {plural(items.items.length, "was", "were")} answered correctly by
+                  at least half of the papers counted.
                 </p>
               ) : (
                 <>
@@ -621,9 +680,11 @@ export default function DataAnalyticsPage() {
                   </div>
 
                   <p style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "0.6rem", lineHeight: 1.6 }}>
-                    {majority.length} of {items.items.length} item(s) shown.
+                    {majority.length} of {items.items.length}{" "}
+                    {plural(items.items.length, "item")} shown.
                     {hidden > 0 && ` The other ${hidden} were answered correctly by at least half of the papers counted.`}
-                    {" "}Counted over the {items.papers_checked} checked paper(s) and any
+                    {" "}Counted over the {items.papers_checked} checked{" "}
+                    {plural(items.papers_checked, "paper")} and any
                     graded-but-unconfirmed ones. <strong>Blank</strong> is part of
                     <strong> Wrong</strong>, not a separate group. An item still
                     <strong> under review</strong> counts as neither, so an item can

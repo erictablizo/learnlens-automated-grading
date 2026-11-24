@@ -144,12 +144,26 @@ export function modeText(s: ScoreStats, blank = "—"): string {
 
 /** Her three rows, in her order. Built here rather than in the component so
  *  the labels and the values cannot drift apart, and so the dash for a
- *  missing value is decided once. */
-export function asRows(s: ScoreStats, blank = "—"): { measure: string; value: string }[] {
+ *  missing value is decided once.
+ *
+ *  `modeOverride` exists because of requirement 9's own wording. Ms. Melanie
+ *  defines Mode as "average kung saan item ang pinaka nagkamali lahat at
+ *  naging tama lahat" — an ITEM, not a score — and Grace confirmed on
+ *  24 November that her sentence is followed as written. The Data Analytics
+ *  screen therefore passes the item lines from lib/itemExtremes.ts here,
+ *  rather than this module's statistical mode.
+ *
+ *  THE STATISTICAL MODE IS STILL COMPUTED and is still what `modeText`
+ *  returns. Dropping the override is the one-line change back. */
+export function asRows(
+  s: ScoreStats,
+  blank = "—",
+  modeOverride?: string[],
+): { measure: string; value: string | string[] }[] {
   const num = (v: number | null) => (v === null ? blank : trim(v));
   return [
     { measure: "Mean",   value: num(s.mean) },
     { measure: "Median", value: num(s.median) },
-    { measure: "Mode",   value: modeText(s, blank) },
+    { measure: "Mode",   value: modeOverride ?? modeText(s, blank) },
   ];
 }
