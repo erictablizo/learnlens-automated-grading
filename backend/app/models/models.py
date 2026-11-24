@@ -12,11 +12,13 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("role IN ('teacher', 'admin')", name="users_role_check"),
+        CheckConstraint("status IN ('active', 'resigned')", name="ck_users_status"),
     )
     user_id       = Column(Integer, primary_key=True, autoincrement=True)
     email         = Column(String(255), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     role          = Column(String(16), nullable=False, server_default="teacher")
+    status = Column(String(20), nullable=False, server_default="active")
     created_at    = Column(UTCDateTime(), server_default=func.now(), nullable=False)
     updated_at    = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
 

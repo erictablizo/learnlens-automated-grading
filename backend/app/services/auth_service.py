@@ -11,6 +11,19 @@ from app.core.config import settings
 from app.models.models import User, PasswordReset
 
 
+# NEW 2026-11-24: Status = Resigned is what Manage Users offers instead of
+# Delete, and these two strings are the only spellings of it. They live in
+# THIS file, not in admin_user_service.py, because admin_user_service
+# already imports from here (hash_password) and the reverse would be a
+# circular import. One direction, one definition, no drift - the same
+# reason _user_by_email() below is shared by three callers instead of each
+# writing its own `User.email ==`, which is what broke on 2026-11-11.
+#
+# The column itself comes from migrations/2026-11-24_user_status.sql.
+ACTIVE   = "active"
+RESIGNED = "resigned"
+
+
 def hash_password(password: str) -> str:
     # Use direct bcrypt: works reliably across all bcrypt versions and handles UTF-8
     pw_bytes = password.encode("utf-8")[:72]
@@ -112,6 +125,23 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> Opti
     user = await _user_by_email(db, email)
     if not user or not verify_password(password, user.password_hash):
         return None
+
+    # NEW 2026-11-24: the gate that makes Resigned mean something. Until
+    # this line, `status` was written by Manage Users, shown in its table,
+    # and consulted by nothing: a resigned teacher signed in exactly as
+    # before, while the administrator had been told on screen that the
+    # account "can no longer be used".
+    #
+    # Returns None, not a reason, like the two refusals above it - so
+    # /auth/login still cannot be used to find out whether an address is
+    # registered, or what state the account is in. The teacher sees
+    # "Invalid email or password", which is the wrong sentence for this
+    # case; telling them "your account has been closed" would be kinder
+    # and is a decision for the Login screen, not for this function,
+    # because this one is also what keeps the address private.
+    if user.status != ACTIVE:
+        return None
+
     return user
 
 
@@ -122,7 +152,17 @@ async def get_current_user(db: AsyncSession, token: str) -> Optional[User]:
     user_id = payload.get("sub")
     if not user_id:
         return None
-    result = await db.execute(select(User).where(User.user_id == int(user_id)))
+    # NEW 2026-11-24: status is checked HERE TOO, not only at sign-in,
+    # because resigning is revocation and the teacher is already holding a
+    # token. Without this, a token minted before the change keeps working
+    # for the rest of ACCESS_TOKEN_EXPIRE_MINUTES, so the administrator
+    # who set Resigned watches a revoked account carry on working for up
+    # to an hour. Every authenticated request passes through here, so the
+    # cost is one column on a lookup this function already does; the only
+    # alternative that revokes as promptly is a token blacklist.
+    result = await db.execute(
+        select(User).where(User.user_id == int(user_id),
+                           User.status == ACTIVE))
     return result.scalar_one_or_none()
 
 # Recently added on 2026-09-22:
@@ -149,7 +189,14 @@ async def create_password_reset_token(db: AsyncSession, email: str) -> Optional[
     (important when the user presses "Resend email").
     """
     user = await _user_by_email(db, email)
-    if not user:
+    # NEW 2026-11-24: no reset link for a revoked account. Once the gate in
+    # authenticate_user holds, a new password could not be used to sign in
+    # anyway, so this is defence in depth - but "Check your email!"
+    # promising a working link to someone whose access was withdrawn is its
+    # own wrong answer, and the route cannot tell the two cases apart from
+    # the None it gets back, which is exactly what keeps the address
+    # private.
+    if not user or user.status != ACTIVE:
         return None
     await db.execute(
         update(PasswordReset)
@@ -202,7 +249,13 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> boo
         return False
     user_result = await db.execute(select(User).where(User.user_id == reset.user_id))
     user = user_result.scalar_one_or_none()
-    if not user:
+    # NEW 2026-11-24: the last way in. A link issued BEFORE the account was
+    # resigned is still in the mailbox and still unused;
+    # create_password_reset_token will not issue another, but it cannot
+    # retract that one. Resigning does not walk the password_resets table
+    # to cancel outstanding links - it could, but a check here cannot be
+    # forgotten by a future caller that resigns an account some other way.
+    if not user or user.status != ACTIVE:
         return False
     user.password_hash = hash_password(new_password)
     reset.used = True
