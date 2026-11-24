@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { Paper } from "@/types/paper";
@@ -15,7 +15,7 @@ import { checkNamePart, checkMiddleName, tidyText, paperLastName, paperFirstName
 import { planPageFiles } from "@/lib/pageFiles";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Edit
 // Paper in View Exam".
-import { advanceOnEnter } from "@/lib/formNav";
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 
 interface ExistingPage {
   paper_page_id: number;
@@ -172,6 +172,30 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
   const [lastNameError,   setLastNameError]   = useState<string | null>(null);
   const [firstNameError,  setFirstNameError]  = useState<string | null>(null);
   const [middleNameError, setMiddleNameError] = useState<string | null>(null);
+  /* NEW 2026-11-24 — requirement 3, FIFTH revision:
+   *
+   *   "Apply validation if you click enter in the first box and it's blank,
+   *    and contains special characters, that when the validaition appears,
+   *    once first box has been entered with info then it will proceed to
+   *    second box, apply it as well in the succeeding input box"
+   *
+   * THE SAME THREE FUNCTIONS handleSave uses, in its order, so the Enter key
+   * and the Save button cannot disagree about a name.
+   *
+   * PER-FIELD ERRORS ONLY, where handleSave sets the field error AND the
+   * banner at the top. Enter is pressed one box at a time and the message
+   * belongs under that box; copying it into the banner as well would put the
+   * same sentence on screen twice. The banner stays for Save, where several
+   * things can be wrong at once. */
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "edit-last-name":   { check: v => checkNamePart(v, "Last name"),
+                          show: setLastNameError },
+    "edit-first-name":  { check: v => checkNamePart(v, "First name"),
+                          show: setFirstNameError },
+    "edit-middle-name": { check: v => checkMiddleName(v, true),
+                          show: setMiddleNameError },
+  }), []);
+
   const [pages,       setPages]       = useState<ExistingPage[]>([]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
@@ -416,7 +440,7 @@ export default function EditPaperModal({ paper, examId, examPages, onClose, onSu
           root: <Modal> renders the shell and takes no key handler of its own,
           and the div adds nothing to the layout. See the note on formRef. */}
       <div ref={formRef}
-           onKeyDown={e => { advanceOnEnter(e, formRef.current, ".form-input"); }}>
+           onKeyDown={e => { advanceOnEnter(e, formRef.current, ".form-input", fieldCheck); }}>
       {error && (
         <div role="alert" aria-live="assertive" className="alert alert-error" style={{ marginBottom: "1rem" }}>
           {error}

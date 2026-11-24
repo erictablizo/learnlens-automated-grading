@@ -86,6 +86,8 @@ import { getToken } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { PageUploadState, GradeResult } from "@/types/paper";
 import { checkStudentNumber, middleInitial } from "@/lib/textField";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, fifth revision.
+import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
 import { planPageFiles, isImageFile } from "@/lib/pageFiles";
 
 interface Props {
@@ -254,6 +256,35 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
     const t = setInterval(() => setElapsedMs(Date.now() - phaseStart.current), 250);
     return () => clearInterval(t);
   }, [step]);
+
+  /* NEW 2026-11-24 — requirement 3, FIFTH revision:
+   *
+   *   "Apply validation if you click enter in the first box and it's blank,
+   *    and contains special characters, that when the validaition appears,
+   *    once first box has been entered with info then it will proceed to
+   *    second box, apply it as well in the succeeding input box"
+   *
+   * THIS SCREEN HAD NO ENTER BEHAVIOUR AT ALL, and the comment beside the
+   * Student No. box said that was right: three read-only boxes after it, so
+   * nothing to advance to, so no handler. That reasoning was sound for the
+   * FOURTH revision and is wrong for the fifth.
+   *
+   * Forgot Password gets away without one because it is a real <form> and
+   * the browser's submit runs handleSubmit, which validates. THIS IS A
+   * MODAL WITH NO FORM: Enter on a blank or malformed Student No. did
+   * nothing whatsoever - no message, no movement, no save. The one box she
+   * names as "the first box" was the one box that ignored the key.
+   *
+   * ON THE LAST BOX, NOTHING HAPPENS, deliberately - the same decision as
+   * Create Exam and for the same reason: the page images are chosen after
+   * the number, so Save from here would fail on a missing image every
+   * single time and Enter would come to mean "show me an error".
+   *
+   * checkStudentNumber is the same function validate() calls. */
+  const formRef = useRef<HTMLDivElement>(null);
+  const fieldCheck = useMemo(() => makeFieldCheck({
+    "student-number": { check: checkStudentNumber, show: setNumberError },
+  }), []);
 
   const lookupSeq = useRef(0);
 
@@ -429,7 +460,12 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
   return (
     <Modal title="Add Paper" onClose={busy ? () => {} : onClose}>
       {step === "form" && (
-        <>
+        /* NEW 2026-11-24 — requirement 3, fifth revision. A plain wrapper
+           so the walk has a root; <Modal> takes no key handler of its own.
+           The three read-only name boxes are skipped by lib/formNav.ts, so
+           Enter validates the number and then has nowhere to go. */
+        <div ref={formRef}
+             onKeyDown={e => { advanceOnEnter(e, formRef.current, ".form-input", fieldCheck); }}>
           <label className="form-label" htmlFor="student-number">
             Student No. <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span>
           </label>
@@ -555,7 +591,7 @@ export default function AddEditPaperModal({ examId, examPages, onClose, onSucces
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
             <Button variant="primary" onClick={handleSave} style={{ width: "auto", padding: "0.65rem 1.5rem" }}>Save</Button>
           </div>
-        </>
+        </div>
       )}
 
       {step === "uploading" && (
