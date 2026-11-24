@@ -5,6 +5,9 @@ import { authService } from "@/services/authService";
 import { setAuth, clearAuth, getToken, getUser } from "@/lib/auth";
 import { clearActiveCollege } from "@/lib/college";
 import { checkPassword } from "@/lib/password";
+// NEW 2026-11-24 — Ms. Melanie, page 19 requirement 1. The SAME probe the
+// sidebar has used since 2026-11-13; see the note in login() below.
+import { adminService } from "@/services/adminService";
 import { ForgotPasswordResponse } from "@/types/user";
 
 export function useAuth() {
@@ -27,7 +30,27 @@ export function useAuth() {
       // they only appear after clicking "Switch" in the sidebar. The active
       // college comes from the saved profile instead (see lib/college.ts →
       // ensureActiveCollege, called by the sidebar).
-      router.replace(data.profile_complete ? "/exams" : "/setup");
+      // CHANGED 2026-11-24 — Ms. Melanie, page 19 requirement 1: "when login
+      // as admin (go straight to this (https://learnlens.tech/admin) and not
+      // this (https://learnlens.tech/exams))".
+      //
+      // ASKED OF THE SERVER rather than read off `data.user`. Navbar.tsx's
+      // 2026-11-13 note records that `role` lives on `users` and is not in
+      // the profile payload, so the shape of this response is not something
+      // to assume. adminService.isAdmin() never throws — a 401, a 403, a dead
+      // backend and an unregistered router all return false — so the worst a
+      // failure can do is send an admin to /exams, which is where they went
+      // yesterday.
+      //
+      // /setup STILL WINS. An account with no profile goes there whatever its
+      // role, so an admin with no name does not land on a screen whose
+      // sidebar cannot introduce them.
+      if (!data.profile_complete) {
+        router.replace("/setup");
+      } else {
+        const admin = await adminService.isAdmin(data.access_token);
+        router.replace(admin ? "/admin" : "/exams");
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Login failed");
     } finally { setIsLoading(false); }

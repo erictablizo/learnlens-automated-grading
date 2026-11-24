@@ -297,7 +297,8 @@ export default function AdminPage() {
       <input
         value={q}
         onChange={e => setQ(e.target.value)}
-        placeholder="Filter by email, exam, subject or schedule…"
+        {/* CHANGED 2026-11-24 — names the same field as the header above. */}
+        placeholder="Filter by email, exam, subject or section…"
         aria-label="Filter"
         style={{
           width:        "100%",
@@ -386,7 +387,21 @@ export default function AdminPage() {
             <tr>
               <th style={th}>Exam</th>
               <th style={th}>Subject</th>
-              <th style={th}>Schedule</th>
+              {/* CHANGED 2026-11-24 — Ms. Melanie, page 19 requirement 3,
+                  circled in red on the Exams table of this screen: "Instead
+                  of Schedule, replace it with Section".
+
+                  THE LABEL CHANGES; THE FIELD DOES NOT. Still `x.schedule`,
+                  still exams.schedule, same as the six screens relabelled on
+                  2026-11-23 — see PAGE18-MELANIE-2026-11-23.md on why the
+                  column rename is one migration and a dozen files.
+
+                  WORTH KNOWING BEFORE THE DEFENCE: the live rows under this
+                  header hold day-and-time values ("MWF 7:30 am to 9:30 am"),
+                  because they were created before Create Exam started asking
+                  for a section. Relabelled, this screen reads "Section: MWF
+                  7:30 am to 9:30 am" until those rows are edited. */}
+              <th style={th}>Section</th>
               <th style={th}>Owner</th>
               <th style={{ ...th, textAlign: "right" }} title="Answer-key rows. 0 = key not generated">Items</th>
               <th style={{ ...th, textAlign: "right" }}>Papers</th>
