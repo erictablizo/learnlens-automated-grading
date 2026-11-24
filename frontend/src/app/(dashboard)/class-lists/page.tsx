@@ -23,6 +23,11 @@ import {
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "List of
 // Students in Manage Exam".
 import { advanceOnEnter } from "@/lib/formNav";
+// NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, fourth revision:
+// "Application (with Existing Blank Validations, and Special Characters)".
+// Add Paper already checks this exact field with this exact function;
+// this screen typed it straight into a lookup.
+import { checkStudentNumber } from "@/lib/textField";
 
 const IconTrash = () => (
   <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -125,6 +130,25 @@ export default function ClassListsPage() {
   useEffect(() => {
     const raw = number.trim();
     if (!raw) { setFound(null); setLookupMsg(null); return; }
+
+    /* NEW 2026-11-24 — requirement 3, fourth revision: "with Existing Blank
+       Validations, and Special Characters".
+
+       This box had NO character check. Whatever was typed went straight to
+       studentService.lookup() 400ms later, so "@@@" was a network round trip
+       that came back "No student with that number has been added yet." — a
+       wrong answer to the wrong question, when the real answer is that it is
+       not a student number at all.
+
+       checkStudentNumber is the SAME function AddEditPaperModal.tsx already
+       uses on the same field. The two screens disagreeing about what a valid
+       student number looks like was the defect; one function is the fix. */
+    const badNumber = checkStudentNumber(raw);
+    if (badNumber) {
+      setFound(null); setLookupMsg(badNumber); setLookingUp(false);
+      return;
+    }
+
     const mine = ++seq.current;
     setLookingUp(true);
     const t = setTimeout(async () => {
@@ -161,7 +185,32 @@ export default function ClassListsPage() {
   };
 
   const handleAdd = async () => {
-    if (!active || !found) return;
+    if (!active) return;
+
+    /* NEW 2026-11-24 — requirement 3, fourth revision: "with Existing Blank
+       Validations". Add used to `return` on an empty box and say NOTHING, so
+       pressing it — or pressing Enter, which this row routes to Add — looked
+       like a broken button. Every other screen on her list names the field
+       it wants; this one now does too. */
+    const raw = number.trim();
+    if (!raw) {
+      setLookupMsg("Please enter a student number.");
+      return;
+    }
+
+    /* Belt and braces: `found` is already null for anything the lookup
+       effect's check rejected, so this cannot currently fire. It is here
+       because that guard lives in a DEBOUNCED effect, and an Add pressed
+       inside the 400ms window would otherwise post an unchecked value. */
+    const badNumber = checkStudentNumber(raw);
+    if (badNumber) { setLookupMsg(badNumber); return; }
+
+    if (!found) {
+      setLookupMsg(lookingUp
+        ? "Still looking that number up — try again in a moment."
+        : "No student with that number has been added yet.");
+      return;
+    }
     const token = getToken();
     if (!token) return;
     setAdding(true); setError(null);
