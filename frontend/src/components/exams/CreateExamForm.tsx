@@ -188,9 +188,34 @@ export default function CreateExamForm() {
             nothing has gone wrong yet, and the error banner at the foot of
             this form must stay the only red thing on the screen. */}
         <p style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--navy)",
-                    margin: "0 0 1.25rem" }}>
+                    margin: "0 0 0.5rem" }}>
           Please fill-up all information:
         </p>
+
+        {/* NEW 2026-11-24 — the DIRECTIONS half of requirement 1. The line
+            above is a reminder; she asked for directions "because not
+            everyone is technically inclined", which is a different thing.
+
+            FOUR STEPS, not a paragraph: a teacher who is not technically
+            inclined reads a numbered list and skips a block of prose. Step 4
+            exists because nothing on this form currently says what happens
+            after Save — that the answer key is read from the image and comes
+            back for confirmation — and a form that does not say what the
+            button does is the opposite of user friendly.
+
+            Plain words on purpose: "photo or scan", not "upload an image
+            asset"; "the way they appear on your class list", not "must match
+            the roster". NOT an alert: nothing has gone wrong. */}
+        <ol style={{ margin: "0 0 1.25rem", paddingLeft: "1.1rem",
+                     fontSize: "0.8rem", lineHeight: 1.65,
+                     color: "var(--text-muted)" }}>
+          <li>Give the exam a name, and a short description of which class it is for.</li>
+          <li>Type the subject and the section the way they appear on your class list.</li>
+          <li>Upload a photo or scan of your answer key &mdash; one image per page.
+              Use <strong>+ Add page</strong> if your key is more than one sheet.</li>
+          <li>Press <strong>Save</strong>. LearnLens reads the answers from your key
+              and shows them to you to confirm before any paper is checked.</li>
+        </ol>
 
         <label className="form-label" htmlFor="exam-name">Exam Name <span aria-hidden="true" style={{ color: "var(--error)" }}>*</span></label>
         <input
