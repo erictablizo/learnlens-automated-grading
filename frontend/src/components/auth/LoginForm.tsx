@@ -138,10 +138,22 @@ function LoginFormInner() {
           </button>
         </form>
 
-        <p className="auth-footer">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="link-orange">Create an account</Link>
-        </p>
+        {/* REMOVED 2026-11-24 — Ms. Melanie, Recommendations page 19,
+            requirement 2: "Remove this option in Landing Page", with a red box
+            round "Don't have an account? Create an account".
+
+            IT FOLLOWS FROM HER REQUIREMENT 1. Page 19 gives account creation
+            to the admin — "Admin can create accounts, edit and delete" — so a
+            teacher signing herself up is the thing being removed, not the
+            link's wording.
+
+            THE LINK IS GONE; THE ROUTE IS NOT. /register still answers to
+            anyone who types it, so this hides a door rather than locking it.
+            Her requirement 4 sends the admin's "Create New Account" to that
+            same page, so the guard has to be "signed in AND admin", not a
+            deletion. That needs the register route and hooks/useAuth, neither
+            of which is in this tree — flagged to Grace 2026-11-24, not
+            silently left. */}
       </div>
     </div>
   );
