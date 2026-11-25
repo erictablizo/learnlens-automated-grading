@@ -68,6 +68,10 @@ import Navbar from "@/components/ui/Navbar";
 // accounts dialog. Its own component for the same reason ReferenceLists
 // is - this page is a read-only report, and a reader should be able to
 // see where the part that CHANGES THINGS begins without scrolling.
+// NEW 2026-11-25 (Ms. Melanie, page 19 requirement 1): how many answers
+// each teacher has had to type over, and which ones. Read-only, and its
+// own component for the same reason the two beside it are.
+import TeacherCorrections from "@/components/admin/TeacherCorrections";
 import ManageUsers from "@/components/admin/ManageUsers";
 import ReferenceLists from "@/components/admin/ReferenceLists";
 // NEW 2026-11-19 (Alex, points 4-7): the Technical Admin specimen table.
@@ -467,6 +471,10 @@ export default function AdminPage() {
       {/* NEW 2026-11-25. FIRST of the three maintenance sections: an
           administrator who came here to add or remove a person should
           not have to scroll past the dropdown lists to do it. */}
+      {/* NEW 2026-11-25. BEFORE Manage Users: her requirement names
+          monitoring first, and this page already puts looking before
+          doing. */}
+      <TeacherCorrections />
       <ManageUsers />
       <ReferenceLists />
       <SpecimenCorrections />
