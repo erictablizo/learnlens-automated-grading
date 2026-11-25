@@ -24,7 +24,6 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import RegisterForm from "@/components/auth/RegisterForm";
 import { getToken } from "@/lib/auth";
 import { adminService } from "@/services/adminService";
 
@@ -68,5 +67,31 @@ export default function RegisterPage() {
     );
   }
 
-  return <RegisterForm />;
+  /* CHANGED 2026-11-25. An administrator used to be shown RegisterForm
+     here, which was the last way left to lose your own session:
+     useAuth.register() ends in setAuth() with the NEW account's token,
+     so the admin was signed out and became the teacher they had just
+     created, on that teacher's /setup.
+
+     Her requirement 4 wanted "Create New Account" to land somewhere it
+     could be done. That somewhere is the Manage Users dialog on the
+     Administrator screen, which posts to POST /api/admin/users and is
+     issued no token at all. This page points at it rather than
+     duplicating the form, because two forms writing accounts is two
+     things to keep in step. */
+  return (
+    <div className="auth-bg">
+      <div className="auth-card" style={{ textAlign: "center" }}>
+        <h1 className="auth-title">Accounts are created in Manage Users</h1>
+        <p className="auth-subtitle">
+          Open the Administrator screen and choose <strong>Manage Users</strong>,
+          then <strong>Create New Account</strong>. Creating an account there
+          keeps you signed in as yourself.
+        </p>
+        <p className="auth-footer" style={{ marginTop: "1rem" }}>
+          <Link href="/admin" className="link-orange">Go to Administrator</Link>
+        </p>
+      </div>
+    </div>
+  );
 }

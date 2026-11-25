@@ -64,6 +64,11 @@ import Navbar from "@/components/ui/Navbar";
 // NEW 2026-11-14 (Alex & Bancud, Recommendations page 1): the three dropdown
 // lists. Its own component because it is the ONLY part of this screen that
 // changes anything - see its header.
+// NEW 2026-11-25 (Ms. Melanie, page 19 requirements 1 and 3b-5): the
+// accounts dialog. Its own component for the same reason ReferenceLists
+// is - this page is a read-only report, and a reader should be able to
+// see where the part that CHANGES THINGS begins without scrolling.
+import ManageUsers from "@/components/admin/ManageUsers";
 import ReferenceLists from "@/components/admin/ReferenceLists";
 // NEW 2026-11-19 (Alex, points 4-7): the Technical Admin specimen table.
 import SpecimenCorrections from "@/components/admin/SpecimenCorrections";
@@ -459,6 +464,10 @@ export default function AdminPage() {
       {/* NEW 2026-11-14. Below the two read-only tables, deliberately: an
           administrator arrives looking at the state of the installation, and
           maintenance is the thing they do second. */}
+      {/* NEW 2026-11-25. FIRST of the three maintenance sections: an
+          administrator who came here to add or remove a person should
+          not have to scroll past the dropdown lists to do it. */}
+      <ManageUsers />
       <ReferenceLists />
       <SpecimenCorrections />
       </div>
