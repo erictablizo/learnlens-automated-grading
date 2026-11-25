@@ -261,6 +261,17 @@ export default function ReferenceLists() {
               Courses / Programs — {chosen.code}
             </h3>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Course / Program</th>
+                  <th style={th}>In use</th>
+                  <th style={th}>Shown</th>
+                  {/* Blank, as the Colleges table leaves its own
+                      button column blank: one title cannot name
+                      both Rename and Delete. */}
+                  <th style={th} />
+                </tr>
+              </thead>
               <tbody>
                 {courses.map(x => (
                   <tr key={x.course_id}>
@@ -275,16 +286,16 @@ export default function ReferenceLists() {
                           <button style={mini} onClick={() => setEditing(null)}>Cancel</button>
                         </span>
                       ) : (
-                        <>
-                          {x.name}{" "}
-                          <span style={{ marginLeft: "0.3rem" }}><Usage n={x.in_use} /></span>
-                        </>
+                        x.name
                       )}
                     </td>
-                    <td style={{ ...td, whiteSpace: "nowrap", textAlign: "right" }}>
+                    <td style={td}><Usage n={x.in_use} /></td>
+                    <td style={td}>
                       <ActiveToggle on={x.active} onChange={v => run(
                         () => adminReferenceService.editCourse(x.course_id, { active: v }, token()),
-                        refresh)} />{" "}
+                        refresh)} />
+                    </td>
+                    <td style={{ ...td, whiteSpace: "nowrap", textAlign: "right" }}>
                       <button style={mini} disabled={busy}
                               onClick={() => { setEditing({ kind: "course", id: x.course_id }); setEditText(x.name); }}>
                         Rename
@@ -300,7 +311,7 @@ export default function ReferenceLists() {
                   </tr>
                 ))}
                 {courses.length === 0 && (
-                  <tr><td style={{ ...td, color: "var(--text-muted)" }}>No courses yet.</td></tr>
+                  <tr><td style={{ ...td, color: "var(--text-muted)" }} colSpan={4}>No courses yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -326,17 +337,28 @@ export default function ReferenceLists() {
               Year Levels — {chosen.code}
             </h3>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Year Level</th>
+                  <th style={th}>In use</th>
+                  <th style={th}>Shown</th>
+                  {/* Blank, as the Colleges table leaves its own
+                      button column blank: one title cannot name
+                      both Rename and Delete. */}
+                  <th style={th} />
+                </tr>
+              </thead>
               <tbody>
                 {levels.map(y => (
                   <tr key={y.year_level_id}>
+                    <td style={td}>{y.label}</td>
+                    <td style={td}><Usage n={y.in_use} /></td>
                     <td style={td}>
-                      {y.label}{" "}
-                      <span style={{ marginLeft: "0.3rem" }}><Usage n={y.in_use} /></span>
-                    </td>
-                    <td style={{ ...td, whiteSpace: "nowrap", textAlign: "right" }}>
                       <ActiveToggle on={y.active} onChange={v => run(
                         () => adminReferenceService.editYearLevel(y.year_level_id, { active: v }, token()),
-                        refresh)} />{" "}
+                        refresh)} />
+                    </td>
+                    <td style={{ ...td, whiteSpace: "nowrap", textAlign: "right" }}>
                       {y.in_use === 0 && (
                         <button style={{ ...mini, color: "#b42318" }} disabled={busy}
                                 onClick={() => run(
@@ -348,7 +370,7 @@ export default function ReferenceLists() {
                   </tr>
                 ))}
                 {levels.length === 0 && (
-                  <tr><td style={{ ...td, color: "var(--text-muted)" }}>No year levels yet.</td></tr>
+                  <tr><td style={{ ...td, color: "var(--text-muted)" }} colSpan={4}>No year levels yet.</td></tr>
                 )}
               </tbody>
             </table>
