@@ -162,7 +162,7 @@ export default function ReferenceLists() {
               <th style={th}>Code</th>
               <th style={th}>College</th>
               <th style={th}>In use</th>
-              <th style={th}>Shown</th>
+              <th style={th}>Status</th>
               <th style={th} />
             </tr>
           </thead>
@@ -265,7 +265,7 @@ export default function ReferenceLists() {
                 <tr>
                   <th style={th}>Course / Program</th>
                   <th style={th}>In use</th>
-                  <th style={th}>Shown</th>
+                  <th style={th}>Status</th>
                   {/* Blank, as the Colleges table leaves its own
                       button column blank: one title cannot name
                       both Rename and Delete. */}
@@ -341,7 +341,7 @@ export default function ReferenceLists() {
                 <tr>
                   <th style={th}>Year Level</th>
                   <th style={th}>In use</th>
-                  <th style={th}>Shown</th>
+                  <th style={th}>Status</th>
                   {/* Blank, as the Colleges table leaves its own
                       button column blank: one title cannot name
                       both Rename and Delete. */}
