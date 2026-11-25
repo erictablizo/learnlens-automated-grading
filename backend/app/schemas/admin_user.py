@@ -86,10 +86,34 @@ class AdminUserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def _password(cls, v: str) -> str:
-        msg = _validate_password(v)
-        if msg:
-            raise ValueError(msg)
-        return v
+        """Exactly what UserCreate._pw does in schemas/user.py. Nothing else.
+
+        FIXED 2026-11-25. This read:
+
+            msg = _validate_password(v)
+            if msg:
+                raise ValueError(msg)
+            return v
+
+        which assumed _validate_password RETURNS A MESSAGE. It does not: it
+        RAISES ValueError on a bad password and RETURNS THE PASSWORD on a
+        good one. So a valid password was truthy, the branch fired, and the
+        account was rejected with the PASSWORD ITSELF as the error message -
+        which the Manage Users dialog then printed on screen, in plaintext,
+        in a red box.
+
+        Creating any account was therefore impossible, and the one error it
+        produced disclosed the credential. Seen on learnlens.tech before a
+        bench covered this file.
+
+        The import was flagged as unverified on 2026-11-24 and schemas/user.py
+        was read on 2026-11-25 - the NAME was confirmed to exist and the
+        CONTRACT was never checked, with `return v` four lines from the end of
+        the function. measure/2026-11-25_admin_user_schema.py now loads the
+        real function and asserts, among other things, that no error message
+        it produces contains the password.
+        """
+        return _validate_password(v)
 
 
 class AdminUserUpdate(BaseModel):
