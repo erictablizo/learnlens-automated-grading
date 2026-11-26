@@ -20,12 +20,12 @@
  * right, and an empty list. The happy path is fixture 1 and it has never been
  * the one that breaks.
  */
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import * as esbuild from "esbuild";
+import { createRequire } from "node:module";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -71,15 +71,50 @@ const FIXTURES = [
     items: [it(12, 6, 0, 6), it(3, 6, 0, 6), it(7, 6, 0, 6)] },
 ];
 
+
+/* ── TypeScript, compiled WITHOUT a new dependency ────────────────────────
+ *
+ * This used esbuild, which is in no package.json this repo ships: it
+ * happened to be installed where the bench was written and nowhere else, so
+ * on 2026-11-26 it failed with ERR_MODULE_NOT_FOUND on Grace's machine. A
+ * bench that cannot run is not checking anything, however green it looked
+ * where it was written.
+ *
+ * frontend/node_modules/typescript is already there - frontend/tsxsyntax.js
+ * uses it - and transpileModule is enough here because both of these lib
+ * files import nothing, so there is no bundling to do.
+ */
+const require_ = createRequire(import.meta.url);
+function loadTs() {
+  let ts;
+  for (const where of [join(ROOT, "frontend/node_modules/typescript"), "typescript"]) {
+    try { ts = require_(where); break; } catch { /* try the next */ }
+  }
+  if (!ts) {
+    console.error("MISSING: typescript. Run `npm install` in frontend/ first.");
+    process.exit(2);
+  }
+  return ts;
+}
+
 // ── the TypeScript side ───────────────────────────────────────────────────
-const built = esbuild.buildSync({
-  entryPoints: [TS], bundle: true, format: "esm", write: false,
-  platform: "neutral",
-});
+const tsc = loadTs();
+const js = tsc.transpileModule(readFileSync(TS, "utf8"), {
+  compilerOptions: {
+    target: tsc.ScriptTarget.ES2020,
+    module: tsc.ModuleKind.ESNext,
+  },
+}).outputText;
 const dir = mkdtempSync(join(tmpdir(), "twins-"));
 const mod = join(dir, "itemExtremes.mjs");
-writeFileSync(mod, built.outputFiles[0].text);
+writeFileSync(mod, js);
 const { itemExtremes, itemModeLines } = await import(pathToFileURL(mod).href);
+for (const needed of ["itemExtremes", "itemModeLines"]) {
+  if (typeof { itemExtremes, itemModeLines }[needed] !== "function") {
+    console.error(`FATAL: itemExtremes.ts has no ${needed}.`);
+    process.exit(2);
+  }
+}
 
 const fromTs = FIXTURES.map(f => {
   const x = itemExtremes(f.items);
@@ -110,7 +145,33 @@ for f in json.load(sys.stdin):
 print(json.dumps(out))
 `);
 
-const py = spawnSync("python3", ["-I", driver, PY],
+
+/* ── FINDING PYTHON, rather than assuming it ──────────────────────────────
+ * This spawned "python3". On Windows that name is an App Execution Alias
+ * that prints a Microsoft Store advertisement and fails, so on 2026-11-26
+ * this bench died there while passing here - the second time in one day a
+ * bench depended on something that happened to be true of my machine.
+ *
+ * Candidates are tried in order and the first that reports Python 3 wins.
+ * PYTHON= overrides, for a venv under any other name. */
+function pythonCmd() {
+  const tried = [];
+  for (const cmd of [process.env.PYTHON, "python3", "python", "py"].filter(Boolean)) {
+    let probe;
+    try {
+      probe = spawnSync(cmd, ["-c", "import sys;print(sys.version_info[0])"],
+                        { encoding: "utf8" });
+    } catch (e) { tried.push(`${cmd}: ${e.code || e.message}`); continue; }
+    if (probe.status === 0 && String(probe.stdout || "").trim() === "3") return cmd;
+    tried.push(`${cmd}: ${probe.error ? (probe.error.code || probe.error.message)
+                                      : "exit " + probe.status}`);
+  }
+  console.error("MISSING: no Python 3 on PATH. Tried - " + tried.join("; "));
+  console.error("If it is installed under another name, set PYTHON=<name>.");
+  process.exit(2);
+}
+
+const py = spawnSync(pythonCmd(), ["-I", driver, PY],
                      { input: JSON.stringify(FIXTURES), encoding: "utf8" });
 if (py.status !== 0) {
   console.error("FATAL: could not run app/ml/item_extremes.py.\n" + (py.stderr || ""));
@@ -158,7 +219,7 @@ check("CONTROL: ...and a singular 'item n' case",
       /(^|\| )Most missed: item \d+ /.test(allLines + " "));
 
 console.log();
-console.log(`  ${passed} passed, ${failed.length} failed`);
+console.log(`  ${passed} passed, ${failed.length} failed`  + "   [rev 2026-11-26c — no esbuild, finds Python by probing]");
 if (failed.length) {
   console.log();
   for (const f of failed) console.log("  FAIL  " + f);

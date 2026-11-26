@@ -93,6 +93,40 @@ export async function downloadExamXlsx(
   return name;
 }
 
+/**
+ * NEW 2026-11-26 — Ms. Melanie, page 22 requirement 3.
+ *
+ * The Data Analytics page as a one-sheet workbook. A DIFFERENT FILE from
+ * downloadExamXlsx above, not a fourth tab on it: her note says the new
+ * document must hold the analytics "and not the existing Download Excel
+ * Info", so the two endpoints produce two files that do not overlap.
+ *
+ * passingPct defaults to the shared constant for the same reason the other
+ * one does, but the Data Analytics screen always passes the number in its
+ * own box - the file has to say what the page says.
+ */
+export async function downloadAnalyticsXlsx(
+  examId: number,
+  passingPct = DEFAULT_PASSING_MARK,
+): Promise<string> {
+  const token = getToken();
+  if (!token) throw new Error("Your session has expired. Sign in again.");
+
+  const { blob, disposition } = await api.getBlob(
+    `/exams/${examId}/analytics.xlsx?passing_pct=${passingPct}`,
+    token,
+  );
+
+  // Same guard as the other download: a zero-byte body means the stream
+  // died mid-flight, and saving it hands the teacher a file Excel refuses
+  // to open with no clue why.
+  if (blob.size === 0) throw new Error("The download came back empty. Please try again.");
+
+  const name = filenameFromDisposition(disposition);
+  saveBlob(blob, name);
+  return name;
+}
+
 /** A message fit to show the teacher, whatever came back. */
 export function downloadErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {

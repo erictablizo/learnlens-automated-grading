@@ -48,7 +48,7 @@ import { examFromSearch, backHref } from "@/lib/analyticsLink";
 import { DEFAULT_PASSING_MARK, clampMark, passingScore } from "@/lib/passing";
 // NEW 2026-11-26 — Ms. Melanie, page 21 requirement 3: the same export
 // the exam page offers, launched from here with the mark typed below.
-import { downloadExamXlsx, downloadErrorMessage } from "@/services/exportService";
+import { downloadAnalyticsXlsx, downloadErrorMessage } from "@/services/exportService";
 import { summariseScores, asRows } from "@/lib/scoreStats";
 // NEW 2026-11-24 - requirement 9's Mode, as Ms. Melanie defines it.
 import { itemExtremes, itemModeLines } from "@/lib/itemExtremes";
@@ -443,7 +443,9 @@ export default function DataAnalyticsPage() {
     setError(null);
     setDownloading(true);
     try {
-      await downloadExamXlsx(exam.exam_id, passPercent);
+      // CHANGED 2026-11-26 — page 22 requirement 3: the
+      // analytics workbook, not the exam-results one.
+      await downloadAnalyticsXlsx(exam.exam_id, passPercent);
     } catch (e) {
       setError(downloadErrorMessage(e));
     } finally {
@@ -471,7 +473,7 @@ export default function DataAnalyticsPage() {
               disabled={!exam || downloading}
               style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}
             >
-              {downloading ? "Preparing…" : "Download Excel"}
+              {downloading ? "Preparing…" : "Download Data Analytics to Excel"}
             </Button>
             <Button
               variant="secondary"
