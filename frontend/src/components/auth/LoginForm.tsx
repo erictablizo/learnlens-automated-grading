@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 // NEW 2026-11-24 — Ms. Melanie, page 18 requirement 3, which names "Login".
 import { advanceOnEnter, makeFieldCheck } from "@/lib/formNav";
+// NEW 2026-11-26 — Ms. Melanie, page 20 requirement 2: the pop-up.
+import ChangePasswordModal from "@/components/auth/ChangePasswordModal";
 
 /* NEW 2026-11-24 — requirement 3, FIFTH revision:
  *
@@ -36,6 +38,8 @@ function LoginFormInner() {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [justRegistered, setJustRegistered] = useState(false);
+  // NEW 2026-11-26 — page 20 requirement 2.
+  const [pwOpen, setPwOpen] = useState(false);
 
   /* NEW 2026-11-24 — requirement 3, fifth revision. Keyed by aria-label:
    * these boxes have no ids, and makeFieldCheck falls back to it. */
@@ -125,12 +129,6 @@ function LoginFormInner() {
             />
           </div>
 
-          <div className="forgot-row">
-            <Link href="/login/forgot_password" className="link-orange" style={{ fontSize: "0.82rem" }}>
-              Forgot password
-            </Link>
-          </div>
-
           <button type="submit" className="btn-primary" disabled={isLoading} aria-busy={isLoading}>
             {isLoading
               ? <><span className="spinner" aria-hidden="true" /> Signing in…</>
@@ -138,38 +136,47 @@ function LoginFormInner() {
           </button>
         </form>
 
-        {/* CHANGED 2026-11-26 — Ms. Melanie: "Change Password instead of
-            Create Account (Since Create Account is the admin's job)".
+        {/* CHANGED 2026-11-26, SECOND REVISION — Ms. Melanie,
+            Recommendations page 20 requirement 1: both links move below the
+            Sign in button, onto one line, and the explanatory sentence she
+            circled in red is removed.
 
-            WHAT WAS HERE, AND WHY IT WENT. "Don't have an account? Create an
-            account", removed 2026-11-24 for her page 19 requirement 2. Her
-            requirement 1 gives account creation to the admin, so a teacher
-            signing herself up was the thing being removed, not the wording.
-            The guard on /register landed 2026-11-25 and the admin's path is
-            now the Manage Users dialog, which posts to POST /api/admin/users
-            and is issued no token, so creating an account no longer signs the
-            administrator out.
+                Sign in
+                Change password / Forgot Password
 
-            WHY A SECOND LINK TO THE SAME PLACE. "Forgot password" above
-            points at this same URL. That is deliberate, not a duplicate: a
-            teacher whose account was just created has a TEMPORARY PASSWORD —
-            the Manage Users form calls that field exactly that — and has
-            forgotten nothing. "Forgot password" does not describe them, so
-            they will not click it, and setting their own password is the
-            first thing they need to do. Same mechanism, different sentence,
-            for the person in the other state.
+            THE SENTENCE WAS NOT WRONG, IT WAS MADE UNNECESSARY. It was added
+            this morning to explain why a second link pointed at the same
+            page as "Forgot password" three lines above it. On this layout
+            they sit side by side and lead to different things — a pop-up and
+            a page — so the pair explains itself, and a teacher reads two
+            words instead of twelve.
 
-            IT IS NOT AN IN-PLACE CHANGE. Nobody is signed in on this screen,
-            so the only thing that can be offered is the emailed link. The
-            wording says what will happen rather than implying the current
-            password is typed here — there is no authenticated endpoint for
-            that, and inventing one on the login screen would be worse. */}
+            WHY THE REASONING IS STILL WORTH KEEPING, in one line rather than
+            on screen: a teacher given a temporary password by the
+            administrator has forgotten nothing, so "Forgot password" alone
+            would never have described them.
+
+            A <button>, NOT A <Link>, for Change password. Requirement 2 says
+            it opens a pop-up window, and it opens over this screen rather
+            than navigating away from a form that may be half filled in.
+            Forgot Password stays a link to the page requirement 4 names. */}
         <p className="auth-footer" style={{ marginTop: "1rem", textAlign: "center" }}>
-          Given a temporary password by your administrator?{" "}
-          <Link href="/login/forgot_password" className="link-orange">
+          <button
+            type="button"
+            className="link-orange"
+            onClick={() => setPwOpen(true)}
+            style={{ background: "none", border: "none", padding: 0,
+                     font: "inherit", cursor: "pointer" }}
+          >
             Change password
+          </button>
+          {" / "}
+          <Link href="/login/forgot_password" className="link-orange">
+            Forgot Password
           </Link>
         </p>
+
+        <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       </div>
     </div>
   );

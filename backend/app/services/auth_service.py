@@ -261,3 +261,69 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> boo
     reset.used = True
     await db.commit()
     return True
+
+
+# NEW 2026-11-26 - Ms. Melanie, Recommendations page 20, requirements 2 and 3.
+#
+# A password change that carries NO TOKEN. The old password is the
+# authentication, which is what lets the pop-up live on the Login screen for
+# a teacher who has just been given a temporary one by the administrator and
+# has nothing else to sign in with yet.
+WRONG_CREDENTIALS = "Email or old password is not correct."
+
+
+async def change_password(db: AsyncSession, email: str, old_password: str,
+                          new_password: str) -> Optional[str]:
+    """Change a password given the old one. None on success, else a sentence.
+
+    Returns the SENTENCE THE SCREEN SHOWS rather than raising, because every
+    failure here is an ordinary answer to an ordinary form - a typo, a weak
+    new password - and none of them is exceptional. The caller maps a
+    non-None result to 400 and shows it unchanged.
+
+    ONE MESSAGE FOR THREE FAILURES. A wrong address, a wrong old password and
+    a resigned account are indistinguishable from outside, for the reason in
+    this file's patch note: no token is required to call this, so anything
+    more specific is an account checker.
+    """
+    user = await _user_by_email(db, email)
+
+    # Order matters only for secrecy, not for correctness: verify_password is
+    # run on a found user before status is read, so the three failures below
+    # cost roughly the same time as each other.
+    if not user or not verify_password(old_password, user.password_hash):
+        return WRONG_CREDENTIALS
+    if user.status != ACTIVE:
+        # A resigned account may not set a new password. Without this it
+        # would be the one way back in that the 2026-11-24 gates missed, and
+        # the worst kind: it hands over a working credential.
+        return WRONG_CREDENTIALS
+
+    # The same rule the Register and Reset screens use, from the one place it
+    # lives. Imported HERE rather than at the top of the file: app.schemas
+    # imports nothing from app.services today, and a module-level import
+    # would be the first edge of a cycle between them.
+    from app.schemas.user import _validate_password
+    try:
+        _validate_password(new_password)
+    except ValueError as e:
+        return str(e)
+
+    if verify_password(new_password, user.password_hash):
+        # Not a rule anybody asked for, and worth the line: a form that
+        # accepts the current password as the new one reports success and
+        # changes nothing, which is the most confusing possible answer.
+        return "Your new password must be different from your current one."
+
+    user.password_hash = hash_password(new_password)
+
+    # Any reset link already sent is now a way to set a DIFFERENT password
+    # than the one just chosen. create_password_reset_token cancels older
+    # links when it issues a new one, for the same reason.
+    await db.execute(
+        update(PasswordReset)
+        .where(PasswordReset.user_id == user.user_id, PasswordReset.used == False)  # noqa: E712
+        .values(used=True)
+    )
+    await db.commit()
+    return None
