@@ -17,6 +17,11 @@
  */
 import { api, ApiError } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+// NEW 2026-11-26 — Ms. Melanie, page 21 requirement 2. The ONE passing
+// mark the frontend has. Before this, downloadExamXlsx carried its own
+// default of 75 while every screen used 60, so the spreadsheet
+// disagreed with the page that produced it.
+import { DEFAULT_PASSING_MARK } from "@/lib/passing";
 
 /** Pull the server's filename out of Content-Disposition. */
 export function filenameFromDisposition(
@@ -69,7 +74,7 @@ export function saveBlob(blob: Blob, filename: string): void {
  */
 export async function downloadExamXlsx(
   examId: number,
-  passingPct = 75,
+  passingPct = DEFAULT_PASSING_MARK,
 ): Promise<string> {
   const token = getToken();
   if (!token) throw new Error("Your session has expired. Sign in again.");

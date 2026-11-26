@@ -46,6 +46,9 @@ import { bySurname, paperLastName, paperFirstName } from "@/lib/textField";
 // NEW 2026-11-23 - Ms. Melanie, Recommendations page 18, requirements 7a and 9.
 import { examFromSearch, backHref } from "@/lib/analyticsLink";
 import { DEFAULT_PASSING_MARK, clampMark, passingScore } from "@/lib/passing";
+// NEW 2026-11-26 — Ms. Melanie, page 21 requirement 3: the same export
+// the exam page offers, launched from here with the mark typed below.
+import { downloadExamXlsx, downloadErrorMessage } from "@/services/exportService";
 import { summariseScores, asRows } from "@/lib/scoreStats";
 // NEW 2026-11-24 - requirement 9's Mode, as Ms. Melanie defines it.
 import { itemExtremes, itemModeLines } from "@/lib/itemExtremes";
@@ -224,6 +227,8 @@ export default function DataAnalyticsPage() {
   const [pickerOpen,  setPickerOpen]  = useState(false);
   const [error,       setError]       = useState<string | null>(null);
   const [passPercent, setPassPercent] = useState<number>(DEFAULT_PASS_PERCENT);
+  // NEW 2026-11-26 — page 21 requirement 3.
+  const [downloading, setDownloading] = useState(false);
 
   /* NEW 2026-11-23 - Melanie req 7a. `deepLinked` is the exam named in the
    * URL by View Exam's Data Analytics button; `pending` is that exam waiting
@@ -423,19 +428,59 @@ export default function DataAnalyticsPage() {
     );
   }
 
+  /* NEW 2026-11-26 — Ms. Melanie, page 21 requirement 3.
+
+     `finally`, not the end of `try`: a failed download must clear the
+     flag too, or the button stays disabled reading "Preparing…" with
+     no way back but a reload. The same shape as the exam page's
+     handler, and for the same reason its comment gives.
+
+     passPercent, NOT the default. The teacher is looking at a number
+     in the box above and at tables computed from it; a workbook that
+     used a different one would be wrong in a way nobody would spot. */
+  const handleDownloadExcel = async () => {
+    if (!exam) return;
+    setError(null);
+    setDownloading(true);
+    try {
+      await downloadExamXlsx(exam.exam_id, passPercent);
+    } catch (e) {
+      setError(downloadErrorMessage(e));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="dashboard-layout">
       <Navbar />
       <main className="main-content">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
           <h1 className="page-title" style={{ marginBottom: 0 }}>Data Analytics</h1>
-          <Button
-            variant="secondary"
-            onClick={() => setPickerOpen(true)}
-            style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}
-          >
-            {exam ? "Change exam" : "Choose exam"}
-          </Button>
+          {/* NEW 2026-11-26 — page 21 requirement 3. In the gap she
+              circled, left of Change exam, and in a row with it so the
+              two stay together at any width. */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <Button
+              variant="secondary"
+              onClick={handleDownloadExcel}
+              loading={downloading}
+              /* Nothing to export before an exam is chosen, and the
+                 handler returns early anyway - this only means the
+                 button never looks available when it is not. */
+              disabled={!exam || downloading}
+              style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}
+            >
+              {downloading ? "Preparing…" : "Download Excel"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setPickerOpen(true)}
+              style={{ fontSize: "0.82rem", padding: "0.4rem 0.9rem" }}
+            >
+              {exam ? "Change exam" : "Choose exam"}
+            </Button>
+          </div>
         </div>
 
         {error && <div role="alert" className="alert alert-error" style={{ marginBottom: "1rem" }}>{error}</div>}

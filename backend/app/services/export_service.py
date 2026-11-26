@@ -86,7 +86,10 @@ def build_workbook(
     exam: Mapping[str, Any],
     papers: Sequence[Mapping[str, Any]],
     items: Sequence[Mapping[str, Any]],
-    passing_pct: float = 75.0,
+    passing_pct: float = 60.0,   # 2026-11-26: was 75.0. Nothing reaches
+                                 # this today - exportService always sends
+                                 # the value - but a default that
+                                 # disagrees with every caller is a trap.
 ) -> bytes:
     """Three sheets of bytes, ready to stream.
 
