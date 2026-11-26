@@ -797,6 +797,31 @@ export default function ViewExamPage() {
               onSaved={handleKeySaved}
               onImported={handleKeyImported}
               onError={msg => setToast({ msg, type: "error" })}
+              /* NEW 2026-11-26 — Ms. Melanie, page 21 requirement 1: the
+                 pager moves from below both cards to inside this one. It is
+                 passed in rather than moved, because it reads keyPageIdx and
+                 calls goKeyPage, which live here. */
+              footer={examPages.length > 1 ? (
+                <>
+                  <PageNav examPages={examPages} pageIdx={keyPageIdx}
+                           totalPages={totalPages} goPage={goKeyPage}
+                           studentName={null} where="bottom"
+                           what="Answer key" />
+                  {/* The cost of decoupling the two pagers, said out loud.
+                      The grid can list page 1 while the photographs show
+                      page 2 — what she asked for on 2026-11-24, and also a
+                      way to misread the screen. Shown only on drift. */}
+                  {keyPageIdx !== pageIdx && (
+                    <p role="status" style={{ fontSize: "0.75rem",
+                                              color: "var(--text-muted)",
+                                              textAlign: "center",
+                                              margin: "0.3rem 0 0" }}>
+                      The pictures above are showing page{" "}
+                      {examPages[pageIdx]?.page_number ?? pageIdx + 1}.
+                    </p>
+                  )}
+                </>
+              ) : null}
             />
           </div>
           {/* <div className="page-viewer-slot" style={{ flexDirection: "column", gap: "0.75rem" }}>
@@ -841,28 +866,6 @@ export default function ViewExamPage() {
           </div>
         </div>
 
-        {/* NEW 2026-11-24 — Ms. Melanie, page 18 requirement 10: the same
-            pager again, in the gap she drew the < and > into. Rendered only
-            when there is more than one page, because a single-page exam
-            would show two identical dead pagers twenty lines apart. */}
-        {examPages.length > 1 && (
-          <>
-            <PageNav examPages={examPages} pageIdx={keyPageIdx} totalPages={totalPages}
-                     goPage={goKeyPage} studentName={null} where="bottom"
-                     what="Answer key" />
-            {/* NEW 2026-11-24 - the cost of decoupling them, said out loud.
-                The grid can now list page 1 while the photographs show page
-                2, which is what she asked for and also a way to misread the
-                screen. Shown only when they have actually drifted. */}
-            {keyPageIdx !== pageIdx && (
-              <p role="status" style={{ fontSize: "0.75rem", color: "var(--text-muted)",
-                                        textAlign: "center", margin: "0.3rem 0 0" }}>
-                The pictures above are showing page{" "}
-                {examPages[pageIdx]?.page_number ?? pageIdx + 1}.
-              </p>
-            )}
-          </>
-        )}
 
         {/* ── Test Papers section ── */}
         {/* RESTORED 2026-11-12. The heading and this outer row were lost when

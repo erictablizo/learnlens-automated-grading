@@ -62,11 +62,17 @@ export interface AnswerKeyPanelProps {
   onSaved:     (result: AnswerKeyUpdateResult) => void;
   onImported:  (result: KeyImageApplyResult) => void;
   onError:     (message: string) => void;
+  /** NEW 2026-11-26 - Ms. Melanie, page 21 requirement 1: the answer
+   *  key pager, which she wants inside this card rather than below it.
+   *  A slot rather than the pager itself, because the pager reads
+   *  keyPageIdx and calls goKeyPage, and both live in the page. */
+  footer?:     React.ReactNode;
 }
 
 export default function AnswerKeyPanel({
   examId, keys, pageNumber, pageId, canGenerate, generating,
   onGenerate, onSaved, onImported, onError,
+  footer,
 }: AnswerKeyPanelProps) {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft,   setDraft]   = useState("");
@@ -316,6 +322,12 @@ export default function AnswerKeyPanel({
           </Button>
         </span>
       </div>
+
+      {/* NEW 2026-11-26 - page 21 requirement 1. Inside the card,
+          under the count and the two buttons, which is where her
+          yellow mark is. Nothing is rendered when the caller passes
+          no footer, so a single-page exam keeps the card it had. */}
+      {footer}
 
       {preview && (
         <KeyImagePreviewModal
