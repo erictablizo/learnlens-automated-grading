@@ -166,17 +166,27 @@ function LoginFormInner() {
             className="link-orange"
             onClick={() => setPwOpen(true)}
             style={{ background: "none", border: "none", padding: 0,
-                     font: "inherit", cursor: "pointer" }}
+                     /* fontFamily ONLY. `font` is a shorthand and would reset the
+                        weight and size that .link-orange supplies, which is why this
+                        button was not bold while the link beside it was. */
+                     fontFamily: "inherit", cursor: "pointer" }}
           >
             Change password
           </button>
           {" / "}
           <Link href="/login/forgot_password" className="link-orange">
-            Forgot Password
+            Forgot password
           </Link>
         </p>
 
-        <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
+        <ChangePasswordModal
+          open={pwOpen}
+          onClose={() => setPwOpen(false)}
+          /* Page 22 requirement 2: whatever is in the Email box above,
+             so it is not typed twice and the cursor can start on Old
+             Password instead. */
+          initialEmail={email}
+        />
       </div>
     </div>
   );

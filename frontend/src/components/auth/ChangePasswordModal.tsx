@@ -43,7 +43,15 @@ const label: React.CSSProperties = {
 };
 
 export default function ChangePasswordModal(
-  { open, onClose }: { open: boolean; onClose: () => void },
+  { open, onClose, initialEmail = "" }: {
+    open: boolean;
+    onClose: () => void;
+    /** NEW 2026-11-26 — Ms. Melanie, page 22 requirement 2: whatever the
+     *  teacher had already typed into the Login screen's Email box, carried
+     *  over so they do not type it twice. Empty when they had typed
+     *  nothing, and the dialog then opens on Email as before. */
+    initialEmail?: string;
+  },
 ) {
   const [email,   setEmail]   = useState("");
   const [oldPw,   setOldPw]   = useState("");
@@ -54,19 +62,31 @@ export default function ChangePasswordModal(
   const [done,    setDone]    = useState<string | null>(null);
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  /* NEW 2026-11-26 — page 22 requirement 2. autoFocus is a static attribute
+     and cannot say "this box, unless that one is already filled", so the
+     focus is placed here instead, once, when the dialog opens. */
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const oldRef   = useRef<HTMLInputElement | null>(null);
 
   /* Cleared when the dialog OPENS, not when it closes. A password left in
      React state after Cancel is still in memory, and reopening would show
      the previous attempt's error over empty boxes. */
   useEffect(() => {
     if (!open) return;
-    setEmail(""); setOldPw(""); setNewPw(""); setConfirm("");
+    const carried = initialEmail.trim();
+    setEmail(carried); setOldPw(""); setNewPw(""); setConfirm("");
     setError(null); setDone(null); setBusy(false);
-    dialogRef.current?.focus();
+    /* THE CURSOR GOES WHERE THE TYPING WOULD START. With an address carried
+       over, that is Old Password - her red arrow points at its first
+       character. With nothing carried over, Email is still the first empty
+       box. Either way one box is focused, so the dialog never opens with
+       focus on the overlay behind it. */
+    const target = carried ? oldRef.current : emailRef.current;
+    (target ?? dialogRef.current)?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, initialEmail]);
 
   if (!open) return null;
 
@@ -157,14 +177,14 @@ export default function ChangePasswordModal(
             <form onSubmit={e => { e.preventDefault(); if (!busy) proceed(); }}>
               <div className="field" style={{ marginBottom: "0.9rem" }}>
                 <label style={label} htmlFor="cp-email">Email</label>
-                <input id="cp-email" type="email" style={field} value={email}
-                       onChange={e => setEmail(e.target.value)}
-                       autoComplete="username" autoFocus disabled={busy} />
+                <input id="cp-email" ref={emailRef} type="email" style={field}
+                       value={email} onChange={e => setEmail(e.target.value)}
+                       autoComplete="username" disabled={busy} />
               </div>
               <div className="field" style={{ marginBottom: "0.9rem" }}>
                 <label style={label} htmlFor="cp-old">Old Password</label>
-                <input id="cp-old" type="password" style={field} value={oldPw}
-                       onChange={e => setOldPw(e.target.value)}
+                <input id="cp-old" ref={oldRef} type="password" style={field}
+                       value={oldPw} onChange={e => setOldPw(e.target.value)}
                        autoComplete="current-password" disabled={busy} />
               </div>
               <div className="field" style={{ marginBottom: "0.9rem" }}>
