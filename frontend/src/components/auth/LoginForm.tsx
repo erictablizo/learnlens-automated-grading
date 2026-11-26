@@ -138,22 +138,38 @@ function LoginFormInner() {
           </button>
         </form>
 
-        {/* REMOVED 2026-11-24 — Ms. Melanie, Recommendations page 19,
-            requirement 2: "Remove this option in Landing Page", with a red box
-            round "Don't have an account? Create an account".
+        {/* CHANGED 2026-11-26 — Ms. Melanie: "Change Password instead of
+            Create Account (Since Create Account is the admin's job)".
 
-            IT FOLLOWS FROM HER REQUIREMENT 1. Page 19 gives account creation
-            to the admin — "Admin can create accounts, edit and delete" — so a
-            teacher signing herself up is the thing being removed, not the
-            link's wording.
+            WHAT WAS HERE, AND WHY IT WENT. "Don't have an account? Create an
+            account", removed 2026-11-24 for her page 19 requirement 2. Her
+            requirement 1 gives account creation to the admin, so a teacher
+            signing herself up was the thing being removed, not the wording.
+            The guard on /register landed 2026-11-25 and the admin's path is
+            now the Manage Users dialog, which posts to POST /api/admin/users
+            and is issued no token, so creating an account no longer signs the
+            administrator out.
 
-            THE LINK IS GONE; THE ROUTE IS NOT. /register still answers to
-            anyone who types it, so this hides a door rather than locking it.
-            Her requirement 4 sends the admin's "Create New Account" to that
-            same page, so the guard has to be "signed in AND admin", not a
-            deletion. That needs the register route and hooks/useAuth, neither
-            of which is in this tree — flagged to Grace 2026-11-24, not
-            silently left. */}
+            WHY A SECOND LINK TO THE SAME PLACE. "Forgot password" above
+            points at this same URL. That is deliberate, not a duplicate: a
+            teacher whose account was just created has a TEMPORARY PASSWORD —
+            the Manage Users form calls that field exactly that — and has
+            forgotten nothing. "Forgot password" does not describe them, so
+            they will not click it, and setting their own password is the
+            first thing they need to do. Same mechanism, different sentence,
+            for the person in the other state.
+
+            IT IS NOT AN IN-PLACE CHANGE. Nobody is signed in on this screen,
+            so the only thing that can be offered is the emailed link. The
+            wording says what will happen rather than implying the current
+            password is typed here — there is no authenticated endpoint for
+            that, and inventing one on the login screen would be worse. */}
+        <p className="auth-footer" style={{ marginTop: "1rem", textAlign: "center" }}>
+          Given a temporary password by your administrator?{" "}
+          <Link href="/login/forgot_password" className="link-orange">
+            Change password
+          </Link>
+        </p>
       </div>
     </div>
   );
