@@ -16,6 +16,7 @@ from app.api.routes.class_lists import router as class_lists_router    # NEW 202
 from app.api.routes.admin_corrections import router as admin_corrections_router    # NEW 2026-11-19
 from app.api.routes.admin_users import router as admin_users_router
 from app.api.routes.admin_teacher_corrections import router as admin_teacher_corrections_router
+from app.api.routes.auth_change_password import router as auth_change_password_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -35,3 +36,4 @@ router.include_router(class_lists_router)      # NEW 2026-11-17 — a teacher's 
 router.include_router(admin_corrections_router)  # NEW 2026-11-19 — the Technical Admin specimen table
 router.include_router(admin_users_router)
 router.include_router(admin_teacher_corrections_router)
+router.include_router(auth_change_password_router)
