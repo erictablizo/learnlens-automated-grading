@@ -94,18 +94,40 @@ async def export_analytics_xlsx(
     # A count query rather than exam.answer_keys: the relationship is not
     # eager-loaded here, and touching it would raise MissingGreenlet in an
     # async session rather than quietly returning the wrong number.
-    total_items = (await db.execute(
-        select(func.count()).select_from(AnswerKey)
-        .where(AnswerKey.exam_id == exam_id))).scalar_one()
+    # AND ITS TOTAL POINTS, from the same read.
+    #
+    # CORRECTED 2026-11-27 - Ms. Melanie, page 23 requirement 2. This used to
+    # send `exam.total_points`, which is 0 or absent on her exams, so the
+    # builder fell back to the ITEM COUNT: the file said "9 of 15 points" and
+    # "Score (out of 15)" for an exam worth 30, while the screen beside it
+    # said 18 of 30. The screen never had the bug because it has never read
+    # that column - analytics/page.tsx:
+    #
+    #     const totalPoints = exam?.answer_keys?.reduce(
+    #       (n, k) => n + (k.points ?? 1), 0) ?? 0;
+    #
+    # so the sum of the answer keys' points is what this endpoint sends, and
+    # COALESCE(points, 1) is that `?? 1`: an unpriced key is worth one mark,
+    # not nothing. The outer COALESCE is for SUM over no rows, which is NULL.
+    totals = (await db.execute(
+        select(func.count(),
+               func.coalesce(func.sum(func.coalesce(AnswerKey.points, 1)), 0))
+        .select_from(AnswerKey)
+        .where(AnswerKey.exam_id == exam_id))).one()
+    total_items = int(totals[0] or 0)
+    key_points = int(totals[1] or 0)
 
     meta = {
         "exam_name":    getattr(exam, "exam_name", None),
         "subject":      getattr(exam, "subject", None),
         "schedule":     getattr(exam, "schedule", None),
-        "total_items":  int(total_items or 0),
-        # Added 2026-11-20 and absent on older rows; 0 makes the builder fall
-        # back to the item count, so an un-priced exam still produces a file.
-        "total_points": int(getattr(exam, "total_points", 0) or 0),
+        "total_items":  total_items,
+        # The answer keys first, ALWAYS, because that is what the screen
+        # shows. exams.total_points is only a last resort for an exam with no
+        # answer keys at all, where the sum is 0 and there is nothing to
+        # disagree with; it cannot bring the page 23 bug back, because any
+        # exam with keys has a non-zero sum.
+        "total_points": key_points or int(getattr(exam, "total_points", 0) or 0),
     }
 
     blob = build_analytics_workbook(

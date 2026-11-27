@@ -33,8 +33,13 @@ took as_rows' value would put a different number under the same label as
 the screen. The fixture's most-common score is deliberately not any item
 number, so the two cannot be confused.
 
-Real openpyxl, the real statistics.py and item_extremes.py, and the real
-builder loaded from the tree by path. export_service's three helpers come
+EXTENDED 2026-11-27 - page 23 requirement 1 added a fifth section, "Items
+incorrectly answered by the majority of the class", after the four lists.
+Section 7 below measures it, and the main fixture's item 13 is answered
+wrongly by EXACTLY half the class so that a rule written `>=` cannot pass.
+
+Real openpyxl, the real statistics.py, item_extremes.py and
+majority_wrong.py, and the real builder loaded from the tree by path. export_service's three helpers come
 from measure/excerpt/ - see its header.
 """
 import importlib.util
@@ -64,6 +69,7 @@ ROOT    = Path(__file__).resolve().parent.parent
 BUILDER = ROOT / "backend/app/services/analytics_export_service.py"
 STATS   = ROOT / "backend/app/ml/statistics.py"
 EXTREME = ROOT / "backend/app/ml/item_extremes.py"
+MAJORITY = ROOT / "backend/app/ml/majority_wrong.py"
 HELPERS = ROOT / "measure/excerpt/export_service_helpers.py"
 
 passed = 0
@@ -75,7 +81,7 @@ def check(label, cond, detail=""):
 
 
 def load():
-    for f in (BUILDER, STATS, EXTREME, HELPERS):
+    for f in (BUILDER, STATS, EXTREME, MAJORITY, HELPERS):
         if not f.is_file():
             print(f"  MISSING: {f}")
             sys.exit(2)
@@ -91,6 +97,7 @@ def load():
 
     by_path("app.ml.statistics", STATS)
     by_path("app.ml.item_extremes", EXTREME)
+    by_path("app.ml.majority_wrong", MAJORITY)
     by_path("app.services.export_service", HELPERS)
     return by_path("app.services.analytics_export_service", BUILDER)
 
@@ -125,12 +132,24 @@ def main():
     # TypeError with no count printed - which reads as a broken harness.
     # A real exam with an unscored paper would do the same, so this is the
     # case most worth naming rather than crashing on.
-    blob = None
-    try:
-        blob = svc.build_analytics_workbook(exam, papers, items, passing_pct=60.0)
-    except Exception as e:                                   # noqa: BLE001
-        check("the builder produces a workbook", False,
-              f"it raised {type(e).__name__}: {e}")
+    def safe_build(label, *a, **kw):
+        """A raise is a RESULT, not a broken harness.
+
+        Measured 2026-11-26 on the first fixture and again 2026-11-27 on the
+        majority one: a mutation that dropped the filter reached
+        wrong_percent with answered = 0, the builder raised, and the bench
+        died with no count printed - which reads as the bench being broken
+        rather than as the mutation being caught. Every build goes through
+        here now, and a builder that raises fails the named check instead.
+        """
+        try:
+            return svc.build_analytics_workbook(*a, **kw)
+        except Exception as e:                               # noqa: BLE001
+            check(label, False, f"it raised {type(e).__name__}: {e}")
+            return None
+
+    blob = safe_build("the builder produces a workbook",
+                      exam, papers, items, passing_pct=60.0)
     check("it produces bytes", isinstance(blob, (bytes, bytearray)) and len(blob or b"") > 0,
           f"{type(blob).__name__}, {len(blob or b'')} bytes")
     if not blob:
@@ -237,11 +256,12 @@ def main():
           str([r[3] for r in grid if r[3]]))
 
     # ── 4. an empty group says so rather than looking truncated ──────────
-    empty = svc.build_analytics_workbook(
-        exam, [{"last_name": "A", "first_name": "B", "total_score": 30,
-                "checked": True}], items, passing_pct=60.0)
-    ws2 = load_workbook(BytesIO(empty))["Data Analytics"]
-    colA2 = [c.value for c in ws2["A"]]
+    empty = safe_build("a one-paper exam still builds",
+                       exam, [{"last_name": "A", "first_name": "B",
+                               "total_score": 30, "checked": True}],
+                       items, passing_pct=60.0)
+    colA2 = ([c.value for c in load_workbook(BytesIO(empty))["Data Analytics"]["A"]]
+             if empty else [])
     check("a group with nobody in it says so",
           "No students in this group." in colA2,
           "an empty table under a heading reads as a truncated file")
@@ -250,11 +270,12 @@ def main():
                                          and "scored zero" in v]))
 
     # ── 5. no papers at all ──────────────────────────────────────────────
-    none_yet = svc.build_analytics_workbook(exam, [], [], passing_pct=60.0)
-    ws3 = load_workbook(BytesIO(none_yet))["Data Analytics"]
-    colA3 = [c.value for c in ws3["A"]]
-    rowsB3 = {r[0].value: r[1].value for r in ws3.iter_rows(min_col=1, max_col=2)
-              if r[0].value}
+    none_yet = safe_build("an exam with no papers builds",
+                          exam, [], [], passing_pct=60.0)
+    ws3 = load_workbook(BytesIO(none_yet))["Data Analytics"] if none_yet else None
+    colA3 = [c.value for c in ws3["A"]] if ws3 else []
+    rowsB3 = ({r[0].value: r[1].value for r in ws3.iter_rows(min_col=1, max_col=2)
+               if r[0].value} if ws3 else {})
     check("an exam with no papers still produces a file",
           "Data Analytics" in colA3)
     check("  ...with Students 0", rowsB3.get("Students") == 0,
@@ -264,6 +285,128 @@ def main():
     check("  ...and the no-checked-papers wording on the highest score",
           any(isinstance(v, str) and v == "0 got the highest score" for v in colA3),
           str([v for v in colA3 if isinstance(v, str) and "highest" in v]))
+
+    # ── 7. page 23 requirement 1: the majority section ───────────────────
+    #
+    #     "Please include also this info 'Items incorrectly answered by the
+    #      majority of the class' ... to be included on this lowest portion
+    #      (located after the 1 scored zero portion)."
+    #
+    # WHERE it is matters as much as that it exists: she asked for it after
+    # the scored-zero list, so the row indexes are compared rather than just
+    # testing that the heading is somewhere in the sheet.
+    MAJ = "incorrectly answered by the majority of the class"
+    zero_at = next((i for i, v in enumerate(colA)
+                    if isinstance(v, str) and v.endswith("scored zero")), None)
+    maj_at = next((i for i, v in enumerate(colA)
+                   if isinstance(v, str) and MAJ in v), None)
+    check("the majority section is present", maj_at is not None,
+          str([v for v in colA if isinstance(v, str)][-6:]))
+    check("  ...AFTER the scored-zero list, as she asked",
+          zero_at is not None and maj_at is not None and maj_at > zero_at,
+          f"scored zero at row {zero_at}, majority at row {maj_at}")
+
+    # The main fixture's items are 3 of 6, 0 of 6 and 1 of 6 wrong. THREE OF
+    # SIX IS EXACTLY HALF, which is not a majority - so the good-outcome
+    # wording is the right answer here, and a rule written `>=` would list
+    # item 13 and fail this.
+    check("exactly half the class is NOT a majority",
+          not any(isinstance(v, str) and v.startswith("1 item incorrectly")
+                  for v in colA),
+          str([v for v in colA if isinstance(v, str) and "incorrectly" in v]))
+    check("  ...and the empty case reads as the good outcome, not a failure",
+          any(isinstance(v, str)
+              and v.startswith("No item was missed by more than half")
+              and "All 3 items were" in v for v in colA),
+          str([v for v in colA if isinstance(v, str) and "No item" in v]))
+
+    # ── 7b. a fixture where the majority DID miss things ─────────────────
+    maj_items = [
+        # 5 of 6: a majority. First in the list, and it must stay first.
+        {"question_number": 9, "answered": 6, "correct": 1, "wrong": 5,
+         "blank": 2, "review": 0},
+        # 3 of 6: exactly half. Excluded.
+        {"question_number": 4, "answered": 6, "correct": 3, "wrong": 3,
+         "blank": 0, "review": 0},
+        # 2 of 3: a majority on its own, smaller denominator - and graded
+        # against two answer keys, so it carries the screen's warning.
+        {"question_number": 7, "answered": 3, "correct": 1, "wrong": 2,
+         "blank": 1, "review": 2, "key_mismatch": True,
+         "correct_answer": "TRUE"},
+        # nobody reached it: a majority of nobody is not a majority.
+        {"question_number": 11, "answered": 0, "correct": 0, "wrong": 0,
+         "blank": 0, "review": 0},
+    ]
+    blob4 = safe_build("the majority fixture builds", exam, papers, maj_items,
+                       passing_pct=60.0)
+    grid4 = ([[c.value for c in row] for row in
+              load_workbook(BytesIO(blob4))["Data Analytics"]
+              .iter_rows(min_col=1, max_col=8)] if blob4 else [])
+    colA4 = [r[0] for r in grid4]
+
+    check("the heading counts the items, not the papers",
+          any(isinstance(v, str) and v.startswith("2 items " + MAJ)
+              for v in colA4),
+          str([v for v in colA4 if isinstance(v, str) and MAJ in v]))
+    check("  ...and says what majority means",
+          any(isinstance(r[1], str) and "more than 50%" in r[1]
+              for r in grid4 if isinstance(r[0], str) and MAJ in str(r[0])),
+          "a heading promising a majority needs its own definition beside it")
+
+    hdr = next((i for i, r in enumerate(grid4) if r[0] == "Item"), None)
+    if hdr is None:
+        check("the majority table has an Item header row", False,
+              "nothing below could be read")
+    check("the table has the screen's columns, each its own cell",
+          hdr is not None and grid4[hdr][:8] == [
+              "Item", "Answer", "Got it wrong", "Out of", "% wrong",
+              "Correct", "Blank", "Under review"],
+          str(grid4[hdr][:8]) if hdr is not None else "no Item header row")
+
+    body = ([r for r in grid4[hdr + 1:] if isinstance(r[0], int)]
+            if hdr is not None else [])
+    check("only the majorities are listed", [r[0] for r in body] == [9, 7],
+          str([r[0] for r in body]))
+    check("  ...in the order they arrived, not sorted",
+          [r[0] for r in body] == [9, 7],
+          "analytics_service orders them; re-sorting here would hide it if "
+          "that stopped being true")
+    check("the counts are NUMBERS, so the column can be sorted",
+          all(isinstance(r[2], int) and isinstance(r[3], int) for r in body),
+          str([(r[2], r[3]) for r in body]))
+    check("each row prints its own denominator",
+          [(r[2], r[3]) for r in body] == [(5, 6), (2, 3)],
+          str([(r[2], r[3]) for r in body]))
+    check("  ...and the percentage the screen shows",
+          [r[4] for r in body] == ["83.3%", "66.7%"], str([r[4] for r in body]))
+    check("correct, blank and under review all travel",
+          [(r[5], r[6], r[7]) for r in body] == [(1, 2, 0), (1, 1, 2)],
+          str([(r[5], r[6], r[7]) for r in body]))
+    check("a two-key item is marked, as it is on the screen",
+          len(body) > 1 and body[1][1] == "TRUE ⚠",
+          repr(body[1][1]) if len(body) > 1 else f"{len(body)} rows")
+    check("  ...and an item with no answer key text gets a dash",
+          len(body) > 0 and body[0][1] == "—",
+          repr(body[0][1]) if body else "no rows")
+
+    foot4 = next((v for v in colA4 if isinstance(v, str)
+                  and v.startswith("2 of 4 items shown")), "")
+    check("the footnote says how many items were NOT shown",
+          "The other 2 were answered correctly" in foot4, repr(foot4[:80]))
+    check("  ...that Blank is part of Wrong",
+          "Blank is part of Wrong" in foot4, repr(foot4[:160]))
+    check("  ...that an item under review can appear later",
+          "under review counts as neither" in foot4, repr(foot4[-200:]))
+    check("  ...and what the warning mark means",
+          "more than one answer key" in foot4, repr(foot4[-200:]))
+
+    # ── 7c. no graded papers: no per-item results, said plainly ──────────
+    colA5 = colA3
+    check("with nothing graded the section says why it is empty",
+          any(isinstance(v, str) and "no per-item results" in v for v in colA5),
+          str([v for v in colA5 if isinstance(v, str) and "per-item" in v]))
+    check("  ...and does not print an empty table under the heading",
+          not any(v == "Item" for v in colA5), str(colA5[-4:]))
 
     # ── 6. the filename ──────────────────────────────────────────────────
     name = svc.filename_for_analytics(exam)

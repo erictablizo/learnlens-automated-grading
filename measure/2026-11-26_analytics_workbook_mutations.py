@@ -12,6 +12,12 @@ requires measure/2026-11-26_analytics_workbook.py to FAIL on each.
 M1-M3 are the ones worth having. Each puts a plausible, wrong set of papers
 behind a number the teacher will read as fact, and none of them would look
 wrong in the file: "Students: 3" is a perfectly sensible-looking cell.
+
+EXTENDED 2026-11-27 for page 23 requirement 1. M10 is the reason the section
+is a function: she asked for it AFTER the scored-zero list, so a mutation
+MOVES THE CALL and the bench must notice. A mutation may therefore be a LIST
+of edits rather than one, and every edit in it must match exactly once or the
+mutation is reported as not applied rather than quietly skipped.
 """
 import os
 import re
@@ -71,6 +77,40 @@ MUTATIONS = [
      "sheet with nothing explaining them",
      "    ws.cell(row=r, column=1, value=note).font = NOTE_FONT",
      "    pass"),
+
+    # ── page 23 requirement 1 ────────────────────────────────────────────
+    ("the majority section moves ABOVE the four lists, which is not where "
+     "she asked for it",
+     [("    r = _write_majority(ws, r, items)\n", ""),
+      ("    # ── the four lists ─",
+       "    r = _write_majority(ws, r, items)\n    # ── the four lists ─")]),
+
+    ("the majority filter is dropped, so every item is listed under a "
+     "heading that says the majority missed it",
+     "    rows = majority_wrong(items)", "    rows = list(items)"),
+
+    ("the percentage is computed here instead of by the shared formatter, "
+     "losing the decimal that keeps 51 of 101 from printing as 50%",
+     '                    value=wrong_percent(as_count(row, "wrong"),\n'
+     '                                        as_count(row, "answered")))',
+     '                    value=round(as_count(row, "wrong") * 100\n'
+     '                                / as_count(row, "answered")))'),
+
+    ("the counts are written as text, so the column cannot be sorted",
+     '            ws.cell(row=r, column=3, value=as_count(row, "wrong"))',
+     '            ws.cell(row=r, column=3, value=str(as_count(row, "wrong")))'),
+
+    ("an item graded against two answer keys is not marked, so unreliable "
+     "counts look like every other row",
+     '                answer += " ⚠"', "                pass"),
+
+    ("the footnote goes, so a table that omits rows does not say how many",
+     "        ws.cell(row=r, column=1, value=foot).font = NOTE_FONT",
+     "        pass"),
+
+    ("no item over the line prints an empty table rather than saying that "
+     "the class got everything right",
+     "    elif not rows:", "    elif False:"),
 ]
 
 
@@ -112,13 +152,20 @@ def main():
     shutil.copy2(TARGET, BAK)
     survived, crashed = [], []
     try:
-        for why, old, new in MUTATIONS:
+        for entry in MUTATIONS:
+            why, edits = entry[0], ([(entry[1], entry[2])] if len(entry) == 3
+                                    else list(entry[1]))
             label = " ".join(why.split())
-            if original.count(old) != 1:
-                survived.append(f"{label}\n      [DID NOT APPLY: anchor found "
-                                f"{original.count(old)} times]")
+            bad = [o for o, _ in edits if original.count(o) != 1]
+            if bad:
+                survived.append(
+                    f"{label}\n      [DID NOT APPLY: anchor found "
+                    f"{original.count(bad[0])} times - {bad[0].strip()[:60]!r}]")
                 continue
-            TARGET.write_text(original.replace(old, new, 1), encoding="utf-8")
+            mutated = original
+            for o, n in edits:
+                mutated = mutated.replace(o, n, 1)
+            TARGET.write_text(mutated, encoding="utf-8")
             verdict, detail = run_bench()
             if verdict == "failed":
                 print(f"  caught: {label}\n            -> {detail[:140]}")

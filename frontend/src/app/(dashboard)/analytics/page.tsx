@@ -52,6 +52,12 @@ import { downloadAnalyticsXlsx, downloadErrorMessage } from "@/services/exportSe
 import { summariseScores, asRows } from "@/lib/scoreStats";
 // NEW 2026-11-24 - requirement 9's Mode, as Ms. Melanie defines it.
 import { itemExtremes, itemModeLines } from "@/lib/itemExtremes";
+// MOVED OUT 2026-11-27 — page 23 requirement 1 puts this rule in the
+// generated Excel as well, and the export has no browser. The rule, and the
+// comments that record its judgement calls, now live in the lib; it is
+// twinned by backend/app/ml/majority_wrong.py and the two are held together
+// by measure/2026-11-27_majority_twins.mjs.
+import { majorityWrong, wrongPercent } from "@/lib/majorityWrong";
 
 /** NEW 2026-11-24 — "6 checked paper(s)" on a screen Ms. Melanie asked to
  *  make user-friendly (requirement 1). Local to this page because all
@@ -85,65 +91,11 @@ const plural = (n: number, one: string, many = one + "s") => (n === 1 ? one : ma
  */
 const DEFAULT_PASS_PERCENT = DEFAULT_PASSING_MARK;
 
-/**
- * NEW 2026-11-15 (Grace, post-UAT):
- *
- *   "Instead of Items students got wrong, it should be: Items incorrectly
- *    answered by the majority of the class. => more than 50% of the
- *    population of the Class got wrong answer in this item."
- *
- * STRICTLY MORE THAN HALF. `wrong * 2 > answered`, not `>=`, and not a float
- * comparison: 2 of 4 is not a majority, and integer arithmetic cannot drift
- * the way `wrong / answered > 0.5` can at the boundary.
- *
- * THE DENOMINATOR IS `answered` — the papers that actually have a result for
- * THAT item — and this is the one judgement call in the change, so it is
- * written down rather than buried.
- *
- *   `papers_total` would count papers that have not been graded at all. They
- *   contribute nothing to `wrong`, so an item every graded student missed
- *   would be diluted below half by papers nobody has checked yet, and the
- *   table would stay empty while the teacher stares at a class that plainly
- *   failed it.
- *
- *   `answered` cannot do that. Its weakness is the opposite one: with 3 of 40
- *   papers graded, "the majority" means the majority of three. That is why
- *   the row PRINTS its own denominator — "3 of 3 (100%)" — and why the
- *   not-included banner above the table stays.
- *
- * `wrong` ALREADY INCLUDES BLANKS. analytics_service counts `wrong` as
- * `is_correct = False` and `blank` as a subset of it; this page has said so
- * in its own footnote since 2026-11-11. So "got wrong answer" and Doc
- * Rubrica's "did not get the correct answer" are the same number, and no
- * subtraction is needed to honour either sentence.
- *
- * Items still UNDER REVIEW are in neither `wrong` nor `correct`, so they
- * cannot push an item over the line. An item can therefore cross the
- * threshold later, once those decisions are made — which is correct, and the
- * footnote says it.
- */
-const isMajorityWrong = (it: { wrong: number; answered: number }): boolean =>
-  it.answered > 0 && it.wrong * 2 > it.answered;
-
-/**
- * The percentage, to ONE DECIMAL where it needs one.
- *
- * NOT Math.round to a whole number, and this was found by the bench rather
- * than by reading. With 101 papers the smallest majority is 51, and
- * `Math.round(51 / 101 * 100)` is **50** — so a row would have printed
- * "51 of 101 (50%)" directly under a heading promising MORE than 50%. A
- * table that appears to contradict its own heading is worse than one with no
- * percentage at all.
- *
- * One decimal fixes it for every class size this system can hold: the
- * smallest majority of n is floor(n/2)+1, which is at least 50 + 50/n
- * percent, and that only rounds back down to 50.0 once n exceeds 1000.
- * MAX_BULK_ROWS and the per-exam paper count are both far below that.
- */
-const wrongPercent = (wrong: number, answered: number): string => {
-  const p = Math.round((wrong / answered) * 1000) / 10;
-  return `${p}%`;
-};
+/* isMajorityWrong and wrongPercent MOVED to @/lib/majorityWrong on
+ * 2026-11-27, unchanged. They are imported above, and the reasons they are
+ * written the way they are - strictly more than half; `answered` as the
+ * denominator; one decimal because 51 of 101 rounds to 50 - went with them
+ * rather than being left behind as a comment on an import. */
 
 /** Highest first; alphabetical within a tie so the order is never arbitrary. */
 const byScoreDesc = (a: Paper, b: Paper): number => {
@@ -334,7 +286,7 @@ export default function DataAnalyticsPage() {
    * table from "something is broken" into "nothing to report".
    */
   const majority = useMemo(
-    () => (items?.items ?? []).filter(isMajorityWrong),
+    () => majorityWrong(items?.items ?? []),
     [items],
   );
   const hidden = (items?.items.length ?? 0) - majority.length;

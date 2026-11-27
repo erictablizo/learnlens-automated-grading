@@ -48,8 +48,13 @@ from typing import Any, Mapping, Optional, Sequence
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 
 from app.ml.item_extremes import item_extremes, item_mode_lines
+# Page 23 requirement 1. The rule the screen uses, imported rather than
+# re-stated: lib/majorityWrong.ts and this module are twinned by
+# measure/2026-11-27_majority_twins.mjs.
+from app.ml.majority_wrong import as_count, majority_wrong, wrong_percent
 # as_rows, not three labels written out here: the screen builds its table
 # from it, so the file gets the same three labels, the same order and the
 # same dash for a missing value. _trim is private and shared on purpose -
@@ -89,6 +94,104 @@ def _by_score_desc(rows: Sequence[Mapping[str, Any]]) -> list:
     return sorted(rows, key=lambda p: (-(_score(p) or 0.0),
                                        _name(p, "last_name").lower(),
                                        _name(p, "first_name").lower()))
+
+
+def _write_majority(ws, r: int, items: Sequence[Mapping[str, Any]]) -> int:
+    """"Items incorrectly answered by the majority of the class", at row `r`;
+    returns the next free row.
+
+    A FUNCTION RATHER THAN MORE LINES INSIDE THE BUILDER, for one reason
+    worth stating: Ms. Melanie asked for this section to sit AFTER the
+    scored-zero list, and a call that can be moved is a placement a mutation
+    can move. measure/2026-11-26_analytics_workbook_mutations.py moves it,
+    and the bench compares the two row indexes.
+
+    THE RULE IS NOT WRITTEN HERE. ml/majority_wrong twins
+    lib/majorityWrong.ts and measure/2026-11-27_majority_twins.mjs runs both
+    on the same fixtures; a third copy would be a third thing to keep in
+    step.
+    """
+    rows = majority_wrong(items)
+    counted = len(items)
+    ws.cell(row=r, column=1,
+            value=f"{len(rows)} "
+                  + ("item" if len(rows) == 1 else "items")
+                  + " incorrectly answered by the majority of the class") \
+      .font = LABEL_FONT
+    ws.cell(row=r, column=2,
+            value="more than 50% of the papers counted for an item got it "
+                  "wrong").font = NOTE_FONT
+    r += 1
+
+    if counted == 0:
+        # Not an error, and it must not read like one.
+        ws.cell(row=r, column=1,
+                value="No paper in this exam has been graded yet, so there "
+                      "are no per-item results.").font = NOTE_FONT
+        r += 1
+    elif not rows:
+        # The GOOD outcome. The screen says so in these words rather than
+        # printing an empty table, and says how many items it looked at so
+        # the nothing is not mistaken for a failure to load.
+        ws.cell(row=r, column=1,
+                value=f"No item was missed by more than half the class. All "
+                      f"{counted} "
+                      + ("item was" if counted == 1 else "items were")
+                      + " answered correctly by at least half of the papers "
+                        "counted.").font = NOTE_FONT
+        r += 1
+    else:
+        head = r
+        # EIGHT columns, and the counts are NUMBERS. The screen prints
+        # "3 of 6 (50%)" in one cell; a spreadsheet that did the same could
+        # not sort or filter on it, so the three facts get three columns and
+        # the percentage - the screen's own string, from the shared
+        # formatter - rides along as a label.
+        for col, title in enumerate(("Item", "Answer", "Got it wrong",
+                                     "Out of", "% wrong", "Correct",
+                                     "Blank", "Under review"), start=1):
+            ws.cell(row=head, column=col, value=title)
+        _style_header(ws, head)
+        r += 1
+        for row in rows:
+            answer = str(row.get("correct_answer") or "").strip() or DASH
+            if row.get("key_mismatch"):
+                # The screen's orange ⚠ on this cell, in the only form a
+                # spreadsheet has. The footnote below says what it means.
+                answer += " ⚠"
+            ws.cell(row=r, column=1, value=as_count(row, "question_number"))
+            ws.cell(row=r, column=2, value=answer)
+            ws.cell(row=r, column=3, value=as_count(row, "wrong"))
+            ws.cell(row=r, column=4, value=as_count(row, "answered"))
+            ws.cell(row=r, column=5,
+                    value=wrong_percent(as_count(row, "wrong"),
+                                        as_count(row, "answered")))
+            ws.cell(row=r, column=6, value=as_count(row, "correct"))
+            ws.cell(row=r, column=7, value=as_count(row, "blank"))
+            ws.cell(row=r, column=8, value=as_count(row, "review"))
+            r += 1
+        r += 1
+
+        hidden = counted - len(rows)
+        foot = (
+            f"{len(rows)} of {counted} "
+            + ("item" if counted == 1 else "items")
+            + " shown."
+            + (f" The other {hidden} "
+               + ("was" if hidden == 1 else "were")
+               + " answered correctly by at least half of the papers counted."
+               if hidden > 0 else "")
+            + " Blank is part of Wrong, not a separate group. An item still "
+              "under review counts as neither, so an item can appear here "
+              "later once those decisions are made."
+            + (" A ⚠ marks an item whose papers were graded against more "
+               "than one answer key - those counts are not reliable until "
+               "the exam is re-checked."
+               if any(row.get("key_mismatch") for row in rows) else "")
+        )
+        ws.cell(row=r, column=1, value=foot).font = NOTE_FONT
+        r += 2
+    return r
 
 
 def build_analytics_workbook(
@@ -227,7 +330,26 @@ def build_analytics_workbook(
             r += 1
         r += 1
 
+    # ── page 23 requirement 1: the blue circle ───────────────────────────
+    #
+    #     "Please include also this info 'Items incorrectly answered by
+    #      the majority of the class' (encircled in BLUE Color) ... to be
+    #      included on this lowest portion (located after the 1 scored
+    #      zero portion)."
+    #
+    # AFTER the four lists, because she said where. The screen shows it
+    # last too, so the file and the page now read in the same order top
+    # to bottom.
+    r = _write_majority(ws, r, items)
+
     _set_widths(ws, [34, 46, 24, 18])
+    # Columns 5-8 exist only in the majority table and are set with
+    # openpyxl's own API rather than by lengthening the list above: this
+    # file does not own _set_widths and must not assume how many widths
+    # it accepts.
+    for col, width in ((5, 11), (6, 10), (7, 9), (8, 13)):
+        ws.column_dimensions[get_column_letter(col)].width = width
+
 
     buf = BytesIO()
     wb.save(buf)
