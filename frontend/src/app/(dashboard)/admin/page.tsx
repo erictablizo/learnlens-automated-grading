@@ -74,8 +74,6 @@ import Navbar from "@/components/ui/Navbar";
 import TeacherCorrections from "@/components/admin/TeacherCorrections";
 import ManageUsers from "@/components/admin/ManageUsers";
 import ReferenceLists from "@/components/admin/ReferenceLists";
-// NEW 2026-11-19 (Alex, points 4-7): the Technical Admin specimen table.
-import SpecimenCorrections from "@/components/admin/SpecimenCorrections";
 import { ApiError } from "@/lib/api";
 import { getToken, isAuthenticated } from "@/lib/auth";
 import { adminService } from "@/services/adminService";
@@ -477,7 +475,6 @@ export default function AdminPage() {
       <TeacherCorrections />
       <ManageUsers />
       <ReferenceLists />
-      <SpecimenCorrections />
       </div>
     </Shell>
   );

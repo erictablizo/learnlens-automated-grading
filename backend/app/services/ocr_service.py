@@ -70,7 +70,6 @@ from app.ml.ocr import (
 )
 from app.ml.grader import grade_detected, CORRECT, REVIEW, WRONG
 from app.ml.scoring import clamp_points                    # NEW 2026-11-20
-from app.services.correction_service import active_map, apply_corrections
 from app.ml.ocr_identification import MAX_ANSWER_LEN
 from app.ml.ocr_item_numbers import CONTESTED_SEP
 
@@ -250,21 +249,11 @@ async def grade_paper(db: AsyncSession, paper_id: int, exam_id: int) -> dict:
     if not read_any:
         return {"success": False, "reason": " ".join(warnings) or "Could not read any uploaded page images."}
 
-    # NEW 2026-11-19 — the administrator's specimen corrections, applied to
-    # what the reader produced and BEFORE anything is judged.
-    # Sir Alex, points 4-7: "-" means E, this shape means B, MACHIN means
-    # MACHINE. An empty ocr_corrections table makes this a no-op, so the
-    # behaviour with the feature switched off is exactly the behaviour before
-    # it existed. It never corrects a blank and never corrects a contested
-    # reading - see correction_service.apply_corrections.
-    detected, corrected = apply_corrections(detected, await active_map(db))
-    if corrected:
-        shown = ", ".join(f"item {q} ({frm} read as {to})" for q, frm, to in corrected[:5])
-        more = "…" if len(corrected) > 5 else ""
-        warnings.append(
-            f"{len(corrected)} reading(s) were corrected using the "
-            f"administrator's specimen list ({shown}{more})."
-        )
+    # The administrator's specimen corrections used to be applied here, to
+    # what the reader produced and before anything was judged. REMOVED
+    # 2026-11-27 - Sir Alex withdrew the feature, because the papers are
+    # encircled answers and there is no handwritten glyph to substitute.
+    # `detected` now goes to grade_detected exactly as the reader built it.
 
     grading = grade_detected(detected, key_map, identification_items=ident_items,
                              points_by_question=points_map)
