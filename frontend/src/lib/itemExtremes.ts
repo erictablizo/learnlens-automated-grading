@@ -33,6 +33,30 @@
  * `is_correct = False` — so "pinaka nagkamali" and "did not get the correct
  * answer" are the same number, which is what the page's own footnote has
  * said since 11 November.
+ *
+ * CHANGED 2026-11-28 — Ms. Melanie, on the live screen: the row said
+ * "Most missed" above a number counting WRONG, and those are not the same
+ * word. They were not the same thing either, and the paragraph above is why:
+ * blanks are folded into `wrong`, so a line labelled "missed" was quietly
+ * reporting both.
+ *
+ * Her instruction, as relayed: show both figures when there are blanks, say
+ * "most wrong" when there are not, and match the label to the word on the
+ * other line too. So:
+ *
+ *     Most wrong: item 11 — 23 of 39 wrong, 7 left blank
+ *     Most wrong: item 11 — 23 of 39 wrong          (when none were blank)
+ *     Most right: item 1 — 33 of 39 right
+ *
+ * THERE IS NO BLANK FIGURE ON THE RIGHT LINE, and that is not an omission:
+ * a blank is never right, so the number would be zero on every exam ever
+ * graded. The right line's fix was the label alone — it said "correct" over
+ * a number labelled "right", the identical mismatch.
+ *
+ * A TIE CAN DISAGREE ABOUT BLANKS, which the wrong count cannot. Two items
+ * tied at 6 wrong may be 2 blank and 5 blank, and no single number is true
+ * of both — so a range is printed, "2 to 5 left blank". Summing them would
+ * invent a figure larger than the class.
  */
 
 export interface ItemCounts {
@@ -40,6 +64,9 @@ export interface ItemCounts {
   wrong:    number;
   correct:  number;
   answered: number;
+  /** Optional: rows that predate the blank count read as 0 rather than
+   *  throwing, which keeps an older caller working unchanged. */
+  blank?:   number;
 }
 
 export interface ItemExtremes {
@@ -53,6 +80,10 @@ export interface ItemExtremes {
    *  denominator — "6 of 7" is checkable, a bare "6" is not. */
   wrongOutOf: number;
   rightOutOf: number;
+  /** How many of those wrong answers were blank, across the items named.
+   *  Equal when one item is named or a tie agrees; a range otherwise. */
+  wrongBlankLow:  number;
+  wrongBlankHigh: number;
 }
 
 /** Items with no answered papers tell us nothing and are dropped: an item
@@ -81,6 +112,11 @@ export function itemExtremes(
   const outOf = (nums: number[]) =>
     Math.min(...xs.filter(i => nums.includes(i.question_number)).map(i => i.answered));
 
+  // The blanks sitting inside that wrong count, for the items named. A tie
+  // can disagree, so both ends are kept and the caller decides how to say it.
+  const blanks = xs.filter(i => wrongItems.includes(i.question_number))
+                   .map(i => i.blank ?? 0);
+
   return {
     mostWrong:  wrongItems,
     wrongCount: topWrong,
@@ -88,6 +124,8 @@ export function itemExtremes(
     rightCount: topRight,
     wrongOutOf: outOf(wrongItems),
     rightOutOf: outOf(rightItems),
+    wrongBlankLow:  Math.min(...blanks),
+    wrongBlankHigh: Math.max(...blanks),
   };
 }
 
@@ -98,16 +136,22 @@ const list = (nums: number[]) =>
  *
  *  NOT one joined string: the cell holds two separate facts and reading them
  *  as one sentence is how "item 7 item 2" happens. */
+const blankClause = (low: number, high: number): string =>
+  high === 0        ? ""
+  : low === high    ? `, ${high} left blank`
+  :                   `, ${low} to ${high} left blank`;
+
 export function itemModeLines(x: ItemExtremes | null, blank = "—"): string[] {
   if (!x) return [blank];
-  // An item nobody got wrong is not interesting, and saying "most missed:
+  // An item nobody got wrong is not interesting, and saying "most wrong:
   // item 1 (0 of 7)" states a problem that does not exist.
   const lines: string[] = [];
   lines.push(x.wrongCount > 0
-    ? `Most missed: ${list(x.mostWrong)} — ${x.wrongCount} of ${x.wrongOutOf} wrong`
-    : "Most missed: none — every item was answered correctly by everyone");
+    ? `Most wrong: ${list(x.mostWrong)} — ${x.wrongCount} of ${x.wrongOutOf} wrong`
+      + blankClause(x.wrongBlankLow, x.wrongBlankHigh)
+    : "Most wrong: none — every item was answered correctly by everyone");
   lines.push(x.rightCount > 0
-    ? `Most correct: ${list(x.mostRight)} — ${x.rightCount} of ${x.rightOutOf} right`
-    : "Most correct: none — no item was answered correctly by anyone");
+    ? `Most right: ${list(x.mostRight)} — ${x.rightCount} of ${x.rightOutOf} right`
+    : "Most right: none — no item was answered correctly by anyone");
   return lines;
 }

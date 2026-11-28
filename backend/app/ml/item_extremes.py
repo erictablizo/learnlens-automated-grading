@@ -37,6 +37,23 @@ TypeScript rather than re-derived:
 The two sentences are returned as SEPARATE LINES, not one joined string, for
 the reason the TypeScript gives: "the cell holds two separate facts and
 reading them as one sentence is how 'item 7 item 2' happens."
+
+CHANGED 2026-11-28 - Ms. Melanie, on the live screen: the row said "Most
+missed" above a number counting WRONG. Blanks are folded into `wrong`, so a
+line labelled "missed" was reporting both without saying so. Her
+instruction: show both figures when there are blanks, say "most wrong" when
+there are not, and match the label to the word on the other line too.
+
+    Most wrong: item 11 - 23 of 39 wrong, 7 left blank
+    Most wrong: item 11 - 23 of 39 wrong          (when none were blank)
+    Most right: item 1 - 33 of 39 right
+
+No blank figure on the right line: a blank is never right, so it would be
+zero on every exam ever graded. That line's fix was the label alone.
+
+A TIE CAN DISAGREE ABOUT BLANKS where the wrong count cannot - two items
+tied at 6 wrong may be 2 blank and 5 blank - so a range is printed rather
+than a sum, which would invent a figure larger than the class.
 """
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Mapping, Optional, Sequence
@@ -55,6 +72,10 @@ class ItemExtremes:
     # denominator - "6 of 7" is checkable, a bare "6" is not.
     wrong_out_of: int
     right_out_of: int
+    # How many of those wrong answers were blank, across the items named.
+    # Equal when one item is named or a tie agrees; a range otherwise.
+    wrong_blank_low: int
+    wrong_blank_high: int
 
 
 def _counted(items: Iterable[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
@@ -89,6 +110,12 @@ def item_extremes(
         return min(int(i.get("answered") or 0) for i in xs
                    if int(i["question_number"]) in nums)
 
+    # The blanks sitting inside that wrong count, for the items named. A
+    # tie can disagree, so both ends are kept and the caller decides how to
+    # say it.
+    blanks = [int(i.get("blank") or 0) for i in xs
+              if int(i["question_number"]) in wrong_items]
+
     return ItemExtremes(
         most_wrong=wrong_items,
         wrong_count=top_wrong,
@@ -96,6 +123,8 @@ def item_extremes(
         right_count=top_right,
         wrong_out_of=out_of(wrong_items),
         right_out_of=out_of(right_items),
+        wrong_blank_low=min(blanks),
+        wrong_blank_high=max(blanks),
     )
 
 
@@ -104,24 +133,34 @@ def _list(nums: Sequence[int]) -> str:
         str(n) for n in nums)
 
 
+def _blank_clause(low: int, high: int) -> str:
+    """", 7 left blank" / ", 2 to 5 left blank" / "" when there are none."""
+    if high == 0:
+        return ""
+    if low == high:
+        return f", {high} left blank"
+    return f", {low} to {high} left blank"
+
+
 def item_mode_lines(x: Optional[ItemExtremes], blank: str = BLANK) -> List[str]:
     """The two lines of the Mode cell, in the screen's words.
 
     An item nobody got wrong is not interesting, and saying
-    "most missed: item 1 (0 of 7)" states a problem that does not exist - so
+    "most wrong: item 1 (0 of 7)" states a problem that does not exist - so
     the zero cases get their own sentence, as they do on screen.
     """
     if x is None:
         return [blank]
     lines = []
     lines.append(
-        f"Most missed: {_list(x.most_wrong)} — {x.wrong_count} of "
+        f"Most wrong: {_list(x.most_wrong)} — {x.wrong_count} of "
         f"{x.wrong_out_of} wrong"
+        + _blank_clause(x.wrong_blank_low, x.wrong_blank_high)
         if x.wrong_count > 0
-        else "Most missed: none — every item was answered correctly by everyone")
+        else "Most wrong: none — every item was answered correctly by everyone")
     lines.append(
-        f"Most correct: {_list(x.most_right)} — {x.right_count} of "
+        f"Most right: {_list(x.most_right)} — {x.right_count} of "
         f"{x.right_out_of} right"
         if x.right_count > 0
-        else "Most correct: none — no item was answered correctly by anyone")
+        else "Most right: none — no item was answered correctly by anyone")
     return lines

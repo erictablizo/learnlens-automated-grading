@@ -203,8 +203,13 @@ def main():
           str(value_beside("Median")))
 
     mode = value_beside("Mode") or ""
+    # RELABELLED 2026-11-28 - Ms. Melanie: the line said "missed" over a
+    # number counting wrong. "Most wrong" / "Most right" now, and the old
+    # words must not come back.
     check("Mode holds the ITEM lines, not the most common score",
-          "Most missed" in mode and "Most correct" in mode, repr(mode))
+          "Most wrong" in mode and "Most right" in mode, repr(mode))
+    check("  ...in the relabelled wording, not the old one",
+          "Most missed" not in mode and "Most correct" not in mode, repr(mode))
     check("  ...both of them, on separate lines", mode.count("\n") == 1, repr(mode))
     check("  ...naming the most missed item", "item 13" in mode, repr(mode))
     check("  ...and the most correct", "item 15" in mode, repr(mode))

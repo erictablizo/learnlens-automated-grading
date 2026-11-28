@@ -99,18 +99,18 @@ const CLASS = [it(1, 1, 6), it(2, 0, 7), it(3, 6, 1), it(4, 6, 1), it(5, 3, 4)];
   eq("the item most got right", x.mostRight, [2]);
   eq("how many got it right", x.rightCount, 7);
   eq("the Mode cell, as two lines", M.itemModeLines(x), [
-    "Most missed: items 3, 4 — 6 of 7 wrong",
-    "Most correct: item 2 — 7 of 7 right",
+    "Most wrong: items 3, 4 — 6 of 7 wrong",
+    "Most right: item 2 — 7 of 7 right",
   ]);
 }
 
 // ---- one item each way --------------------------------------------------
 {
   const x = M.itemExtremes([it(9, 5, 2), it(10, 1, 6)]);
-  eq("a single most-missed item reads 'item', not 'items'",
-     M.itemModeLines(x)[0], "Most missed: item 9 — 5 of 7 wrong");
-  eq("and a single most-correct item too",
-     M.itemModeLines(x)[1], "Most correct: item 10 — 6 of 7 right");
+  eq("a single most-wrong item reads 'item', not 'items'",
+     M.itemModeLines(x)[0], "Most wrong: item 9 — 5 of 7 wrong");
+  eq("and a single most-right item too",
+     M.itemModeLines(x)[1], "Most right: item 10 — 6 of 7 right");
 }
 
 // ---- nothing to report --------------------------------------------------
@@ -128,10 +128,10 @@ eq("and if that is all there is, there is nothing to say",
 // ---- a perfect class, and a disastrous one ------------------------------
 eq("nobody got anything wrong — said plainly, not as 'item 1'",
    M.itemModeLines(M.itemExtremes([it(1, 0, 7), it(2, 0, 7)]))[0],
-   "Most missed: none — every item was answered correctly by everyone");
+   "Most wrong: none — every item was answered correctly by everyone");
 eq("nobody got anything right",
    M.itemModeLines(M.itemExtremes([it(1, 7, 0), it(2, 7, 0)]))[1],
-   "Most correct: none — no item was answered correctly by anyone");
+   "Most right: none — no item was answered correctly by anyone");
 
 // ---- the denominator is the one being claimed ---------------------------
 // Part-graded papers give items different `answered` counts; the printed "of

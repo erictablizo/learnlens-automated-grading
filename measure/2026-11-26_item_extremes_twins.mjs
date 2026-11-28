@@ -40,8 +40,12 @@ for (const f of [PY, TS]) {
   }
 }
 
-const it = (question_number, answered, correct, wrong) =>
-  ({ question_number, answered, correct, wrong });
+// blank defaults to 0 so the older fixtures below read unchanged - and so
+// that the `blank ?? 0` path is exercised by every one of them.
+const it = (question_number, answered, correct, wrong, blank) =>
+  blank === undefined
+    ? ({ question_number, answered, correct, wrong })
+    : ({ question_number, answered, correct, wrong, blank });
 
 const FIXTURES = [
   { why: "the ordinary case", items: [
@@ -66,6 +70,25 @@ const FIXTURES = [
   { why: "every item unanswered - same as none", items: [it(1, 0, 0, 0)] },
 
   { why: "one item only", items: [it(9, 3, 1, 2)] },
+
+  /* ── the 2026-11-28 blank figure ──────────────────────────────────────
+   * Ms. Melanie: the line said "missed" over a number counting wrong, and
+   * blanks were hidden inside it. These four fixtures are the four shapes
+   * the new clause can take. */
+  { why: "blanks inside the wrong count - the clause appears",
+    items: [it(11, 39, 16, 23, 7), it(1, 39, 33, 6, 0)] },
+
+  { why: "wrong but NOTHING blank - the clause must NOT appear",
+    items: [it(11, 39, 16, 23, 0), it(1, 39, 33, 6, 0)] },
+
+  { why: "a tie whose items DISAGREE about blanks - a range, never a sum",
+    items: [it(3, 7, 1, 6, 2), it(4, 7, 1, 6, 5)] },
+
+  { why: "a tie that agrees about blanks - one number, not a range",
+    items: [it(3, 7, 1, 6, 4), it(4, 7, 1, 6, 4)] },
+
+  { why: "every wrong answer was blank",
+    items: [it(1, 5, 0, 5, 5)] },
 
   { why: "out-of-order question numbers must still sort ascending",
     items: [it(12, 6, 0, 6), it(3, 6, 0, 6), it(7, 6, 0, 6)] },
@@ -123,6 +146,11 @@ const fromTs = FIXTURES.map(f => {
       most_wrong: x.mostWrong, wrong_count: x.wrongCount,
       most_right: x.mostRight, right_count: x.rightCount,
       wrong_out_of: x.wrongOutOf, right_out_of: x.rightOutOf,
+      // ADDED 2026-11-28. The Python side is dumped with asdict(), so a new
+      // field appears there automatically; here it has to be named. A field
+      // left out of this map is a field the two sides can disagree about
+      // while the bench reports green.
+      wrong_blank_low: x.wrongBlankLow, wrong_blank_high: x.wrongBlankHigh,
     },
     lines: itemModeLines(x),
   };
@@ -209,14 +237,28 @@ FIXTURES.forEach((f, i) => {
 // A control: the fixtures must actually exercise both branches of each
 // sentence, or "they agree" would mean "they agree about nothing".
 const allLines = fromTs.flatMap(r => r.lines).join(" | ");
-check("CONTROL: the fixtures produce a 'Most missed: none' case",
-      allLines.includes("Most missed: none"), allLines.slice(0, 120));
-check("CONTROL: ...and a 'Most correct: none' case",
-      allLines.includes("Most correct: none"));
+check("CONTROL: the fixtures produce a 'Most wrong: none' case",
+      allLines.includes("Most wrong: none"), allLines.slice(0, 120));
+check("CONTROL: ...and a 'Most right: none' case",
+      allLines.includes("Most right: none"));
 check("CONTROL: ...and a plural 'items a, b' case",
       /items \d+, \d+/.test(allLines));
 check("CONTROL: ...and a singular 'item n' case",
-      /(^|\| )Most missed: item \d+ /.test(allLines + " "));
+      /(^|\| )Most wrong: item \d+ /.test(allLines + " "));
+
+// ── the 2026-11-28 clause, in all four of its shapes ────────────────────
+check("CONTROL: a wrong line WITH a blank figure",
+      /Most wrong: item 11 — 23 of 39 wrong, 7 left blank/.test(allLines),
+      allLines.slice(0, 200));
+check("CONTROL: a wrong line with NO blank figure, as she asked",
+      /Most wrong: item 11 — 23 of 39 wrong(?!,)/.test(allLines));
+check("CONTROL: a tie that disagrees prints a RANGE",
+      /items 3, 4 — 6 of 7 wrong, 2 to 5 left blank/.test(allLines));
+check("CONTROL: a tie that agrees prints ONE number",
+      /items 3, 4 — 6 of 7 wrong, 4 left blank/.test(allLines));
+check("CONTROL: the old wording is gone from both lines",
+      !allLines.includes("Most missed") && !allLines.includes("Most correct"),
+      allLines.slice(0, 160));
 
 console.log();
 console.log(`  ${passed} passed, ${failed.length} failed`  + "   [rev 2026-11-26c — no esbuild, finds Python by probing]");

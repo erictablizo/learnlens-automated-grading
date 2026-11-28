@@ -57,14 +57,44 @@ MUTATIONS = [
     # character, so the anchor matched nothing and the mutation was reported
     # as "DID NOT APPLY" rather than as a gap. Measured 2026-11-26.
     ("the zero case loses its own sentence, so a class that got everything "
-     "right reads 'Most missed: item 1 - 0 of 6 wrong'",
+     "right reads 'Most wrong: item 1 - 0 of 6 wrong'",
      "        if x.wrong_count > 0\n",
      "        if True\n"),
 
     ("the em dash becomes a hyphen, so the file and the screen print "
      "different characters",
-     "f\"Most correct: {_list(x.most_right)} \u2014 {x.right_count} of \"",
-     "f\"Most correct: {_list(x.most_right)} - {x.right_count} of \""),
+     "f\"Most right: {_list(x.most_right)} \u2014 {x.right_count} of \"",
+     "f\"Most right: {_list(x.most_right)} - {x.right_count} of \""),
+
+    # ── the 2026-11-28 blank figure ──────────────────────────────────────
+    ("the blank clause is dropped, so the line goes back to reporting "
+     "blanks silently inside the wrong count - the thing Ms. Melanie "
+     "noticed",
+     "        + _blank_clause(x.wrong_blank_low, x.wrong_blank_high)\n", ""),
+
+    ("the clause prints even when nothing was blank, so every line ends "
+     "', 0 left blank'",
+     "    if high == 0:\n        return \"\"\n", ""),
+
+    ("a tie that disagrees is SUMMED instead of ranged, inventing a blank "
+     "count that can exceed the class size",
+     '    return f", {low} to {high} left blank"',
+     '    return f", {low + high} left blank"'),
+
+    ("the range collapses to its lowest end, understating how many were "
+     "left blank on the worse of the tied items",
+     "    if low == high:\n        return f\", {high} left blank\"\n",
+     "    return f\", {low} left blank\"\n"),
+
+    ("the blanks are read from every item rather than the ones named, so "
+     "an unrelated item's blanks are attributed to the most-wrong one",
+     "    blanks = [int(i.get(\"blank\") or 0) for i in xs\n"
+     "              if int(i[\"question_number\"]) in wrong_items]",
+     "    blanks = [int(i.get(\"blank\") or 0) for i in xs]"),
+
+    ("the label reverts to the word Ms. Melanie objected to",
+     'f"Most wrong: {_list(x.most_wrong)} \u2014 {x.wrong_count} of "',
+     'f"Most missed: {_list(x.most_wrong)} \u2014 {x.wrong_count} of "'),
 ]
 
 
